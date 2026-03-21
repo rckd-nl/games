@@ -1,6 +1,6 @@
 console.log("Didcot Dogs app.v1.js loaded");
 
-const APP_VERSION = "v1.9";
+const APP_VERSION = "v1.9.1";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -127,6 +127,73 @@ function ensureSvgDefs(svg) {
 
     defs.appendChild(gradient);
   }
+
+  if (!svg.querySelector("#claim-gradient-eric")) {
+    const claimEric = createSvgEl("linearGradient", {
+      id: "claim-gradient-eric",
+      gradientUnits: "userSpaceOnUse",
+      spreadMethod: "repeat",
+      x1: "0",
+      y1: "0",
+      x2: "40",
+      y2: "0"
+    });
+
+    [
+      ["0%", "#19a7ff"],
+      ["90%", "#19a7ff"],
+      ["90%", "#ffffff"],
+      ["100%", "#ffffff"]
+    ].forEach(([offset, color]) => {
+      const stop = createSvgEl("stop", { offset, "stop-color": color });
+      claimEric.appendChild(stop);
+    });
+
+    defs.appendChild(claimEric);
+  }
+
+  if (!svg.querySelector("#claim-gradient-tango")) {
+    const claimTango = createSvgEl("linearGradient", {
+      id: "claim-gradient-tango",
+      gradientUnits: "userSpaceOnUse",
+      spreadMethod: "repeat",
+      x1: "0",
+      y1: "0",
+      x2: "40",
+      y2: "0"
+    });
+
+    [
+      ["0%", "#ffe600"],
+      ["90%", "#ffe600"],
+      ["90%", "#ffffff"],
+      ["100%", "#ffffff"]
+    ].forEach(([offset, color]) => {
+      const stop = createSvgEl("stop", { offset, "stop-color": color });
+      claimTango.appendChild(stop);
+    });
+
+    defs.appendChild(claimTango);
+  }
+}
+
+let __claimGradientAnimationHandle = null;
+
+function startClaimGradientAnimation(svg) {
+  if (__claimGradientAnimationHandle) return;
+
+  const ericGradient = svg.querySelector("#claim-gradient-eric");
+  const tangoGradient = svg.querySelector("#claim-gradient-tango");
+  if (!ericGradient || !tangoGradient) return;
+
+  const tick = (now) => {
+    const shift = -((now / 18) % 40);
+    ericGradient.setAttribute("gradientTransform", `translate(${shift} 0)`);
+    tangoGradient.setAttribute("gradientTransform", `translate(${shift} 0)`);
+    __claimGradientAnimationHandle = requestAnimationFrame(tick);
+  };
+
+  __claimGradientAnimationHandle = requestAnimationFrame(tick);
 }
 
 function getGroupBBox(group) {
@@ -373,6 +440,10 @@ function ensurePlayerToken(svg, playerName) {
     class: `token-group ${PLAYER_CONFIG[playerName].tokenClass}`
   });
 
+  const wobble = createSvgEl("g", {
+    class: "token-wobble"
+  });
+
   const circle = createSvgEl("circle", {
     class: "token-circle",
     r: "24",
@@ -390,8 +461,9 @@ function ensurePlayerToken(svg, playerName) {
   image.setAttributeNS(XLINK_NS, "xlink:href", PLAYER_CONFIG[playerName].image);
   image.setAttribute("href", PLAYER_CONFIG[playerName].image);
 
-  group.appendChild(circle);
-  group.appendChild(image);
+  wobble.appendChild(circle);
+  wobble.appendChild(image);
+  group.appendChild(wobble);
   layer.appendChild(group);
   return group;
 }
@@ -714,10 +786,13 @@ function renderRoutes() {
 
     if (playability.playable) {
       routeEl.classList.add("route-eligible");
-    } else if (playability.reason !== "Route does not connect to current node.") {
+    } else if (
+      playability.reason !== "Route does not connect to current node." &&
+      !getConnectedNode(routeId, app.state.players[app.state.currentPlayer].currentNode)
+    ) {
       routeEl.classList.add("route-blocked");
     }
-
+    
     if (selectedRouteId === routeId) {
       routeEl.classList.add("route-selected");
     }
@@ -1110,8 +1185,9 @@ function showStartToast(playerName) {
   }, 2200);
 }
 
-function openDestinationReveal(title, body) {
-  document.getElementById("destination-reveal-title").textContent = title;
+function openDestinationReveal(title, body, destinationNumber = null) {
+  const prefix = destinationNumber ? `Destination #${destinationNumber}` : "Destination";
+  document.getElementById("destination-reveal-title").textContent = `${prefix} — ${title}`;
   document.getElementById("destination-reveal-body").textContent = body;
   document.getElementById("destination-reveal-overlay").classList.add("open");
 }
@@ -1128,7 +1204,7 @@ function showCurrentDestinationReveal(playerName) {
   const destination = app.destinationData.destinations[target];
   const title = destination?.title || formatNodeName(target);
   const body = destination?.description || "";
-  openDestinationReveal(title, body);
+  openDestinationReveal(title, body, player.completedCount + 1);
 }
 
 function startGameAs(playerName) {
@@ -1176,7 +1252,11 @@ function completeDestinationIfNeeded(playerName) {
     } else {
       const nextDestination = app.destinationData.destinations[nextTarget];
       updateStatus(`${playerName} reached ${formatNodeName(target)}. Next target revealed: ${formatNodeName(nextTarget)}.`);
-      openDestinationReveal(nextDestination?.title || formatNodeName(nextTarget), nextDestination?.description || "");
+      openDestinationReveal(
+        nextDestination?.title || formatNodeName(nextTarget),
+        nextDestination?.description || "",
+        player.completedCount + 1
+      );
     }
   }
 
@@ -1278,6 +1358,7 @@ async function init() {
 
     const svg = await injectBoardSvg();
     ensureSvgDefs(svg);
+    startClaimGradientAnimation(svg);
     normalizeSvgNodeAliases(svg, rulesData);
     tightenSvgViewBox(svg);
 
