@@ -1,24 +1,21 @@
 console.log("Didcot Dogs app.v1.js loaded");
 
-const APP_VERSION = "v1.8";
-
+const APP_VERSION = "v1.9";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
 const PLAYER_CONFIG = {
   Eric: {
-    color: "#8d1218",
-    tokenLabel: "E",
     routeClass: "route-claimed-eric",
     badgeClass: "eric",
-    image: "./assets/eric.png"
+    image: "./assets/eric.png",
+    tokenClass: "eric-token"
   },
   Tango: {
-    color: "#8d1218",
-    tokenLabel: "T",
     routeClass: "route-claimed-tango",
     badgeClass: "tango",
-    image: "./assets/tango.png"
+    image: "./assets/tango.png",
+    tokenClass: "tango-token"
   }
 };
 
@@ -27,7 +24,6 @@ const ROUTE_COLOUR_HEX = {
   orange: "#db7f2f",
   blue: "#2f6edb",
   green: "#1e8b4c",
-  white: "#f2f2f2",
   black: "#1d1d1d",
   pink: "#c64f8e",
   yellow: "#d6b300",
@@ -42,7 +38,6 @@ let app = {
   state: null,
   modal: {
     routeId: null,
-    stage: null,
     chosenColor: null,
     selectedOptionIndex: null,
     options: []
@@ -51,25 +46,19 @@ let app = {
 
 async function loadJson(url) {
   const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load ${url} (${response.status})`);
-  }
+  if (!response.ok) throw new Error(`Failed to load ${url} (${response.status})`);
   return response.json();
 }
 
 async function loadText(url) {
   const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load ${url} (${response.status})`);
-  }
+  if (!response.ok) throw new Error(`Failed to load ${url} (${response.status})`);
   return response.text();
 }
 
 function createSvgEl(tag, attrs = {}) {
   const el = document.createElementNS(SVG_NS, tag);
-  Object.entries(attrs).forEach(([key, value]) => {
-    el.setAttribute(key, value);
-  });
+  Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
   return el;
 }
 
@@ -79,15 +68,12 @@ async function injectBoardSvg() {
   host.innerHTML = svgText;
 
   const svg = host.querySelector("svg");
-  if (!svg) {
-    throw new Error("Injected SVG markup did not contain an <svg> element.");
-  }
+  if (!svg) throw new Error("Injected SVG markup did not contain an <svg> element.");
 
   svg.removeAttribute("width");
   svg.removeAttribute("height");
   svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  svg.style.background = "#ffffff";
-
+  svg.style.background = "transparent";
   return svg;
 }
 
@@ -95,11 +81,8 @@ function setupFullscreenButton() {
   const btn = document.getElementById("fullscreen-btn");
   btn.addEventListener("click", async () => {
     const el = document.documentElement;
-    if (!document.fullscreenElement) {
-      await el.requestFullscreen();
-    } else {
-      await document.exitFullscreen();
-    }
+    if (!document.fullscreenElement) await el.requestFullscreen();
+    else await document.exitFullscreen();
   });
 }
 
@@ -172,12 +155,7 @@ function unionBBoxes(boxes) {
     maxY = Math.max(maxY, box.y + box.height);
   }
 
-  return {
-    x: minX,
-    y: minY,
-    width: maxX - minX,
-    height: maxY - minY
-  };
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
 function tightenSvgViewBox(svg) {
@@ -244,7 +222,7 @@ function formatNodeName(nodeId) {
 
 function formatRouteName(routeId) {
   const { a, b } = parseRouteId(routeId);
-  return `${formatNodeName(a)} <> ${formatNodeName(b)}`;
+  return `${formatNodeName(a)} — ${formatNodeName(b)}`;
 }
 
 function routesShareNode(routeIdA, routeIdB) {
@@ -290,13 +268,9 @@ function buildDeck(rulesData) {
 
   const deck = [];
   drawColours.forEach(color => {
-    for (let i = 0; i < copiesPerColour; i += 1) {
-      deck.push(color);
-    }
+    for (let i = 0; i < copiesPerColour; i += 1) deck.push(color);
   });
-  for (let i = 0; i < rainbowCount; i += 1) {
-    deck.push("rainbow");
-  }
+  for (let i = 0; i < rainbowCount; i += 1) deck.push("rainbow");
   return shuffle(deck);
 }
 
@@ -322,10 +296,7 @@ function createInitialLocalState(rulesData, controlledHero = null) {
 
   const routes = {};
   routeIds.forEach(routeId => {
-    routes[routeId] = {
-      colour: routeColours[routeId],
-      claimedBy: null
-    };
+    routes[routeId] = { colour: routeColours[routeId], claimedBy: null };
   });
 
   return {
@@ -358,10 +329,7 @@ function getNodeCenter(svg, nodeId) {
   if (!el) throw new Error(`Node not found in SVG: ${nodeId}`);
 
   if (el.tagName.toLowerCase() === "circle") {
-    return {
-      x: Number(el.getAttribute("cx")),
-      y: Number(el.getAttribute("cy"))
-    };
+    return { x: Number(el.getAttribute("cx")), y: Number(el.getAttribute("cy")) };
   }
 
   const box = el.getBBox();
@@ -402,7 +370,7 @@ function ensurePlayerToken(svg, playerName) {
 
   group = createSvgEl("g", {
     id: `token-${playerName}`,
-    class: "token-group"
+    class: `token-group ${PLAYER_CONFIG[playerName].tokenClass}`
   });
 
   const circle = createSvgEl("circle", {
@@ -526,33 +494,18 @@ function getRoutePlayability(routeId) {
   const routeState = app.state.routes[routeId];
   const connectedNode = getConnectedNode(routeId, currentPlayer.currentNode);
 
-  if (!connectedNode) {
-    return { playable: false, reason: "Route does not connect to current node." };
-  }
-
-  if (routeState.claimedBy) {
-    return { playable: false, reason: `Already claimed by ${routeState.claimedBy}.` };
-  }
-
+  if (!connectedNode) return { playable: false, reason: "Route does not connect to current node." };
+  if (routeState.claimedBy) return { playable: false, reason: `Already claimed by ${routeState.claimedBy}.` };
   if (currentPlayer.previousNode && connectedNode === currentPlayer.previousNode) {
     return { playable: false, reason: "Cannot move straight back to previous node." };
   }
 
   const payment = getPaymentOptionsForColor(routeId, currentPlayerName);
-
   if (!payment.affordable) {
-    return {
-      playable: false,
-      reason: "Not enough matching cards.",
-      targetNode: connectedNode
-    };
+    return { playable: false, reason: "Not enough matching cards.", targetNode: connectedNode };
   }
 
-  return {
-    playable: true,
-    targetNode: connectedNode,
-    payment
-  };
+  return { playable: true, targetNode: connectedNode, payment };
 }
 
 function drawCard() {
@@ -653,11 +606,8 @@ function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
 
       token.setAttribute("transform", `translate(${x}, ${y})`);
 
-      if (progress < 1) {
-        requestAnimationFrame(step);
-      } else {
-        resolve();
-      }
+      if (progress < 1) requestAnimationFrame(step);
+      else resolve();
     }
 
     requestAnimationFrame(step);
@@ -711,16 +661,26 @@ function renderRouteCostBadges() {
     const text = createSvgEl("text", {
       x: "0",
       y: "0",
-      dy: "0.35em",
+      dy: "0.38em",
       fill: isWild ? "#c64f8e" : hex
     });
     text.textContent = String(cost);
 
     group.appendChild(circle);
     group.appendChild(text);
+
     group.addEventListener("click", evt => {
       evt.stopPropagation();
       handleRouteSelection(routeId);
+    });
+
+    group.addEventListener("mouseenter", evt => {
+      evt.stopPropagation();
+      handleRouteHover(routeId);
+    });
+
+    group.addEventListener("mouseleave", () => {
+      updateStatus("Choose one action: draw a card or click a route to play it.");
     });
 
     layer.appendChild(group);
@@ -813,7 +773,7 @@ function renderSelectedRouteCard() {
 
 function getHandStacks(hand) {
   const counts = countCards(hand);
-  const order = ["red", "orange", "blue", "green", "white", "black", "pink", "yellow", "rainbow"];
+  const order = ["red", "orange", "blue", "green", "black", "pink", "yellow", "rainbow"];
   return order
     .filter(color => (counts[color] || 0) > 0)
     .map(color => ({ color, count: counts[color] }));
@@ -935,9 +895,7 @@ function renderDestinationSequences() {
 }
 
 function renderTargetPulse() {
-  app.svg.querySelectorAll(".target-node-pulse").forEach(el => {
-    el.classList.remove("target-node-pulse");
-  });
+  app.svg.querySelectorAll(".target-node-pulse").forEach(el => el.classList.remove("target-node-pulse"));
 
   const targetNodeId = getCurrentTargetForPlayer(app.state.players[app.state.currentPlayer]);
   if (!targetNodeId) return;
@@ -961,10 +919,15 @@ function renderDebug(audit) {
   `;
 }
 
+function buildSpendPreviewCards(option) {
+  const items = [];
+  for (let i = 0; i < option.useColourCount; i += 1) items.push(option.colourChoice);
+  for (let i = 0; i < option.useRainbowCount; i += 1) items.push("rainbow");
+  return items;
+}
+
 function renderButtons() {
-  const playBtn = document.getElementById("play-route-btn");
-  const selected = app.state.selectedRouteId;
-  playBtn.disabled = !selected || !getRoutePlayability(selected).playable;
+  document.getElementById("draw-card-btn").disabled = false;
 }
 
 function renderAll() {
@@ -981,66 +944,12 @@ function renderAll() {
   renderButtons();
 }
 
-function buildSpendPreviewCards(option) {
-  const items = [];
-  for (let i = 0; i < option.useColourCount; i += 1) items.push(option.colourChoice);
-  for (let i = 0; i < option.useRainbowCount; i += 1) items.push("rainbow");
-  return items;
-}
-
-function openRouteModal(routeId) {
-  const playability = getRoutePlayability(routeId);
-  if (!playability.playable) {
-    updateStatus(playability.reason);
-    return;
-  }
-
-  app.modal.routeId = routeId;
-  app.modal.selectedOptionIndex = null;
-  app.modal.chosenColor = null;
-
-  const overlay = document.getElementById("route-modal-overlay");
-  const title = document.getElementById("route-modal-title");
-  const subtitle = document.getElementById("route-modal-subtitle");
-  const body = document.getElementById("route-modal-body");
-  const confirmBtn = document.getElementById("route-modal-confirm");
-
-  title.textContent = formatRouteName(routeId);
-  body.innerHTML = "";
-  confirmBtn.disabled = true;
-
-  const routeColor = app.state.routes[routeId].colour;
-  if (routeColor === "grey") {
-    const payment = getPaymentOptionsForColor(routeId, app.state.currentPlayer);
-    const chips = document.createElement("div");
-    chips.className = "route-option-grid";
-
-    subtitle.textContent = "Wild route. Choose a colour you want to play with.";
-
-    payment.availableColors.forEach(color => {
-      const btn = document.createElement("button");
-      btn.className = "route-option-chip";
-      btn.type = "button";
-      btn.textContent = color;
-      btn.addEventListener("click", () => {
-        app.modal.chosenColor = color;
-        app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, color).options;
-        app.modal.selectedOptionIndex = null;
-        renderRouteModalOptionStage();
-      });
-      chips.appendChild(btn);
-    });
-
-    body.appendChild(chips);
-    app.modal.stage = "wild-color";
-  } else {
-    app.modal.chosenColor = routeColor;
-    app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, routeColor).options;
-    app.modal.stage = "option-select";
-    renderRouteModalOptionStage();
-  }
-
-  overlay.classList.add("open");
+function buildCardChoiceEl(color, active = false) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = `route-colour-choice-card ${color}${active ? " active" : ""}`;
+  card.textContent = color === "rainbow" ? "rainbow" : color;
+  return card;
 }
 
 function renderRouteModalOptionStage() {
@@ -1088,10 +997,60 @@ function renderRouteModalOptionStage() {
   confirmBtn.disabled = app.modal.selectedOptionIndex === null;
 }
 
+function openRouteModal(routeId) {
+  const playability = getRoutePlayability(routeId);
+  if (!playability.playable) {
+    updateStatus(playability.reason);
+    return;
+  }
+
+  app.modal.routeId = routeId;
+  app.modal.selectedOptionIndex = null;
+  app.modal.chosenColor = null;
+
+  const overlay = document.getElementById("route-modal-overlay");
+  const title = document.getElementById("route-modal-title");
+  const subtitle = document.getElementById("route-modal-subtitle");
+  const body = document.getElementById("route-modal-body");
+  const confirmBtn = document.getElementById("route-modal-confirm");
+
+  title.textContent = formatRouteName(routeId);
+  body.innerHTML = "";
+  confirmBtn.disabled = true;
+
+  const routeColor = app.state.routes[routeId].colour;
+
+  if (routeColor === "grey") {
+    const payment = getPaymentOptionsForColor(routeId, app.state.currentPlayer);
+    subtitle.textContent = "Wild route. Choose a colour you want to play with.";
+
+    const row = document.createElement("div");
+    row.className = "route-colour-card-row";
+
+    payment.availableColors.forEach(color => {
+      const card = buildCardChoiceEl(color, app.modal.chosenColor === color);
+      card.addEventListener("click", () => {
+        app.modal.chosenColor = color;
+        app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, color).options;
+        app.modal.selectedOptionIndex = null;
+        renderRouteModalOptionStage();
+      });
+      row.appendChild(card);
+    });
+
+    body.appendChild(row);
+  } else {
+    app.modal.chosenColor = routeColor;
+    app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, routeColor).options;
+    renderRouteModalOptionStage();
+  }
+
+  overlay.classList.add("open");
+}
+
 function closeRouteModal() {
   document.getElementById("route-modal-overlay").classList.remove("open");
   app.modal.routeId = null;
-  app.modal.stage = null;
   app.modal.chosenColor = null;
   app.modal.selectedOptionIndex = null;
   app.modal.options = [];
@@ -1151,11 +1110,33 @@ function showStartToast(playerName) {
   }, 2200);
 }
 
+function openDestinationReveal(title, body) {
+  document.getElementById("destination-reveal-title").textContent = title;
+  document.getElementById("destination-reveal-body").textContent = body;
+  document.getElementById("destination-reveal-overlay").classList.add("open");
+}
+
+function closeDestinationReveal() {
+  document.getElementById("destination-reveal-overlay").classList.remove("open");
+}
+
+function showCurrentDestinationReveal(playerName) {
+  const player = app.state.players[playerName];
+  const target = getCurrentTargetForPlayer(player);
+  if (!target || player.completedCount >= 5) return;
+
+  const destination = app.destinationData.destinations[target];
+  const title = destination?.title || formatNodeName(target);
+  const body = destination?.description || "";
+  openDestinationReveal(title, body);
+}
+
 function startGameAs(playerName) {
   app.state = createInitialLocalState(app.rulesData, playerName);
   document.getElementById("hero-overlay").classList.remove("active");
   showStartToast(playerName);
   renderAll();
+  showCurrentDestinationReveal(playerName);
   updateStatus(`${playerName} begins. Choose one action: draw a card or click a route to play it.`);
 }
 
@@ -1193,7 +1174,9 @@ function completeDestinationIfNeeded(playerName) {
     if (player.completedCount >= 5) {
       updateStatus(`${playerName} completed five destinations. Final target: ${formatNodeName(nextTarget)}.`);
     } else {
+      const nextDestination = app.destinationData.destinations[nextTarget];
       updateStatus(`${playerName} reached ${formatNodeName(target)}. Next target revealed: ${formatNodeName(nextTarget)}.`);
+      openDestinationReveal(nextDestination?.title || formatNodeName(nextTarget), nextDestination?.description || "");
     }
   }
 
@@ -1253,16 +1236,12 @@ function wireControlButtons() {
     drawCardForCurrentPlayer();
   });
 
-  document.getElementById("play-route-btn").addEventListener("click", () => {
-    if (app.state.selectedRouteId) {
-      openRouteModal(app.state.selectedRouteId);
-    }
-  });
-
   document.getElementById("reset-local-btn").addEventListener("click", () => {
     app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
     closeRouteModal();
+    closeDestinationReveal();
     renderAll();
+    if (app.state.controlledHero) showCurrentDestinationReveal(app.state.controlledHero);
     updateStatus("Local game reset.");
   });
 
@@ -1281,9 +1260,12 @@ function wireControlButtons() {
   });
 
   document.getElementById("route-modal-overlay").addEventListener("click", evt => {
-    if (evt.target.id === "route-modal-overlay") {
-      closeRouteModal();
-    }
+    if (evt.target.id === "route-modal-overlay") closeRouteModal();
+  });
+
+  document.getElementById("destination-reveal-close").addEventListener("click", closeDestinationReveal);
+  document.getElementById("destination-reveal-overlay").addEventListener("click", evt => {
+    if (evt.target.id === "destination-reveal-overlay") closeDestinationReveal();
   });
 }
 
@@ -1310,7 +1292,6 @@ async function init() {
       state,
       modal: {
         routeId: null,
-        stage: null,
         chosenColor: null,
         selectedOptionIndex: null,
         options: []
