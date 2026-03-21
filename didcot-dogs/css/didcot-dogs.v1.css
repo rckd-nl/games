@@ -127,7 +127,8 @@ html, body {
 #game-title,
 .panel-title,
 .mini-heading,
-.sequence-title {
+.sequence-title,
+.route-modal-title {
   font-family: var(--header-font);
 }
 
@@ -239,6 +240,146 @@ html, body {
 
 .start-toast.show {
   transform: translateX(-50%) translateY(0);
+}
+
+.route-modal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 12, 17, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.route-modal-overlay.open {
+  display: flex;
+}
+
+.route-modal {
+  width: 680px;
+  max-width: calc(100vw - 80px);
+  background: rgba(18, 22, 29, 0.96);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 26px;
+  box-shadow: 0 22px 60px rgba(0,0,0,0.35);
+  padding: 22px;
+  transform: translateY(20px) scale(0.96);
+  opacity: 0;
+  animation: routeModalIn 240ms ease forwards;
+}
+
+.route-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.route-modal-title {
+  font-size: 42px;
+  line-height: 0.95;
+}
+
+.route-modal-close {
+  appearance: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.route-modal-subtitle {
+  font-size: 15px;
+  color: rgba(255,255,255,0.82);
+  margin-bottom: 16px;
+}
+
+.route-modal-body {
+  min-height: 160px;
+  margin-bottom: 18px;
+}
+
+.route-option-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.route-option-chip {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  border-radius: 14px;
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 16px;
+  font-family: var(--ui-font);
+  cursor: pointer;
+}
+
+.route-option-chip.active {
+  border-color: rgba(229,57,53,0.7);
+  background: rgba(229,57,53,0.18);
+}
+
+.route-preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  min-height: 80px;
+}
+
+.route-spend-card {
+  width: 68px;
+  height: 92px;
+  border-radius: 12px;
+  padding: 8px;
+  position: relative;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.22);
+  border: 2px solid rgba(0,0,0,0.16);
+  font-size: 14px;
+  color: #fff;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  font-family: var(--ui-font);
+  text-transform: capitalize;
+}
+
+.route-spend-card::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.34);
+}
+
+.route-spend-card.red { background: linear-gradient(180deg, #f3a3a3 0%, #d74b4b 100%); }
+.route-spend-card.orange { background: linear-gradient(180deg, #f2bf95 0%, #db7f2f 100%); }
+.route-spend-card.blue { background: linear-gradient(180deg, #8ab5ff 0%, #2f6edb 100%); }
+.route-spend-card.green { background: linear-gradient(180deg, #72c78e 0%, #1e8b4c 100%); }
+.route-spend-card.white { background: linear-gradient(180deg, #ffffff 0%, #e5e5e5 100%); color: #111; }
+.route-spend-card.black { background: linear-gradient(180deg, #5b5b5b 0%, #1d1d1d 100%); }
+.route-spend-card.pink { background: linear-gradient(180deg, #ef9cc3 0%, #c64f8e 100%); }
+.route-spend-card.yellow { background: linear-gradient(180deg, #f0dd67 0%, #d6b300 100%); color: #111; }
+.route-spend-card.rainbow {
+  background: linear-gradient(135deg, #f3a3a3 0%, #f0dd67 24%, #72c78e 48%, #8ab5ff 72%, #ef9cc3 100%);
+  color: #111;
+}
+
+.route-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 #top-bar {
@@ -452,35 +593,36 @@ html, body {
 .hand-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   min-height: 82px;
 }
 
 .hand-card {
   position: relative;
-  width: 92px;
-  height: 128px;
-  border-radius: 14px;
-  padding: 10px;
+  width: 64px;
+  height: 88px;
+  border-radius: 10px;
+  padding: 7px;
   display: flex;
   align-items: flex-end;
   justify-content: flex-start;
-  font-size: 22px;
+  font-size: 11px;
   font-weight: 700;
   border: 2px solid rgba(0,0,0,0.16);
   box-shadow:
-    0 8px 18px rgba(0,0,0,0.22),
+    0 6px 14px rgba(0,0,0,0.22),
     inset 0 1px 0 rgba(255,255,255,0.35);
   overflow: hidden;
   transform-origin: center bottom;
-  font-family: var(--header-font);
+  font-family: var(--ui-font);
+  text-transform: capitalize;
 }
 
 .hand-card::before {
   content: "";
   position: absolute;
-  inset: 8px;
-  border-radius: 10px;
+  inset: 5px;
+  border-radius: 7px;
   border: 1px solid rgba(255,255,255,0.35);
   pointer-events: none;
 }
@@ -492,15 +634,15 @@ html, body {
 
 .hand-card .card-count {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 34px;
-  height: 34px;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: rgba(255,255,255,0.92);
   color: #111;
   font-family: var(--ui-font);
-  font-size: 15px;
+  font-size: 11px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -597,6 +739,7 @@ html, body {
   border-color: rgba(229,57,53,0.6);
   background: rgba(229,57,53,0.14);
   box-shadow: 0 0 14px rgba(229,57,53,0.18);
+  animation: targetCardPulse 1.3s ease-in-out infinite;
 }
 
 .destination-card.hidden-card {
@@ -694,6 +837,10 @@ html, body {
   opacity: 0.22;
 }
 
+.target-node-pulse {
+  animation: targetNodePulse 1.3s ease-in-out infinite;
+}
+
 .token-group {
   transform-origin: center center;
   animation: tokenWobble 20s steps(1, end) infinite;
@@ -757,6 +904,16 @@ html, body {
   50% { stroke-opacity: 0.72; }
 }
 
+@keyframes targetNodePulse {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(229,57,53,0.3)); }
+  50% { filter: drop-shadow(0 0 10px rgba(229,57,53,0.95)); }
+}
+
+@keyframes targetCardPulse {
+  0%, 100% { box-shadow: 0 0 14px rgba(229,57,53,0.18); }
+  50% { box-shadow: 0 0 24px rgba(229,57,53,0.38); }
+}
+
 @keyframes cardDrawIn {
   0% {
     transform: translateY(36px) rotate(-5deg) scale(0.9);
@@ -775,6 +932,13 @@ html, body {
   }
   100% {
     transform: rotateY(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes routeModalIn {
+  to {
+    transform: translateY(0) scale(1);
     opacity: 1;
   }
 }
@@ -829,10 +993,10 @@ html, body {
 }
 
 @keyframes tokenWobble {
-  0%, 2% { transform: rotate(0deg); }
-  2.5%, 3.5% { transform: rotate(-10deg); }
-  4%, 5% { transform: rotate(10deg); }
-  5.5%, 6.5% { transform: rotate(-10deg); }
-  7%, 8% { transform: rotate(10deg); }
-  8.5%, 100% { transform: rotate(0deg); }
+  0%, 2% { rotate: 0deg; }
+  2.5%, 3.5% { rotate: -10deg; }
+  4%, 5% { rotate: 10deg; }
+  5.5%, 6.5% { rotate: -10deg; }
+  7%, 8% { rotate: 10deg; }
+  8.5%, 100% { rotate: 0deg; }
 }
