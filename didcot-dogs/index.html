@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Didcot Dogs v1.3</title>
+  <title>Didcot Dogs v1.4</title>
   <link rel="stylesheet" href="https://use.typekit.net/gff4ipy.css">
   <link rel="stylesheet" href="./css/didcot-dogs.v1.css" />
 </head>
@@ -13,22 +13,50 @@
       <div id="top-bar">
         <div id="title-block">
           <div id="game-title">Didcot Dogs</div>
-          <div id="game-subtitle">Private two-player route game prototype v1.3</div>
+          <div id="game-subtitle">Private two-player route game prototype v1.4</div>
         </div>
         <button id="fullscreen-btn" type="button">Full screen</button>
       </div>
 
       <aside id="left-panel">
-        <div class="panel-title">Cards</div>
+        <div class="panel-title">Turn</div>
+
         <div class="panel-section">
-          <div class="placeholder-card">Draw pile</div>
+          <div id="turn-player-badge" class="player-badge eric">Eric to play</div>
+          <div id="turn-instruction" class="panel-copy">
+            Choose one action: draw a card or play a selected eligible route.
+          </div>
         </div>
+
+        <div class="panel-section controls-grid">
+          <button id="draw-card-btn" class="action-btn primary" type="button">Pick random card</button>
+          <button id="play-route-btn" class="action-btn" type="button">Play selected route</button>
+          <button id="reset-local-btn" class="action-btn subtle" type="button">Reset local game</button>
+        </div>
+
+        <div class="panel-section counts-grid">
+          <div class="count-card">
+            <div class="count-label">Draw pile</div>
+            <div id="draw-pile-count" class="count-value">0</div>
+          </div>
+          <div class="count-card">
+            <div class="count-label">Discard pile</div>
+            <div id="discard-pile-count" class="count-value">0</div>
+          </div>
+        </div>
+
         <div class="panel-section">
-          <div class="placeholder-card">Discard pile</div>
+          <div class="mini-heading">Selected route</div>
+          <div id="selected-route-card" class="selected-route-card">
+            No route selected.
+          </div>
         </div>
+
         <div class="panel-section">
-          <div class="placeholder-card">Hand will go here</div>
+          <div class="mini-heading">Active hand</div>
+          <div id="active-hand" class="hand-grid"></div>
         </div>
+
         <div id="left-debug"></div>
       </aside>
 
@@ -37,8 +65,16 @@
       </main>
 
       <aside id="right-panel">
-        <div class="panel-title">Destinations</div>
-        <div id="right-destinations" class="placeholder-stack"></div>
+        <div class="panel-title">Match</div>
+
+        <div class="panel-section">
+          <div id="player-summary-wrap" class="player-summary-wrap"></div>
+        </div>
+
+        <div class="panel-section">
+          <div class="mini-heading">Destinations</div>
+          <div id="right-destinations" class="placeholder-stack"></div>
+        </div>
       </aside>
 
       <div id="status-chip">Loading board…</div>
