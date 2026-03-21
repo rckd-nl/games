@@ -16,7 +16,8 @@ html, body {
 
 :root {
   --ui-font: "auster-variable", sans-serif;
-  --display-font: "viktorie", "Viktorie", serif;
+  --header-font: "fumo-dropshadow-mn", sans-serif;
+  --map-font: "viktorie", "Viktorie", serif;
   --deep-red: #8d1218;
   --eligible-red: #e53935;
   --route-red: #d74b4b;
@@ -127,7 +128,7 @@ html, body {
 .panel-title,
 .mini-heading,
 .sequence-title {
-  font-family: var(--display-font);
+  font-family: var(--header-font);
 }
 
 .hero-kicker {
@@ -184,19 +185,32 @@ html, body {
   box-shadow: 0 22px 55px rgba(0,0,0,0.34);
 }
 
-.hero-token {
-  width: 118px;
-  height: 118px;
-  border-radius: 50%;
-  background: var(--deep-red);
-  border: 6px solid rgba(255,255,255,0.9);
-  color: #ffffff;
+.hero-token-frame {
+  width: 126px;
+  height: 126px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.92);
+  border: 4px solid rgba(255,255,255,0.9);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--display-font);
-  font-size: 54px;
-  font-weight: 700;
+  overflow: hidden;
+}
+
+.hero-portrait {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  display: block;
+  transform-origin: 50% 70%;
+}
+
+.hero-portrait-eric {
+  animation: heroJumpEric 1.05s steps(1, end) infinite;
+}
+
+.hero-portrait-tango {
+  animation: heroJumpTango 1.33s steps(1, end) infinite;
 }
 
 .hero-name {
@@ -220,7 +234,7 @@ html, body {
   font-size: 30px;
   box-shadow: 0 16px 40px rgba(0,0,0,0.22);
   transition: transform 320ms ease;
-  font-family: var(--display-font);
+  font-family: var(--header-font);
 }
 
 .start-toast.show {
@@ -459,7 +473,7 @@ html, body {
     inset 0 1px 0 rgba(255,255,255,0.35);
   overflow: hidden;
   transform-origin: center bottom;
-  font-family: var(--display-font);
+  font-family: var(--header-font);
 }
 
 .hand-card::before {
@@ -532,7 +546,7 @@ html, body {
   font-size: 21px;
   font-weight: 700;
   margin-bottom: 6px;
-  font-family: var(--display-font);
+  font-family: var(--header-font);
 }
 
 .player-summary-meta {
@@ -589,7 +603,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--display-font);
+  font-family: var(--header-font);
   font-size: 56px;
   line-height: 1;
   color: rgba(255,255,255,0.72);
@@ -606,7 +620,7 @@ html, body {
 }
 
 .destination-title {
-  font-family: var(--display-font);
+  font-family: var(--header-font);
   font-size: 24px;
   margin-bottom: 6px;
 }
@@ -644,7 +658,7 @@ html, body {
 }
 
 #board-svg-host text {
-  font-family: "viktorie", "Viktorie", serif !important;
+  font-family: var(--map-font) !important;
   fill: #000000 !important;
   pointer-events: none;
 }
@@ -680,20 +694,19 @@ html, body {
   opacity: 0.22;
 }
 
+.token-group {
+  transform-origin: center center;
+  animation: tokenWobble 20s steps(1, end) infinite;
+}
+
 .token-circle {
-  fill: var(--deep-red);
-  stroke: #ffffff;
-  stroke-width: 5;
+  fill: #ffffff;
+  stroke: var(--deep-red);
+  stroke-width: 4;
 }
 
 .token-label {
-  fill: #ffffff !important;
-  font-family: var(--ui-font) !important;
-  font-size: 22px;
-  font-weight: 700;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
+  display: none;
 }
 
 .route-cost-badge text {
@@ -797,4 +810,29 @@ html, body {
 @keyframes heroNoisePulse {
   0%, 100% { opacity: 0.65; }
   50% { opacity: 1; }
+}
+
+@keyframes heroJumpEric {
+  0%, 20%, 100% { transform: rotate(0deg); }
+  21%, 40% { transform: rotate(-15deg); }
+  41%, 60% { transform: rotate(15deg); }
+  61%, 80% { transform: rotate(-15deg); }
+  81%, 99% { transform: rotate(15deg); }
+}
+
+@keyframes heroJumpTango {
+  0%, 18%, 100% { transform: rotate(0deg); }
+  19%, 34% { transform: rotate(15deg); }
+  35%, 54% { transform: rotate(-15deg); }
+  55%, 74% { transform: rotate(15deg); }
+  75%, 92% { transform: rotate(-15deg); }
+}
+
+@keyframes tokenWobble {
+  0%, 2% { transform: rotate(0deg); }
+  2.5%, 3.5% { transform: rotate(-10deg); }
+  4%, 5% { transform: rotate(10deg); }
+  5.5%, 6.5% { transform: rotate(-10deg); }
+  7%, 8% { transform: rotate(10deg); }
+  8.5%, 100% { transform: rotate(0deg); }
 }
