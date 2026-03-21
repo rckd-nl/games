@@ -3,17 +3,45 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Didcot Dogs v1.4</title>
+  <title>Didcot Dogs v1.5</title>
   <link rel="stylesheet" href="https://use.typekit.net/gff4ipy.css">
   <link rel="stylesheet" href="./css/didcot-dogs.v1.css" />
 </head>
 <body>
   <div id="app">
+    <div id="hero-overlay" class="hero-overlay is-visible">
+      <div class="hero-swipe hero-swipe-1"></div>
+      <div class="hero-swipe hero-swipe-2"></div>
+      <div class="hero-swipe hero-swipe-3"></div>
+
+      <div class="hero-panel">
+        <div class="hero-kicker">Didcot Dogs</div>
+        <div class="hero-title">PICK YOUR HERO!</div>
+        <div class="hero-subtitle">
+          Choose your champion to begin the journey.
+        </div>
+
+        <div class="hero-options">
+          <button id="pick-eric-btn" class="hero-pick-btn" type="button" data-hero="Eric">
+            <span class="hero-token">E</span>
+            <span class="hero-name">Eric</span>
+          </button>
+
+          <button id="pick-tango-btn" class="hero-pick-btn" type="button" data-hero="Tango">
+            <span class="hero-token">T</span>
+            <span class="hero-name">Tango</span>
+          </button>
+        </div>
+
+        <div id="hero-confirmation" class="hero-confirmation"></div>
+      </div>
+    </div>
+
     <div id="game-shell">
       <div id="top-bar">
         <div id="title-block">
           <div id="game-title">Didcot Dogs</div>
-          <div id="game-subtitle">Private two-player route game prototype v1.4</div>
+          <div id="game-subtitle">Private two-player route game prototype v1.5</div>
         </div>
         <button id="fullscreen-btn" type="button">Full screen</button>
       </div>
@@ -65,16 +93,8 @@
       </main>
 
       <aside id="right-panel">
-        <div class="panel-title">Match</div>
-
-        <div class="panel-section">
-          <div id="player-summary-wrap" class="player-summary-wrap"></div>
-        </div>
-
-        <div class="panel-section">
-          <div class="mini-heading">Destinations</div>
-          <div id="right-destinations" class="placeholder-stack"></div>
-        </div>
+        <div class="panel-title">Destinations</div>
+        <div id="destination-columns" class="destination-columns"></div>
       </aside>
 
       <div id="status-chip">Loading board…</div>
