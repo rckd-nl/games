@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Didcot Dogs v1.8</title>
+  <title>Didcot Dogs v1.9</title>
   <link rel="stylesheet" href="https://use.typekit.net/gff4ipy.css">
   <link rel="stylesheet" href="./css/didcot-dogs.v1.css" />
 </head>
@@ -45,12 +45,11 @@
       <div id="route-modal-overlay" class="route-modal-overlay">
         <div id="route-modal" class="route-modal">
           <div class="route-modal-header">
-            <div id="route-modal-title" class="route-modal-title">Didcot &lt;&gt; Appleford</div>
+            <div id="route-modal-title" class="route-modal-title">Didcot — Appleford</div>
             <button id="route-modal-close" class="route-modal-close" type="button" aria-label="Close">×</button>
           </div>
 
           <div id="route-modal-subtitle" class="route-modal-subtitle">Choose how to play this route.</div>
-
           <div id="route-modal-body" class="route-modal-body"></div>
 
           <div class="route-modal-actions">
@@ -60,14 +59,20 @@
         </div>
       </div>
 
-      <div id="start-toast" class="start-toast">
-        YOU ARE ERIC!
+      <div id="destination-reveal-overlay" class="destination-reveal-overlay">
+        <div class="destination-reveal-card">
+          <div id="destination-reveal-title" class="destination-reveal-title">Destination</div>
+          <div id="destination-reveal-body" class="destination-reveal-body">Description</div>
+          <button id="destination-reveal-close" class="action-btn primary" type="button">Continue</button>
+        </div>
       </div>
+
+      <div id="start-toast" class="start-toast">YOU ARE ERIC!</div>
 
       <div id="top-bar">
         <div id="title-block">
           <div id="game-title">Didcot Dogs</div>
-          <div id="game-subtitle">Private two-player route game prototype v1.8</div>
+          <div id="game-subtitle">Private two-player route game prototype v1.9</div>
         </div>
         <button id="fullscreen-btn" type="button">Full screen</button>
       </div>
@@ -84,7 +89,6 @@
 
         <div class="panel-section controls-grid">
           <button id="draw-card-btn" class="action-btn primary" type="button">Pick random card</button>
-          <button id="play-route-btn" class="action-btn" type="button">Open selected route</button>
           <button id="reset-local-btn" class="action-btn subtle" type="button">Reset local game</button>
         </div>
 
