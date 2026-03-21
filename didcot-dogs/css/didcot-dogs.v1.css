@@ -322,6 +322,45 @@ html, body {
   gap: 12px;
 }
 
+.route-option-list {
+  display: grid;
+  gap: 12px;
+}
+
+.route-option-row {
+  appearance: none;
+  width: 100%;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  border-radius: 16px;
+  padding: 12px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--ui-font);
+}
+
+.route-option-row:hover {
+  background: rgba(255,255,255,0.09);
+}
+
+.route-option-row.active {
+  border-color: rgba(229,57,53,0.7);
+  background: rgba(229,57,53,0.18);
+}
+
+.route-option-row-label {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.route-option-row-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .route-option-chip {
   appearance: none;
   border: 1px solid rgba(255,255,255,0.16);
