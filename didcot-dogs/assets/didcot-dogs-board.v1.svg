@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1920 1080">
+  <!-- Generator: Adobe Illustrator 29.8.5, SVG Export Plug-In . SVG Version: 2.1.1 Build 2)  -->
+  <defs>
+    <style>
+      .st0 {
+        stroke-miterlimit: 10;
+      }
+
+      .st0, .st1 {
+        fill: none;
+        stroke: #231f20;
+        stroke-width: 8px;
+      }
+
+      .st2 {
+        font-size: 48px;
+      }
+
+      .st2, .st3 {
+        font-family: Viktorie, Viktorie;
+      }
+
+      .st1 {
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .st4 {
+        fill: red;
+      }
+
+      .st3 {
+        font-size: 24px;
+      }
+
+      .st5 {
+        display: none;
+      }
+    </style>
+  </defs>
+  <g id="Background" class="st5">
+    <image width="1920" height="1080" transform="translate(0 .5)" xlink:href="didcot-dogs-map-1.png"/>
+  </g>
+  <g id="Routes">
+    <path id="Didcot_to_Fulscot" class="st0" d="M847.8,620.2c3.6,12.6,12.7,38.4,36.2,61.8,19.5,19.5,40.3,28.7,52.2,33"/>
+    <path id="Abingdon_to_Culham" class="st0" d="M584.2,122.9c33,6.9,44.3,19.2,48.4,29.1,9.4,22.2-12.5,42.4-5.8,72.4,4.5,20.4,19.8,34.5,31.7,43"/>
+    <path id="Harwell_to_Chilton" class="st0" d="M553.4,682c21.9,5.2,47.1,14.7,52,33,5.4,20.4-17.6,39.3-37.5,68-17.7,25.6-36.9,64.7-43.1,123.8"/>
+    <path id="South_Moreton_to_Wallingford" class="st0" d="M1062.4,767c11.1-14.1,29.4-33.1,56.6-44.5,44.2-18.5,76.7-3.6,133-8.2,25.9-2.1,64.1-9,110-32.3"/>
+    <path id="North_Moreton_to_South_Moreton" class="st0" d="M1040.8,682c-2.1,8-5.6,25.7.2,47,5.3,19.3,15.8,32.1,21.4,38"/>
+    <path id="Fulscot_to_South_Moreton" class="st0" d="M936.2,715c11.7-1.4,28.9-1.6,44.8,7.6,14.5,8.4,17.4,18.5,31.6,28.9,9.3,6.8,24.6,14.5,49.7,15.5"/>
+    <path id="Didcot_to_North_Moreton" class="st0" d="M847.8,620.2c16.5,14.1,43.7,33.8,81.7,47.4,46.9,16.8,88,16.4,111.3,14.4"/>
+    <path id="Didcot_to_Milton_Interchange" class="st1" d="M503.2,534.5c133.2-18.5,178.2-4.5,187.8,17.9,10.7,24.8-24.5,54.9-13,75.7,14.5,26.2,89.5,13.9,169.8-7.8"/>
+    <path id="South_Moreton_to_Cholsey" class="st0" d="M1062.4,767c12.9-6.2,35.7-14.3,61.6-9,33.3,6.8,52.9,31.7,70.4,53.9,17.6,22.4,27.7,44.5,33.6,61.1"/>
+    <path id="Aston_Upthorpe_to_South_Moreton" class="st0" d="M990.3,906.8c7.2-24.5,18.3-54.2,36.1-85.8,11.8-21.1,24.3-39.1,36.1-54"/>
+    <path id="East_Hagbourne_to_Blewbury" class="st0" d="M819,751.5c10.3,2.9,27,8.9,43.2,22.5,10.1,8.5,33.7,28.2,33.3,53-.3,18.6-13.9,25.5-30.2,52-14.9,24.2-21.5,47.5-24.7,64"/>
+    <path id="Abingdon_to_Clifton_Hampden" class="st0" d="M584.2,122.9c32.3-8.6,118.7-26.8,217.6,9.5,74.9,27.5,122.1,73.5,144.6,98.6"/>
+    <path id="Aston_Upthorpe_to_Cholsey" class="st0" d="M989.6,906.8c3.4,14.4,10,35.5,24,57.8,14.1,22.5,28.6,35,53.4,56.4,30.6,26.4,45.9,39.6,57.1,35.6,17.2-6,5.4-37.3,29.9-73.6,17.6-26.1,33.4-24.2,52.4-51.8,14.7-21.3,19.7-43.3,21.6-58.2"/>
+    <path id="Didcot_to_Appleford" class="st0" d="M771,367c13.4.2,31.8,2.6,40,15,18.4,27.9-39.2,74.9-23,113.9,13.2,31.7,60.9,24.7,74.2,58.1,9.1,22.7-3.7,49-14.5,66.2"/>
+    <path id="Sutton_Courtenay_to_Culham" class="st0" d="M658.6,267.5c-6.5,8-16.1,21.9-21.6,41.5-7.9,28.1-3,51.8,0,62.5"/>
+    <path id="Drayton_to_Milton_Interchange" class="st0" d="M455.9,336.4c-4.6,20.4-10.4,58.6,0,104.6,10.8,48.1,34,81.1,47.3,97.5"/>
+    <path id="Drayton_to_Abingdon" class="st0" d="M455.9,326c5.1-26.7,16.3-67.9,43.1-112,27.3-44.9,59.4-74.3,81-91.1"/>
+    <path id="Appleford_to_Sutton_Courtenay" class="st0" d="M645.6,378c8.4,4.3,31.4,14.6,61.4,10.6,25.8-3.4,43.4-15.7,51-21.6"/>
+    <path id="Culham_to_Clifton_Hampden" class="st0" d="M658.6,267.5c20.3-9.5,51.2-20.8,89.4-21.6,41.3-.9,59.8,11.5,99.8,11.1,23.2-.2,57.1-4.7,98.6-26"/>
+    <path id="Clifton_Hampden_to_Berinsfield" class="st0" d="M946.4,231c26.9-29.7,48.9-36.1,64.6-36,19.4.1,30,10.2,61,14.4,19.5,2.6,35.9,1.5,47,0"/>
+    <path id="Milton_Interchange_to_Harwell" class="st0" d="M503.2,538.5c19.7,27.1,37.5,47,50.2,60.1,19.2,19.9,30.8,28.9,30.9,43.2,0,18.7-19.7,33.2-30.9,40.2"/>
+    <path id="Didcot_to_Long_Wittenham" class="st0" d="M847.8,620.2c23.5-11.6,51.1-30.4,59.2-60.1,12.1-44.2-26.2-93.2-11-105.1,9.7-7.6,30.1,8.5,41.3-2.3,5.7-5.5,5.9-15,6-22.7.2-11.8-3.5-21-6-26.1"/>
+    <path id="Wittenham_Clumps_to_Brightwell-cum-Sotwell" class="st0" d="M1084,415.8c-9.3,69.9,5.2,97.9,21.6,110.1,35.5,26.3,98.5-10.9,122.4,18.1,9.8,11.9,8.4,29.1,6.2,40.4"/>
+    <path id="Clifton_Hampden_to_Wittenham_Clumps" class="st0" d="M946.4,231c-9.6,68.4,4.5,94.4,19.5,105.4,23.2,17,52.9,1.1,83.1,21.6,21.9,14.9,30.8,39.8,35,57.8"/>
+    <path id="Drayton_to_Sutton_Courtenay" class="st0" d="M636.9,371.5c-27.6-32.2-50.9-39.6-66.9-40.5-19.3-1.1-30,7.8-59,10.1-23.4,1.9-42.7-1.6-55.1-4.7"/>
+    <path id="Sutton_Courtenay_to_Milton_Interchange" class="st0" d="M503.2,538.5c8.3-10.7,21.3-24,40.3-32.5,31-13.8,51.1-2.7,62.4-16.9,12-15.1-5.5-34.8,0-69.1,3.8-23.7,16.5-41.5,26.8-53"/>
+    <path id="Didcot_to_Brightwell-cum-Sotwell" class="st0" d="M847.8,615c28.7,14.2,51.5,15.9,66.8,15,42.5-2.5,52.6-27.1,108.4-38,35-6.9,37.1,1.6,66-7.6,37.6-12,45-29.9,69.4-32.4,16.9-1.7,42.1,3.9,75.8,40"/>
+    <path id="Berinsfield_to_Dorchester" class="st0" d="M1114,209.4c9.1,30.1,23.3,44.8,35,52.7,13.4,9,24.1,8.7,38.9,20.1,15.3,11.7,23.5,26.6,28.1,37.4"/>
+    <path id="Dorchester_to_Shillingford" class="st0" d="M1216,319.5c-.4,14.4.8,47.1,21.6,78.5,16.7,25.1,38.9,38.7,49.4,45,10.6,6.3,20.1,10.4,27,13"/>
+    <path id="Benson_to_Wallingford" class="st0" d="M1440,516.8c3,27.8,6,57.6,9,89.1,5.9,62.5,6.3,77.8-4,87.4-21.8,20.3-72.7-2.6-83-7.4"/>
+    <path id="Drayton_to_Steventon" class="st0" d="M450.1,330.9c-8.2,21.5-16.2,45.9-23.1,73.1-6.7,26.3-11.3,50.8-14.4,73.1"/>
+    <path id="Steventon_to_Milton_Interchange" class="st0" d="M503.2,538.5c-11.5-4.3-28.4-8.4-47.3-4.5-14.6,3-21.3,9-28.9,6-7.2-2.9-14.7-13.8-14.4-50.9"/>
+    <path id="Didcot_to_Harwell" class="st0" d="M847.8,620.2c-40.3,14.6-87.3,28.8-140.1,40.2-56.9,12.2-108.9,18.6-154.3,21.6"/>
+    <path id="Milton_Interchange_to_Chilton" class="st0" d="M503.2,538.5c52.3,41.1,137.2,119.1,121.8,189.5-3.1,14.1-17.1,38.6-45,87-22.4,38.9-41.8,70.4-55.2,91.8"/>
+    <path id="Chilton_to_Upton" class="st0" d="M524.8,906.8c46.6-14.8,73.9-36.8,90.5-55.4,17.4-19.4,28.4-40.9,43.2-39.4,12.9,1.3,21.8,19.2,27.4,35"/>
+    <path id="Blewbury_to_Aston_Upthorpe" class="st0" d="M840.6,943c14.6-1,36-1.3,61.4,2,41.9,5.5,62.8,16.9,77,6,6.8-5.2,13.3-16.6,10.6-44.2"/>
+    <path id="Upton_to_West_Hagbourne" class="st0" d="M701.8,758c2.3,7.7,4.3,18.6-1.3,26-5.6,7.5-14.6,5.6-20.4,11-6.1,5.6-9,19.5,5.8,56.4"/>
+    <path id="Didcot_to_East_Hagbourne" class="st0" d="M840.6,620.2c8.6,17.6,17.2,41.2,7.1,53.8-5.8,7.3-13.9,5.9-21.6,12-9.4,7.4-17.2,25.1-7.1,72"/>
+    <path id="Long_Wittenham_to_Clifton_Hampden" class="st0" d="M946.4,231c-5.5,33-10.2,63.7-14.4,92.4-1.6,10.6-3.6,24.8-2,43.6,1.3,15.7,4.6,28.4,7.3,36.9"/>
+    <path id="West_Hagbourne_to_East_Hagbourne" class="st0" d="M701.8,758c10.7-5,27.2-11.1,48.2-12.6,31.9-2.4,56.7,7,69,12.6"/>
+    <path id="Brightwell-cum-Sotwell_to_Wallingford" class="st0" d="M1234.2,584.4c32.5,3.7,49.4,15.5,58.8,25.9,14.5,16,14.5,32.1,33,50.1,12.5,12.2,26.3,18.3,36,21.6"/>
+    <path id="Long_Wittenham_to_Wittenham_Clumps" class="st0" d="M937.3,403.9c13.6,30.2,31.3,39.7,39.7,43.1,7.4,3,7.7,1.2,46,5.7,27.3,3.2,32,4.7,39.4,1.6,5.7-2.4,18.4-9.7,25.6-36.2"/>
+    <path id="Upton_to_Blewbury" class="st0" d="M686,851.4c6.8,10.8,18.5,26.4,37.4,38.6,18.3,11.8,31.6,13,57.3,22.7,14.5,5.5,35.5,14.7,59.9,30.3"/>
+    <path id="Steventon_to_Chilton" class="st0" d="M412.6,489.1c-9.5,16.7-18.8,40.1-11.6,62.6,10.5,32.7,46,32.3,61,68.5,10.4,25-4.3,30.7.2,77.8,4.3,44.5,17.8,41.8,23.8,90.7,4.4,35.9-1.3,50.4,10,78.4,7.3,18.1,17.4,31.3,25,39.8"/>
+    <path id="Shillingford_to_Benson" class="st0" d="M1313,453c28,7.5,44.8,19.8,55,30,11.1,11,15.5,20.5,29,27.7,15.2,8.2,31.5,7.8,43,6.1"/>
+    <path id="Cholsey_to_Wallingford" class="st0" d="M1228,873c36.3-17.3,58.4-39.2,70.1-53,20.6-24.1,30.7-47.7,42.3-74.6,11-25.6,17.6-47.8,21.6-63.4"/>
+    <path id="Shillingford_to_Wallingford" class="st0" d="M1314,456c-8.1,14.6-17.1,36.6-11,58.9,8.8,32.4,41.4,37.9,59,69.4,9.9,17.8,17,47.3,0,97.6"/>
+  </g>
+  <g id="Labels">
+    <text class="st3" transform="translate(497 122.9)"><tspan x="0" y="0">Abingdon</tspan></text>
+    <text class="st3" transform="translate(584.2 273.2)"><tspan x="0" y="0">Culham</tspan></text>
+    <text id="Clifton_Hampden" class="st3" transform="translate(935.8 170.8)"><tspan x="0" y="0">Clifton</tspan><tspan x="-5.1" y="20">Hampden</tspan></text>
+    <text class="st3" transform="translate(1086.4 174.6)"><tspan x="0" y="0">Berinsfield</tspan></text>
+    <text class="st3" transform="translate(1211.6 289.1)"><tspan x="0" y="0">Dorchester</tspan></text>
+    <text class="st3" transform="translate(1213.3 467.5)"><tspan x="0" y="0">Shillingford</tspan></text>
+    <text class="st3" transform="translate(1470.7 508)"><tspan x="0" y="0">Benson</tspan></text>
+    <text class="st3" transform="translate(1187.5 626.5)"><tspan x="0" y="0">Brightwell-</tspan><tspan x="-2.8" y="20">cum-Sotwell</tspan></text>
+    <text class="st3" transform="translate(1365.6 736.4)"><tspan x="0" y="0">Wallingford</tspan></text>
+    <text class="st3" transform="translate(1241.9 911.7)"><tspan x="0" y="0">Cholsey</tspan></text>
+    <text class="st3" transform="translate(1032.2 906.8)"><tspan x="0" y="0">Aston</tspan><tspan x="-8.9" y="20">Upthorpe</tspan></text>
+    <text class="st3" transform="translate(1080.8 672.4)"><tspan x="0" y="0">North</tspan><tspan x="-6" y="20">Moreton</tspan></text>
+    <text class="st3" transform="translate(1081.9 795)"><tspan x="0" y="0">South</tspan><tspan x="-7.3" y="20">Moreton</tspan></text>
+    <text class="st3" transform="translate(913.8 758)"><tspan x="0" y="0">Fulscot</tspan></text>
+    <text class="st3" transform="translate(813.3 983.6)"><tspan x="0" y="0">Blewbury</tspan></text>
+    <text class="st3" transform="translate(657.6 894.6)"><tspan x="0" y="0">Upton</tspan></text>
+    <text class="st3" transform="translate(811.8 801.3)"><tspan x="0" y="0">East</tspan><tspan x="-16.1" y="20">Hagbourne</tspan></text>
+    <text class="st3" transform="translate(720.3 709.9)"><tspan x="0" y="0">West</tspan><tspan x="-16.1" y="20">Hagbourne</tspan></text>
+    <text class="st3" transform="translate(501.7 950.2)"><tspan x="0" y="0">Chilton</tspan></text>
+    <text class="st3" transform="translate(326.2 492.6)"><tspan x="0" y="0">Steventon</tspan></text>
+    <text class="st3" transform="translate(390.2 309.9)"><tspan x="0" y="0">Drayton</tspan></text>
+    <text class="st3" transform="translate(637.9 425.6)"><tspan x="0" y="0">Sutton</tspan><tspan x="-11.1" y="20">Courtenay</tspan></text>
+    <text class="st3" transform="translate(497.3 467.5)"><tspan x="0" y="0">Milton</tspan><tspan x="-14.6" y="20">Interchange</tspan></text>
+    <text class="st3" transform="translate(514.5 724.8)"><tspan x="0" y="0">Harwell</tspan></text>
+    <text class="st3" transform="translate(785.5 345.4)"><tspan x="0" y="0">Appleford</tspan></text>
+    <text class="st3" transform="translate(1101.1 452.7)"><tspan x="0" y="0">Wittenham</tspan><tspan x="12" y="20">Clumps</tspan></text>
+    <text class="st3" transform="translate(862 408.2)"><tspan x="0" y="0">Long</tspan><tspan x="-19.5" y="20">Wittenham</tspan></text>
+    <text class="st2" transform="translate(744.4 597.8)"><tspan x="0" y="0">Didcot</tspan></text>
+  </g>
+  <g id="Nodes">
+    <circle id="Steventon" class="st4" cx="412.6" cy="489.1" r="21.6" transform="translate(-158.2 778.3) rotate(-76.7)"/>
+    <circle id="Drayton" class="st4" cx="455.9" cy="336.4" r="21.6"/>
+    <circle id="Abingdon" class="st4" cx="584.2" cy="122.9" r="21.6"/>
+    <circle id="Culham" class="st4" cx="658.6" cy="267.5" r="21.6"/>
+    <circle id="Sutton_Courtenay" class="st4" cx="636.9" cy="371.5" r="21.6"/>
+    <circle id="Clifton_Hampden1" data-name="Clifton_Hampden" class="st4" cx="946.4" cy="231" r="21.6"/>
+    <circle id="Didcot" class="st4" cx="847.8" cy="620.2" r="21.6"/>
+    <circle id="Milton_Interchange" class="st4" cx="503.2" cy="538.5" r="21.6"/>
+    <circle id="Appleford" class="st4" cx="765.3" cy="367" r="21.6"/>
+    <circle id="Berinsfield" class="st4" cx="1114" cy="209.4" r="21.6"/>
+    <circle id="Dorchester" class="st4" cx="1216" cy="319.5" r="21.6"/>
+    <circle id="Wittenham_Clumps" class="st4" cx="1084" cy="415.8" r="21.6"/>
+    <circle id="Brightwell-cum-Sotwell" class="st4" cx="1234.2" cy="584.4" r="21.6"/>
+    <circle id="Wallingford" class="st4" cx="1362" cy="682" r="21.6"/>
+    <circle id="Benson" class="st4" cx="1440" cy="516.8" r="21.6"/>
+    <circle id="Cholsey" class="st4" cx="1228" cy="873" r="21.6"/>
+    <circle id="South_Moreton" class="st4" cx="1062.4" cy="767" r="21.6"/>
+    <circle id="Aston_Upthorpe" class="st4" cx="989.6" cy="906.8" r="21.6"/>
+    <circle id="Blewbury" class="st4" cx="840.6" cy="943" r="21.6"/>
+    <circle id="Upton" class="st4" cx="686" cy="851.4" r="21.6"/>
+    <circle id="Chilton" class="st4" cx="524.8" cy="906.8" r="21.6"/>
+    <circle id="Harwell" class="st4" cx="553.4" cy="682" r="21.6"/>
+    <circle id="West_Hagbourne" class="st4" cx="701.8" cy="758" r="21.6"/>
+    <circle id="East_Hagbourne" class="st4" cx="819" cy="758" r="21.6"/>
+    <circle id="North_Moreton" class="st4" cx="1040.8" cy="682" r="21.6"/>
+    <circle id="Fulscot" class="st4" cx="936.2" cy="715" r="21.6"/>
+    <circle id="Long_Wittenham" class="st4" cx="937.3" cy="403.9" r="21.6"/>
+    <circle id="Shillingford" class="st4" cx="1314" cy="456" r="21.6"/>
+  </g>
+</svg>
