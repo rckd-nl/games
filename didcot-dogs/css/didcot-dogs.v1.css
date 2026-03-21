@@ -944,13 +944,14 @@ html, body {
 #mobile-hud {
   display: none;
   position: absolute;
-  top: 14px;
-  left: 14px;
-  right: 14px;
-  z-index: 30;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: 10px;
+  right: 10px;
+  z-index: 42;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+  pointer-events: none;
 }
 
 .mobile-hud-pill,
@@ -964,18 +965,20 @@ html, body {
   font-family: var(--ui-font);
   font-size: 14px;
   font-weight: 700;
+  pointer-events: auto;
 }
 
 .mobile-hud-pill {
-  background: rgba(12, 16, 22, 0.82);
+  background: rgba(12, 16, 22, 0.86);
   border: 1px solid rgba(255,255,255,0.14);
   color: #ffffff;
+  max-width: 100%;
 }
 
 .mobile-hud-btn {
   appearance: none;
   border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(141,18,24,0.88);
+  background: rgba(141,18,24,0.92);
   color: #ffffff;
   cursor: pointer;
 }
@@ -985,15 +988,16 @@ html, body {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
-  z-index: 35;
-  background: rgba(15, 19, 26, 0.96);
+  bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+  z-index: 41;
+  background: rgba(15, 19, 26, 0.97);
   border-top-left-radius: 22px;
   border-top-right-radius: 22px;
   border-top: 1px solid rgba(255,255,255,0.12);
   box-shadow: 0 -10px 30px rgba(0,0,0,0.28);
   transform: translateY(calc(100% - 36px));
   transition: transform 240ms ease;
+  max-height: 48vh;
 }
 
 #mobile-sheet.expanded {
@@ -1024,6 +1028,8 @@ html, body {
 
 #mobile-sheet-content {
   padding: 0 14px 18px;
+  overflow: auto;
+  max-height: calc(48vh - 36px);
 }
 
 #mobile-sheet-summary,
@@ -1034,18 +1040,57 @@ html, body {
   margin-bottom: 14px;
 }
 
+#mobile-bottom-bar {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 43;
+  padding:
+    8px 10px
+    calc(8px + env(safe-area-inset-bottom, 0px))
+    10px;
+  background: rgba(10, 13, 19, 0.96);
+  border-top: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 -12px 30px rgba(0,0,0,0.24);
+}
+
+.mobile-bottom-bar-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.mobile-bottom-btn {
+  appearance: none;
+  min-height: 52px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.08);
+  color: #ffffff;
+  font-family: var(--ui-font);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mobile-bottom-btn.primary {
+  background: rgba(141,18,24,0.94);
+}
+
+.mobile-bottom-btn.subtle {
+  background: rgba(255,255,255,0.05);
+}
+
 @keyframes eligiblePulse {
   0%, 100% { stroke-opacity: 1; }
   50% { stroke-opacity: 0.62; }
 }
 
 @keyframes claimedPulse {
-  0%, 100% {
-    stroke-opacity: 1;
-  }
-  50% {
-    stroke-opacity: 0.88;
-  }
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: 0.88; }
 }
 
 @keyframes targetNodePulse {
@@ -1126,6 +1171,7 @@ html, body {
   7%, 8% { rotate: 10deg; }
   8.5%, 100% { rotate: 0deg; }
 }
+
 @media (max-width: 767px) {
   #top-bar,
   #left-panel,
@@ -1138,6 +1184,10 @@ html, body {
   }
 
   #mobile-sheet {
+    display: block;
+  }
+
+  #mobile-bottom-bar {
     display: block;
   }
 
@@ -1158,18 +1208,26 @@ html, body {
   #status-chip {
     left: 50%;
     transform: translateX(-50%);
-    bottom: 52px;
+    bottom: calc(78px + env(safe-area-inset-bottom, 0px));
     max-width: calc(100vw - 24px);
     font-size: 14px;
     padding: 8px 12px;
   }
 
+  .route-modal-overlay,
+  .destination-reveal-overlay {
+    align-items: flex-end;
+    padding: 0 0 calc(78px + env(safe-area-inset-bottom, 0px)) 0;
+  }
+
   .route-modal,
   .destination-reveal-card {
-    width: calc(100vw - 24px);
-    max-width: calc(100vw - 24px);
-    border-radius: 20px;
+    width: calc(100vw - 12px);
+    max-width: calc(100vw - 12px);
+    border-radius: 20px 20px 0 0;
     padding: 18px;
+    max-height: 62vh;
+    overflow: auto;
   }
 
   .route-modal-title,
@@ -1212,5 +1270,14 @@ html, body {
 
   .hero-name {
     font-size: 32px;
+  }
+
+  #mobile-sheet-summary .player-summary-card,
+  #mobile-sheet-destination .destination-sequence {
+    margin: 0;
+  }
+
+  #mobile-sheet-hand .hand-grid {
+    max-height: none;
   }
 }
