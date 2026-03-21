@@ -1,6 +1,6 @@
 console.log("Didcot Dogs app.v1.js loaded");
 
-const APP_VERSION = "v1.9.1";
+const APP_VERSION = "v1.9.2";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -747,12 +747,12 @@ function renderRouteCostBadges() {
     group.appendChild(circle);
     group.appendChild(text);
 
-    group.addEventListener("click", (evt) => {
+    group.addEventListener("click", evt => {
       evt.stopPropagation();
       handleRouteSelection(routeId);
     });
 
-    group.addEventListener("mouseenter", (evt) => {
+    group.addEventListener("mouseenter", evt => {
       evt.stopPropagation();
       handleRouteHover(routeId);
     });
@@ -864,20 +864,15 @@ function getHandStacks(hand) {
     .map(color => ({ color, count: counts[color] }));
 }
 
-function renderActiveHand() {
-  const wrap = document.getElementById("active-hand");
-  if (!wrap) return;
-
-  const player = app.state.players[app.state.currentPlayer];
+function renderHandInto(container, player) {
+  container.innerHTML = "";
   const stacks = getHandStacks(player.hand);
-
-  wrap.innerHTML = "";
 
   if (!stacks.length) {
     const empty = document.createElement("div");
     empty.className = "panel-copy";
     empty.textContent = "No cards yet.";
-    wrap.appendChild(empty);
+    container.appendChild(empty);
     return;
   }
 
@@ -889,9 +884,15 @@ function renderActiveHand() {
       <div class="card-name">${stack.color}</div>
       <div class="card-count">${stack.count}</div>
     `;
-    wrap.appendChild(el);
+    container.appendChild(el);
   });
+}
 
+function renderActiveHand() {
+  const wrap = document.getElementById("active-hand");
+  if (!wrap) return;
+  const player = app.state.players[app.state.currentPlayer];
+  renderHandInto(wrap, player);
   player.lastDrawColor = null;
 }
 
@@ -945,21 +946,14 @@ function createDestinationCompletedCard(title) {
   return el;
 }
 
-function renderDestinationSequences() {
-  const wrap = document.getElementById("destination-sequences");
-  if (!wrap) return;
-
-  wrap.innerHTML = "";
-
-  const shownPlayerName = app.state.currentPlayer;
-  const player = app.state.players[shownPlayerName];
-
+function buildDestinationSequenceElement(playerName, showFlip = true) {
+  const player = app.state.players[playerName];
   const sequence = document.createElement("div");
   sequence.className = "destination-sequence";
 
   const title = document.createElement("div");
   title.className = "sequence-title";
-  title.textContent = `${shownPlayerName} journey cards`;
+  title.textContent = `${playerName} journey cards`;
 
   const grid = document.createElement("div");
   grid.className = "destination-card-grid";
@@ -973,7 +967,7 @@ function renderDestinationSequences() {
     if (i < player.completedCount) {
       grid.appendChild(createDestinationCompletedCard(label));
     } else if (i === player.completedCount && player.completedCount < 5) {
-      const shouldFlip = app.state.justCompleted?.playerName === shownPlayerName;
+      const shouldFlip = showFlip && app.state.justCompleted?.playerName === playerName;
       grid.appendChild(createDestinationActiveCard(label, body, shouldFlip));
     } else {
       grid.appendChild(createDestinationQuestionCard());
@@ -982,7 +976,14 @@ function renderDestinationSequences() {
 
   sequence.appendChild(title);
   sequence.appendChild(grid);
-  wrap.appendChild(sequence);
+  return sequence;
+}
+
+function renderDestinationSequences() {
+  const wrap = document.getElementById("destination-sequences");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  wrap.appendChild(buildDestinationSequenceElement(app.state.currentPlayer, true));
 }
 
 function renderTargetPulse() {
@@ -1018,11 +1019,10 @@ function renderMobileUi() {
   const hudDestination = document.getElementById("mobile-hud-destination");
   const sheetSummary = document.getElementById("mobile-sheet-summary");
   const sheetSelectedRoute = document.getElementById("mobile-sheet-selected-route");
-  const sheetActions = document.getElementById("mobile-sheet-actions");
   const sheetHand = document.getElementById("mobile-sheet-hand");
   const sheetDestination = document.getElementById("mobile-sheet-destination");
 
-  if (!hudTurn || !hudDraw || !hudDestination || !sheetSummary || !sheetSelectedRoute || !sheetActions || !sheetHand || !sheetDestination) {
+  if (!hudTurn || !hudDraw || !hudDestination || !sheetSummary || !sheetSelectedRoute || !sheetHand || !sheetDestination) {
     return;
   }
 
@@ -1073,85 +1073,14 @@ function renderMobileUi() {
     `;
   }
 
-  sheetActions.innerHTML = `
-    <div class="mini-heading">Actions</div>
-    <div class="controls-grid">
-      <button id="mobile-draw-card-btn" class="action-btn primary" type="button">Pick random card</button>
-      <button id="mobile-reset-local-btn" class="action-btn subtle" type="button">Reset local game</button>
-    </div>
-  `;
-
-  const stacks = getHandStacks(currentPlayer.hand);
   sheetHand.innerHTML = `<div class="mini-heading">Active hand</div>`;
   const handWrap = document.createElement("div");
   handWrap.className = "hand-grid";
-
-  if (!stacks.length) {
-    const empty = document.createElement("div");
-    empty.className = "panel-copy";
-    empty.textContent = "No cards yet.";
-    handWrap.appendChild(empty);
-  } else {
-    stacks.forEach(stack => {
-      const el = document.createElement("div");
-      el.className = `hand-card ${stack.color}`;
-      el.innerHTML = `
-        <div class="card-name">${stack.color}</div>
-        <div class="card-count">${stack.count}</div>
-      `;
-      handWrap.appendChild(el);
-    });
-  }
-
+  renderHandInto(handWrap, currentPlayer);
   sheetHand.appendChild(handWrap);
 
-  const destinationSequence = document.createElement("div");
-  destinationSequence.className = "destination-sequence";
-  const sequenceTitle = document.createElement("div");
-  sequenceTitle.className = "sequence-title";
-  sequenceTitle.textContent = `${currentPlayerName} journey cards`;
-  const grid = document.createElement("div");
-  grid.className = "destination-card-grid";
-
-  for (let i = 0; i < 5; i += 1) {
-    const destinationId = currentPlayer.destinationQueue[i];
-    const destination = app.destinationData.destinations[destinationId];
-    const label = destination ? destination.title : formatNodeName(destinationId);
-    const body = destination?.description || "";
-
-    if (i < currentPlayer.completedCount) {
-      grid.appendChild(createDestinationCompletedCard(label));
-    } else if (i === currentPlayer.completedCount && currentPlayer.completedCount < 5) {
-      grid.appendChild(createDestinationActiveCard(label, body, false));
-    } else {
-      grid.appendChild(createDestinationQuestionCard());
-    }
-  }
-
-  destinationSequence.appendChild(sequenceTitle);
-  destinationSequence.appendChild(grid);
   sheetDestination.innerHTML = "";
-  sheetDestination.appendChild(destinationSequence);
-
-  const mobileDrawBtn = document.getElementById("mobile-draw-card-btn");
-  const mobileResetBtn = document.getElementById("mobile-reset-local-btn");
-
-  if (mobileDrawBtn) {
-    mobileDrawBtn.addEventListener("click", () => {
-      drawCardForCurrentPlayer();
-    });
-  }
-
-  if (mobileResetBtn) {
-    mobileResetBtn.addEventListener("click", () => {
-      app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
-      closeRouteModal();
-      closeDestinationReveal();
-      renderAll();
-      if (app.state.controlledHero) showCurrentDestinationReveal(app.state.controlledHero);
-      updateStatus("Local game reset.");
-    });
-  }
+  sheetDestination.appendChild(buildDestinationSequenceElement(currentPlayerName, false));
 }
 
 function buildSpendPreviewCards(option) {
@@ -1476,18 +1405,42 @@ function wireRouteInteractions() {
   });
 }
 
+function fitBoardView() {
+  updateStatus("Map reset view is not wired yet.");
+}
+
+function closeMobileSheet() {
+  const sheet = document.getElementById("mobile-sheet");
+  if (sheet) sheet.classList.remove("expanded");
+}
+
+function openMobileSheet() {
+  const sheet = document.getElementById("mobile-sheet");
+  if (sheet) sheet.classList.add("expanded");
+}
+
+function toggleMobileSheet() {
+  const sheet = document.getElementById("mobile-sheet");
+  if (sheet) sheet.classList.toggle("expanded");
+}
+
+function resetLocalGame() {
+  app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
+  closeRouteModal();
+  closeDestinationReveal();
+  closeMobileSheet();
+  renderAll();
+  if (app.state.controlledHero) showCurrentDestinationReveal(app.state.controlledHero);
+  updateStatus("Local game reset.");
+}
+
 function wireControlButtons() {
   document.getElementById("draw-card-btn").addEventListener("click", () => {
     drawCardForCurrentPlayer();
   });
 
   document.getElementById("reset-local-btn").addEventListener("click", () => {
-    app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
-    closeRouteModal();
-    closeDestinationReveal();
-    renderAll();
-    if (app.state.controlledHero) showCurrentDestinationReveal(app.state.controlledHero);
-    updateStatus("Local game reset.");
+    resetLocalGame();
   });
 
   document.getElementById("pick-eric-btn").addEventListener("click", () => {
@@ -1499,12 +1452,41 @@ function wireControlButtons() {
   });
 
   document.getElementById("mobile-open-sheet-btn").addEventListener("click", () => {
-    document.getElementById("mobile-sheet").classList.add("expanded");
+    toggleMobileSheet();
   });
 
   document.getElementById("mobile-sheet-handle").addEventListener("click", () => {
-    document.getElementById("mobile-sheet").classList.toggle("expanded");
+    toggleMobileSheet();
   });
+
+  const mobileDrawBtn = document.getElementById("mobile-draw-card-btn");
+  const mobileResetBtn = document.getElementById("mobile-reset-local-btn");
+  const mobileInfoBtn = document.getElementById("mobile-info-btn");
+  const mobileMapBtn = document.getElementById("mobile-reset-view-btn");
+
+  if (mobileDrawBtn) {
+    mobileDrawBtn.addEventListener("click", () => {
+      drawCardForCurrentPlayer();
+    });
+  }
+
+  if (mobileResetBtn) {
+    mobileResetBtn.addEventListener("click", () => {
+      resetLocalGame();
+    });
+  }
+
+  if (mobileInfoBtn) {
+    mobileInfoBtn.addEventListener("click", () => {
+      toggleMobileSheet();
+    });
+  }
+
+  if (mobileMapBtn) {
+    mobileMapBtn.addEventListener("click", () => {
+      fitBoardView();
+    });
+  }
 
   document.getElementById("route-modal-close").addEventListener("click", closeRouteModal);
   document.getElementById("route-modal-cancel").addEventListener("click", closeRouteModal);
@@ -1522,8 +1504,30 @@ function wireControlButtons() {
   });
 }
 
+function injectMobileBottomBar() {
+  if (document.getElementById("mobile-bottom-bar")) return;
+
+  const gameShell = document.getElementById("game-shell");
+  const statusChip = document.getElementById("status-chip");
+  if (!gameShell || !statusChip) return;
+
+  const wrap = document.createElement("div");
+  wrap.id = "mobile-bottom-bar";
+  wrap.innerHTML = `
+    <div class="mobile-bottom-bar-grid">
+      <button id="mobile-draw-card-btn" class="mobile-bottom-btn primary" type="button">Draw card</button>
+      <button id="mobile-info-btn" class="mobile-bottom-btn" type="button">Cards / info</button>
+      <button id="mobile-reset-local-btn" class="mobile-bottom-btn subtle" type="button">Reset</button>
+    </div>
+  `;
+
+  gameShell.insertBefore(wrap, statusChip);
+}
+
 async function init() {
   try {
+    injectMobileBottomBar();
+
     const [rulesData, destinationData] = await Promise.all([
       loadJson("./data/didcot-dogs-rules.v1.json"),
       loadJson("./data/didcot-dogs-destinations.v1.json")
