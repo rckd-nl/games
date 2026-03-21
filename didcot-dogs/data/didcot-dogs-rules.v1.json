@@ -1,5 +1,5 @@
 {
-  "version": "v1.0",
+  "version": "v1.1",
   "game": "didcot-dogs",
   "startNode": "Didcot",
   "characters": ["Eric", "Tango"],
@@ -8,7 +8,6 @@
     "orange",
     "blue",
     "green",
-    "white",
     "black",
     "pink",
     "yellow",
@@ -19,7 +18,6 @@
     "orange",
     "blue",
     "green",
-    "white",
     "black",
     "pink",
     "yellow"
