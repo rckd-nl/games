@@ -1,6 +1,9 @@
 console.log("Didcot Dogs app.v1.js loaded");
 
-const APP_VERSION = "v1.7";
+const APP_VERSION = "v1.8";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const XLINK_NS = "http://www.w3.org/1999/xlink";
 
 const PLAYER_CONFIG = {
   Eric: {
@@ -36,7 +39,14 @@ let app = {
   destinationData: null,
   svg: null,
   audit: null,
-  state: null
+  state: null,
+  modal: {
+    routeId: null,
+    stage: null,
+    chosenColor: null,
+    selectedOptionIndex: null,
+    options: []
+  }
 };
 
 async function loadJson(url) {
@@ -53,6 +63,14 @@ async function loadText(url) {
     throw new Error(`Failed to load ${url} (${response.status})`);
   }
   return response.text();
+}
+
+function createSvgEl(tag, attrs = {}) {
+  const el = document.createElementNS(SVG_NS, tag);
+  Object.entries(attrs).forEach(([key, value]) => {
+    el.setAttribute(key, value);
+  });
+  return el;
 }
 
 async function injectBoardSvg() {
@@ -87,32 +105,53 @@ function setupFullscreenButton() {
 
 function normalizeSvgNodeAliases(svg, rulesData) {
   const aliases = rulesData.svgNodeIdAliases || {};
-
   Object.entries(aliases).forEach(([fromId, toId]) => {
     const node = svg.querySelector(`#${CSS.escape(fromId)}`);
     if (!node) return;
-
     node.setAttribute("data-original-id", fromId);
     node.setAttribute("id", toId);
   });
 }
 
+function ensureSvgDefs(svg) {
+  let defs = svg.querySelector("defs");
+  if (!defs) {
+    defs = createSvgEl("defs");
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  if (!svg.querySelector("#wild-route-gradient")) {
+    const gradient = createSvgEl("linearGradient", {
+      id: "wild-route-gradient",
+      x1: "0%",
+      y1: "0%",
+      x2: "100%",
+      y2: "0%"
+    });
+
+    [
+      ["0%", "#ff4d4d"],
+      ["18%", "#ff9f1c"],
+      ["36%", "#ffe600"],
+      ["54%", "#2ec27e"],
+      ["72%", "#2f6edb"],
+      ["90%", "#c64f8e"],
+      ["100%", "#ff4d4d"]
+    ].forEach(([offset, color]) => {
+      const stop = createSvgEl("stop", { offset, "stop-color": color });
+      gradient.appendChild(stop);
+    });
+
+    defs.appendChild(gradient);
+  }
+}
+
 function getGroupBBox(group) {
-  if (!group || typeof group.getBBox !== "function") {
-    return null;
-  }
-
+  if (!group || typeof group.getBBox !== "function") return null;
   const bbox = group.getBBox();
-
-  if (
-    !Number.isFinite(bbox.x) ||
-    !Number.isFinite(bbox.y) ||
-    !Number.isFinite(bbox.width) ||
-    !Number.isFinite(bbox.height)
-  ) {
+  if (!Number.isFinite(bbox.x) || !Number.isFinite(bbox.y) || !Number.isFinite(bbox.width) || !Number.isFinite(bbox.height)) {
     return null;
   }
-
   return bbox;
 }
 
@@ -174,21 +213,13 @@ function getSvgAudit(svg, rulesData) {
   const routeIds = routeElements.map(el => el.id).filter(Boolean);
   const nodeIds = nodeElements.map(el => el.id).filter(Boolean);
 
-  const missingRuleRoutes = Object.keys(rulesData.routes || {}).filter(
-    routeId => !routeIds.includes(routeId)
-  );
-
-  const missingRuleNodes = (rulesData.nodes || []).filter(
-    nodeId => !nodeIds.includes(nodeId)
-  );
-
   return {
     routeIds,
     nodeIds,
     routeCount: routeIds.length,
     nodeCount: nodeIds.length,
-    missingRuleRoutes,
-    missingRuleNodes
+    missingRuleRoutes: Object.keys(rulesData.routes || {}).filter(routeId => !routeIds.includes(routeId)),
+    missingRuleNodes: (rulesData.nodes || []).filter(nodeId => !nodeIds.includes(nodeId))
   };
 }
 
@@ -203,9 +234,7 @@ function shuffle(array) {
 
 function parseRouteId(routeId) {
   const parts = routeId.split("_to_");
-  if (parts.length !== 2) {
-    throw new Error(`Could not parse route ID: ${routeId}`);
-  }
+  if (parts.length !== 2) throw new Error(`Could not parse route ID: ${routeId}`);
   return { a: parts[0], b: parts[1] };
 }
 
@@ -221,13 +250,7 @@ function formatRouteName(routeId) {
 function routesShareNode(routeIdA, routeIdB) {
   const a = parseRouteId(routeIdA);
   const b = parseRouteId(routeIdB);
-
-  return (
-    a.a === b.a ||
-    a.a === b.b ||
-    a.b === b.a ||
-    a.b === b.b
-  );
+  return a.a === b.a || a.a === b.b || a.b === b.a || a.b === b.b;
 }
 
 function assignRouteColours(routeIds, palette) {
@@ -266,17 +289,14 @@ function buildDeck(rulesData) {
   const rainbowCount = rulesData.deck?.rainbowCount ?? 4;
 
   const deck = [];
-
   drawColours.forEach(color => {
     for (let i = 0; i < copiesPerColour; i += 1) {
       deck.push(color);
     }
   });
-
   for (let i = 0; i < rainbowCount; i += 1) {
     deck.push("rainbow");
   }
-
   return shuffle(deck);
 }
 
@@ -318,22 +338,14 @@ function createInitialLocalState(rulesData, controlledHero = null) {
     justCompleted: null,
     routes,
     players: {
-      Eric: {
-        ...createPlayerState(rulesData.startNode),
-        destinationQueue: ericQueue
-      },
-      Tango: {
-        ...createPlayerState(rulesData.startNode),
-        destinationQueue: tangoQueue
-      }
+      Eric: { ...createPlayerState(rulesData.startNode), destinationQueue: ericQueue },
+      Tango: { ...createPlayerState(rulesData.startNode), destinationQueue: tangoQueue }
     }
   };
 }
 
 function getCurrentTargetForPlayer(player) {
-  if (player.completedCount < 5) {
-    return player.destinationQueue[player.completedCount] || null;
-  }
+  if (player.completedCount < 5) return player.destinationQueue[player.completedCount] || null;
   return app.rulesData.winCondition?.finalDestinationAfterFive || "Didcot";
 }
 
@@ -343,9 +355,7 @@ function getNodeElement(svg, nodeId) {
 
 function getNodeCenter(svg, nodeId) {
   const el = getNodeElement(svg, nodeId);
-  if (!el) {
-    throw new Error(`Node not found in SVG: ${nodeId}`);
-  }
+  if (!el) throw new Error(`Node not found in SVG: ${nodeId}`);
 
   if (el.tagName.toLowerCase() === "circle") {
     return {
@@ -355,18 +365,13 @@ function getNodeCenter(svg, nodeId) {
   }
 
   const box = el.getBBox();
-  return {
-    x: box.x + box.width / 2,
-    y: box.y + box.height / 2
-  };
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
 function ensureLayer(svg, layerId) {
   let layer = svg.querySelector(`#${CSS.escape(layerId)}`);
   if (layer) return layer;
-
-  layer = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  layer.setAttribute("id", layerId);
+  layer = createSvgEl("g", { id: layerId });
   svg.appendChild(layer);
   return layer;
 }
@@ -374,21 +379,15 @@ function ensureLayer(svg, layerId) {
 function ensureTokenDefs(svg) {
   let defs = svg.querySelector("defs");
   if (!defs) {
-    defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    defs = createSvgEl("defs");
     svg.insertBefore(defs, svg.firstChild);
   }
 
   ["Eric", "Tango"].forEach(playerName => {
     const clipId = `token-clip-${playerName}`;
     if (!svg.querySelector(`#${CSS.escape(clipId)}`)) {
-      const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
-      clipPath.setAttribute("id", clipId);
-
-      const clipCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      clipCircle.setAttribute("cx", "0");
-      clipCircle.setAttribute("cy", "0");
-      clipCircle.setAttribute("r", "20");
-
+      const clipPath = createSvgEl("clipPath", { id: clipId });
+      const clipCircle = createSvgEl("circle", { cx: "0", cy: "0", r: "20" });
       clipPath.appendChild(clipCircle);
       defs.appendChild(clipPath);
     }
@@ -397,33 +396,35 @@ function ensureTokenDefs(svg) {
 
 function ensurePlayerToken(svg, playerName) {
   ensureTokenDefs(svg);
-
   const layer = ensureLayer(svg, "token-layer");
   let group = svg.querySelector(`#token-${CSS.escape(playerName)}`);
   if (group) return group;
 
-  group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  group.setAttribute("id", `token-${playerName}`);
-  group.setAttribute("class", "token-group");
+  group = createSvgEl("g", {
+    id: `token-${playerName}`,
+    class: "token-group"
+  });
 
-  const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  circle.setAttribute("class", "token-circle");
-  circle.setAttribute("r", "24");
-  circle.setAttribute("fill", "#ffffff");
+  const circle = createSvgEl("circle", {
+    class: "token-circle",
+    r: "24",
+    fill: "#ffffff"
+  });
 
-  const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
+  const image = createSvgEl("image", {
+    x: "-20",
+    y: "-20",
+    width: "40",
+    height: "40",
+    preserveAspectRatio: "xMidYMid meet",
+    "clip-path": `url(#token-clip-${playerName})`
+  });
+  image.setAttributeNS(XLINK_NS, "xlink:href", PLAYER_CONFIG[playerName].image);
   image.setAttribute("href", PLAYER_CONFIG[playerName].image);
-  image.setAttribute("x", "-20");
-  image.setAttribute("y", "-20");
-  image.setAttribute("width", "40");
-  image.setAttribute("height", "40");
-  image.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  image.setAttribute("clip-path", `url(#token-clip-${playerName})`);
 
   group.appendChild(circle);
   group.appendChild(image);
   layer.appendChild(group);
-
   return group;
 }
 
@@ -469,51 +470,53 @@ function countCards(hand) {
   }, {});
 }
 
-function getRoutePaymentOptions(routeId, playerName) {
+function getDisplayRouteColor(routeColor) {
+  return routeColor === "grey" ? "wild" : routeColor;
+}
+
+function getPaymentOptionsForColor(routeId, playerName, chosenColor = null) {
   const player = app.state.players[playerName];
   const handCounts = countCards(player.hand);
   const rainbowCount = handCounts.rainbow || 0;
   const routeColour = app.state.routes[routeId].colour;
   const cost = app.rulesData.routes[routeId].length;
-  const drawColours = app.rulesData.drawColours || [];
+
+  const effectiveColor = chosenColor || routeColour;
+  const owned = handCounts[effectiveColor] || 0;
+  const minRainbow = Math.max(0, cost - owned);
+  const maxRainbow = Math.min(rainbowCount, cost);
+
+  const options = [];
+  for (let rainbowUse = minRainbow; rainbowUse <= maxRainbow; rainbowUse += 1) {
+    const useColourCount = cost - rainbowUse;
+    if (useColourCount <= owned) {
+      options.push({
+        colourChoice: effectiveColor,
+        useColourCount,
+        useRainbowCount: rainbowUse
+      });
+    }
+  }
 
   if (routeColour === "grey") {
-    const options = drawColours
-      .map(color => {
-        const owned = handCounts[color] || 0;
-        const total = owned + rainbowCount;
-        return total >= cost
-          ? {
-              colourChoice: color,
-              useColourCount: Math.min(owned, cost),
-              useRainbowCount: Math.max(0, cost - owned)
-            }
-          : null;
-      })
-      .filter(Boolean);
+    const availableColors = (app.rulesData.drawColours || []).filter(color => {
+      const count = handCounts[color] || 0;
+      return count + rainbowCount >= cost;
+    });
 
     return {
-      affordable: options.length > 0,
+      affordable: availableColors.length > 0,
+      isWild: true,
+      availableColors,
       options
     };
   }
 
-  const owned = handCounts[routeColour] || 0;
-  const total = owned + rainbowCount;
-
-  if (total < cost) {
-    return { affordable: false, options: [] };
-  }
-
   return {
-    affordable: true,
-    options: [
-      {
-        colourChoice: routeColour,
-        useColourCount: Math.min(owned, cost),
-        useRainbowCount: Math.max(0, cost - owned)
-      }
-    ]
+    affordable: options.length > 0,
+    isWild: false,
+    availableColors: [routeColour],
+    options
   };
 }
 
@@ -524,27 +527,18 @@ function getRoutePlayability(routeId) {
   const connectedNode = getConnectedNode(routeId, currentPlayer.currentNode);
 
   if (!connectedNode) {
-    return {
-      playable: false,
-      reason: "Route does not connect to current node."
-    };
+    return { playable: false, reason: "Route does not connect to current node." };
   }
 
   if (routeState.claimedBy) {
-    return {
-      playable: false,
-      reason: `Already claimed by ${routeState.claimedBy}.`
-    };
+    return { playable: false, reason: `Already claimed by ${routeState.claimedBy}.` };
   }
 
   if (currentPlayer.previousNode && connectedNode === currentPlayer.previousNode) {
-    return {
-      playable: false,
-      reason: "Cannot move straight back to previous node."
-    };
+    return { playable: false, reason: "Cannot move straight back to previous node." };
   }
 
-  const payment = getRoutePaymentOptions(routeId, currentPlayerName);
+  const payment = getPaymentOptionsForColor(routeId, currentPlayerName);
 
   if (!payment.affordable) {
     return {
@@ -563,13 +557,10 @@ function getRoutePlayability(routeId) {
 
 function drawCard() {
   if (!app.state.drawPile.length) {
-    if (!app.state.discardPile.length) {
-      return null;
-    }
+    if (!app.state.discardPile.length) return null;
     app.state.drawPile = shuffle(app.state.discardPile);
     app.state.discardPile = [];
   }
-
   return app.state.drawPile.pop();
 }
 
@@ -595,22 +586,38 @@ function removeSpecificCardsFromHand(hand, colourChoice, useColourCount, useRain
     }
   }
 
-  return {
-    nextHand,
-    spent
-  };
+  return { nextHand, spent };
 }
 
 function endTurn() {
   app.state.selectedRouteId = null;
+  closeRouteModal();
   app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
   renderAll();
 }
 
 function easeInOutCubic(t) {
-  return t < 0.5
-    ? 4 * t * t * t
-    : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function getRouteTravelDirection(routeEl, fromNode, toNode, routeId) {
+  const total = routeEl.getTotalLength();
+  const startPoint = routeEl.getPointAtLength(0);
+  const endPoint = routeEl.getPointAtLength(total);
+
+  const fromCenter = getNodeCenter(app.svg, fromNode);
+  const toCenter = getNodeCenter(app.svg, toNode);
+
+  const startToFrom = Math.hypot(startPoint.x - fromCenter.x, startPoint.y - fromCenter.y);
+  const endToFrom = Math.hypot(endPoint.x - fromCenter.x, endPoint.y - fromCenter.y);
+  const startToTo = Math.hypot(startPoint.x - toCenter.x, startPoint.y - toCenter.y);
+  const endToTo = Math.hypot(endPoint.x - toCenter.x, endPoint.y - toCenter.y);
+
+  if (startToFrom <= endToFrom && endToTo <= startToTo) return true;
+  if (endToFrom < startToFrom && startToTo < endToTo) return false;
+
+  const parsed = parseRouteId(routeId);
+  return parsed.a === fromNode && parsed.b === toNode;
 }
 
 function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
@@ -625,8 +632,7 @@ function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
     const token = ensurePlayerToken(app.svg, playerName);
     const total = routeEl.getTotalLength();
     const duration = 900;
-    const { a } = parseRouteId(routeId);
-    const forward = fromNode === a && toNode !== a;
+    const forward = getRouteTravelDirection(routeEl, fromNode, toNode, routeId);
     const start = performance.now();
 
     function step(now) {
@@ -636,16 +642,13 @@ function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
       const routeProgress = forward ? eased : 1 - eased;
       const point = routeEl.getPointAtLength(total * routeProgress);
 
-      const ericNode = app.state.players.Eric.currentNode;
-      const tangoNode = app.state.players.Tango.currentNode;
       let x = point.x;
       let y = point.y;
 
-      if (ericNode === tangoNode && playerName === "Eric") {
-        x -= 18;
-      }
-      if (ericNode === tangoNode && playerName === "Tango") {
-        x += 18;
+      const otherPlayer = playerName === "Eric" ? "Tango" : "Eric";
+      if (app.state.players[otherPlayer].currentNode === toNode) {
+        if (playerName === "Eric") x -= 18;
+        if (playerName === "Tango") x += 18;
       }
 
       token.setAttribute("transform", `translate(${x}, ${y})`);
@@ -669,6 +672,13 @@ function ensureRouteCostLayer() {
   return ensureLayer(app.svg, "route-cost-layer");
 }
 
+function handleRouteSelection(routeId) {
+  app.state.selectedRouteId = routeId;
+  renderAll();
+  handleRouteHover(routeId);
+  openRouteModal(routeId);
+}
+
 function renderRouteCostBadges() {
   const layer = ensureRouteCostLayer();
   layer.innerHTML = "";
@@ -681,27 +691,38 @@ function renderRouteCostBadges() {
     const len = routeEl.getTotalLength();
     const mid = routeEl.getPointAtLength(len / 2);
     const routeColour = app.state.routes[routeId].colour;
+    const isWild = routeColour === "grey";
     const hex = ROUTE_COLOUR_HEX[routeColour] || "#7a7a7a";
     const cost = app.rulesData.routes[routeId].length;
 
-    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    group.setAttribute("class", "route-cost-badge");
-    group.setAttribute("transform", `translate(${mid.x}, ${mid.y})`);
+    const group = createSvgEl("g", {
+      class: "route-cost-badge",
+      transform: `translate(${mid.x}, ${mid.y})`,
+      "data-route-id": routeId
+    });
+    group.style.cursor = "pointer";
 
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("r", "12");
-    circle.setAttribute("fill", "#ffffff");
-    circle.setAttribute("stroke", hex);
+    const circle = createSvgEl("circle", {
+      r: "12",
+      fill: "#ffffff",
+      stroke: isWild ? "#c64f8e" : hex
+    });
 
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", "0");
-    text.setAttribute("y", "0");
-    text.setAttribute("fill", hex);
-    text.setAttribute("dy", "0.35em");
+    const text = createSvgEl("text", {
+      x: "0",
+      y: "0",
+      dy: "0.35em",
+      fill: isWild ? "#c64f8e" : hex
+    });
     text.textContent = String(cost);
 
     group.appendChild(circle);
     group.appendChild(text);
+    group.addEventListener("click", evt => {
+      evt.stopPropagation();
+      handleRouteSelection(routeId);
+    });
+
     layer.appendChild(group);
   });
 }
@@ -717,10 +738,12 @@ function renderRoutes() {
     routeEl.classList.remove("route-claimed-eric", "route-claimed-tango", "route-eligible", "route-selected", "route-blocked");
 
     const routeState = app.state.routes[routeId];
-    const baseColour = ROUTE_COLOUR_HEX[routeState.colour] || "#7a7a7a";
-    routeEl.style.stroke = baseColour;
+    const routeColor = routeState.colour;
+    const baseColour = ROUTE_COLOUR_HEX[routeColor] || "#7a7a7a";
+
     routeEl.style.strokeWidth = "8";
     routeEl.style.cursor = "pointer";
+    routeEl.style.stroke = routeColor === "grey" ? "url(#wild-route-gradient)" : baseColour;
 
     if (routeState.claimedBy) {
       routeEl.classList.add(PLAYER_CONFIG[routeState.claimedBy].routeClass);
@@ -765,7 +788,7 @@ function renderSelectedRouteCard() {
     return;
   }
 
-  const routeColour = app.state.routes[routeId].colour;
+  const routeColour = getDisplayRouteColor(app.state.routes[routeId].colour);
   const cost = app.rulesData.routes[routeId].length;
   const playability = getRoutePlayability(routeId);
 
@@ -814,11 +837,7 @@ function renderActiveHand() {
   stacks.forEach(stack => {
     const el = document.createElement("div");
     el.className = `hand-card ${stack.color}`;
-
-    if (player.lastDrawColor === stack.color) {
-      el.classList.add("draw-in");
-    }
-
+    if (player.lastDrawColor === stack.color) el.classList.add("draw-in");
     el.innerHTML = `
       <div class="card-name">${stack.color}</div>
       <div class="card-count">${stack.count}</div>
@@ -836,10 +855,8 @@ function renderPlayerSummary() {
   ["Eric", "Tango"].forEach(playerName => {
     const player = app.state.players[playerName];
     const target = getCurrentTargetForPlayer(player);
-
     const card = document.createElement("div");
     card.className = `player-summary-card${app.state.currentPlayer === playerName ? " active" : ""}`;
-
     card.innerHTML = `
       <div class="player-summary-name">${playerName}</div>
       <div class="player-summary-meta">
@@ -850,7 +867,6 @@ function renderPlayerSummary() {
         Active target: ${target ? formatNodeName(target) : "—"}
       </div>
     `;
-
     wrap.appendChild(card);
   });
 }
@@ -858,9 +874,7 @@ function renderPlayerSummary() {
 function createDestinationActiveCard(title, body, flip = false) {
   const el = document.createElement("div");
   el.className = "destination-card active-card";
-  if (flip) {
-    el.classList.add("flip-in");
-  }
+  if (flip) el.classList.add("flip-in");
   el.innerHTML = `
     <div class="destination-title">${title}</div>
     <div class="destination-body">${body}</div>
@@ -878,9 +892,7 @@ function createDestinationQuestionCard() {
 function createDestinationCompletedCard(title) {
   const el = document.createElement("div");
   el.className = "destination-card completed-card";
-  el.innerHTML = `
-    <div class="destination-title">✓ ${title}</div>
-  `;
+  el.innerHTML = `<div class="destination-title">✓ ${title}</div>`;
   return el;
 }
 
@@ -922,6 +934,18 @@ function renderDestinationSequences() {
   wrap.appendChild(sequence);
 }
 
+function renderTargetPulse() {
+  app.svg.querySelectorAll(".target-node-pulse").forEach(el => {
+    el.classList.remove("target-node-pulse");
+  });
+
+  const targetNodeId = getCurrentTargetForPlayer(app.state.players[app.state.currentPlayer]);
+  if (!targetNodeId) return;
+
+  const targetEl = getNodeElement(app.svg, targetNodeId);
+  if (targetEl) targetEl.classList.add("target-node-pulse");
+}
+
 function renderDebug(audit) {
   const leftDebug = document.getElementById("left-debug");
   leftDebug.innerHTML = `
@@ -952,28 +976,170 @@ function renderAll() {
   renderDestinationSequences();
   renderRoutes();
   renderTokens();
+  renderTargetPulse();
   renderDebug(app.audit);
   renderButtons();
 }
 
-function chooseGreyRoutePayment(optionSet) {
-  if (optionSet.options.length === 1) {
-    return optionSet.options[0];
+function buildSpendPreviewCards(option) {
+  const items = [];
+  for (let i = 0; i < option.useColourCount; i += 1) items.push(option.colourChoice);
+  for (let i = 0; i < option.useRainbowCount; i += 1) items.push("rainbow");
+  return items;
+}
+
+function openRouteModal(routeId) {
+  const playability = getRoutePlayability(routeId);
+  if (!playability.playable) {
+    updateStatus(playability.reason);
+    return;
   }
 
-  const choices = optionSet.options.map(opt => opt.colourChoice);
-  const answer = window.prompt(
-    `Grey route. Choose a colour: ${choices.join(", ")}`,
-    choices[0]
+  app.modal.routeId = routeId;
+  app.modal.selectedOptionIndex = null;
+  app.modal.chosenColor = null;
+
+  const overlay = document.getElementById("route-modal-overlay");
+  const title = document.getElementById("route-modal-title");
+  const subtitle = document.getElementById("route-modal-subtitle");
+  const body = document.getElementById("route-modal-body");
+  const confirmBtn = document.getElementById("route-modal-confirm");
+
+  title.textContent = formatRouteName(routeId);
+  body.innerHTML = "";
+  confirmBtn.disabled = true;
+
+  const routeColor = app.state.routes[routeId].colour;
+  if (routeColor === "grey") {
+    const payment = getPaymentOptionsForColor(routeId, app.state.currentPlayer);
+    const chips = document.createElement("div");
+    chips.className = "route-option-grid";
+
+    subtitle.textContent = "Wild route. Choose a colour you want to play with.";
+
+    payment.availableColors.forEach(color => {
+      const btn = document.createElement("button");
+      btn.className = "route-option-chip";
+      btn.type = "button";
+      btn.textContent = color;
+      btn.addEventListener("click", () => {
+        app.modal.chosenColor = color;
+        app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, color).options;
+        app.modal.selectedOptionIndex = null;
+        renderRouteModalOptionStage();
+      });
+      chips.appendChild(btn);
+    });
+
+    body.appendChild(chips);
+    app.modal.stage = "wild-color";
+  } else {
+    app.modal.chosenColor = routeColor;
+    app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, routeColor).options;
+    app.modal.stage = "option-select";
+    renderRouteModalOptionStage();
+  }
+
+  overlay.classList.add("open");
+}
+
+function renderRouteModalOptionStage() {
+  const routeId = app.modal.routeId;
+  const body = document.getElementById("route-modal-body");
+  const subtitle = document.getElementById("route-modal-subtitle");
+  const confirmBtn = document.getElementById("route-modal-confirm");
+
+  body.innerHTML = "";
+  confirmBtn.disabled = app.modal.selectedOptionIndex === null;
+
+  subtitle.textContent = `Choose how to pay for ${formatRouteName(routeId)}.`;
+
+  const optionGrid = document.createElement("div");
+  optionGrid.className = "route-option-grid";
+
+  app.modal.options.forEach((option, index) => {
+    const chip = document.createElement("button");
+    chip.className = `route-option-chip${app.modal.selectedOptionIndex === index ? " active" : ""}`;
+    chip.type = "button";
+    chip.textContent = `${option.useColourCount} ${option.colourChoice}${option.useColourCount !== 1 ? "s" : ""}${option.useRainbowCount ? ` + ${option.useRainbowCount} rainbow` : ""}`;
+    chip.addEventListener("click", () => {
+      app.modal.selectedOptionIndex = index;
+      renderRouteModalOptionStage();
+    });
+    optionGrid.appendChild(chip);
+  });
+
+  body.appendChild(optionGrid);
+
+  const previewRow = document.createElement("div");
+  previewRow.className = "route-preview-row";
+
+  if (app.modal.selectedOptionIndex !== null) {
+    const selectedOption = app.modal.options[app.modal.selectedOptionIndex];
+    buildSpendPreviewCards(selectedOption).forEach(cardColor => {
+      const card = document.createElement("div");
+      card.className = `route-spend-card ${cardColor}`;
+      card.textContent = cardColor;
+      previewRow.appendChild(card);
+    });
+  }
+
+  body.appendChild(previewRow);
+  confirmBtn.disabled = app.modal.selectedOptionIndex === null;
+}
+
+function closeRouteModal() {
+  document.getElementById("route-modal-overlay").classList.remove("open");
+  app.modal.routeId = null;
+  app.modal.stage = null;
+  app.modal.chosenColor = null;
+  app.modal.selectedOptionIndex = null;
+  app.modal.options = [];
+}
+
+async function confirmRouteModalPlay() {
+  if (!app.modal.routeId || app.modal.selectedOptionIndex === null) return;
+
+  const routeId = app.modal.routeId;
+  const chosenPayment = app.modal.options[app.modal.selectedOptionIndex];
+  const currentPlayerName = app.state.currentPlayer;
+  const currentPlayer = app.state.players[currentPlayerName];
+  const playability = getRoutePlayability(routeId);
+
+  if (!playability.playable) {
+    closeRouteModal();
+    renderAll();
+    updateStatus(playability.reason);
+    return;
+  }
+
+  const handResult = removeSpecificCardsFromHand(
+    currentPlayer.hand,
+    chosenPayment.colourChoice,
+    chosenPayment.useColourCount,
+    chosenPayment.useRainbowCount
   );
 
-  if (!answer) return null;
+  currentPlayer.hand = handResult.nextHand;
+  app.state.discardPile.push(...handResult.spent);
 
-  const chosen = optionSet.options.find(
-    opt => opt.colourChoice.toLowerCase() === answer.trim().toLowerCase()
-  );
+  const fromNode = currentPlayer.currentNode;
+  const toNode = getConnectedNode(routeId, fromNode);
 
-  return chosen || null;
+  app.state.routes[routeId].claimedBy = currentPlayerName;
+  currentPlayer.previousNode = fromNode;
+  currentPlayer.currentNode = toNode;
+  currentPlayer.journeyRouteIds.push(routeId);
+
+  app.state.selectedRouteId = null;
+  closeRouteModal();
+  renderAll();
+  updateStatus(`${currentPlayerName} claimed ${formatRouteName(routeId)} and moved to ${formatNodeName(toNode)}.`);
+
+  await animateTokenAlongRoute(currentPlayerName, routeId, fromNode, toNode);
+  completeDestinationIfNeeded(currentPlayerName);
+  renderAll();
+  endTurn();
 }
 
 function showStartToast(playerName) {
@@ -990,7 +1156,7 @@ function startGameAs(playerName) {
   document.getElementById("hero-overlay").classList.remove("active");
   showStartToast(playerName);
   renderAll();
-  updateStatus(`${playerName} begins. Choose one action: draw a card or play a selected eligible route.`);
+  updateStatus(`${playerName} begins. Choose one action: draw a card or click a route to play it.`);
 }
 
 function completeDestinationIfNeeded(playerName) {
@@ -1034,67 +1200,6 @@ function completeDestinationIfNeeded(playerName) {
   return true;
 }
 
-async function playSelectedRoute() {
-  const routeId = app.state.selectedRouteId;
-  if (!routeId) {
-    updateStatus("Select a route first.");
-    return;
-  }
-
-  const playability = getRoutePlayability(routeId);
-  if (!playability.playable) {
-    updateStatus(playability.reason);
-    renderAll();
-    return;
-  }
-
-  const currentPlayerName = app.state.currentPlayer;
-  const currentPlayer = app.state.players[currentPlayerName];
-  const routeColour = app.state.routes[routeId].colour;
-  let chosenPayment = playability.payment.options[0];
-
-  if (routeColour === "grey" && playability.payment.options.length > 1) {
-    chosenPayment = chooseGreyRoutePayment(playability.payment);
-    if (!chosenPayment) {
-      updateStatus("Grey route payment cancelled.");
-      return;
-    }
-  }
-
-  const confirmed = window.confirm(`Confirm playing ${formatRouteName(routeId)}?`);
-  if (!confirmed) {
-    updateStatus("Route play cancelled.");
-    return;
-  }
-
-  const handResult = removeSpecificCardsFromHand(
-    currentPlayer.hand,
-    chosenPayment.colourChoice,
-    chosenPayment.useColourCount,
-    chosenPayment.useRainbowCount
-  );
-
-  currentPlayer.hand = handResult.nextHand;
-  app.state.discardPile.push(...handResult.spent);
-
-  const fromNode = currentPlayer.currentNode;
-  const toNode = playability.targetNode;
-
-  app.state.routes[routeId].claimedBy = currentPlayerName;
-  currentPlayer.previousNode = fromNode;
-  currentPlayer.currentNode = toNode;
-  currentPlayer.journeyRouteIds.push(routeId);
-
-  app.state.selectedRouteId = null;
-  renderAll();
-  updateStatus(`${currentPlayerName} claimed ${formatRouteName(routeId)} and moved to ${formatNodeName(toNode)}.`);
-
-  await animateTokenAlongRoute(currentPlayerName, routeId, fromNode, toNode);
-  completeDestinationIfNeeded(currentPlayerName);
-  renderAll();
-  endTurn();
-}
-
 function drawCardForCurrentPlayer() {
   const currentPlayerName = app.state.currentPlayer;
   const card = drawCard();
@@ -1114,7 +1219,7 @@ function drawCardForCurrentPlayer() {
 
 function handleRouteHover(routeId) {
   const playability = getRoutePlayability(routeId);
-  const routeColour = app.state.routes[routeId].colour;
+  const routeColour = getDisplayRouteColor(app.state.routes[routeId].colour);
   const cost = app.rulesData.routes[routeId].length;
 
   if (playability.playable) {
@@ -1134,13 +1239,11 @@ function wireRouteInteractions() {
     });
 
     routeEl.addEventListener("mouseleave", () => {
-      updateStatus("Choose one action: draw a card or play a selected eligible route.");
+      updateStatus("Choose one action: draw a card or click a route to play it.");
     });
 
     routeEl.addEventListener("click", () => {
-      app.state.selectedRouteId = routeId;
-      renderAll();
-      handleRouteHover(routeId);
+      handleRouteSelection(routeId);
     });
   });
 }
@@ -1150,12 +1253,15 @@ function wireControlButtons() {
     drawCardForCurrentPlayer();
   });
 
-  document.getElementById("play-route-btn").addEventListener("click", async () => {
-    await playSelectedRoute();
+  document.getElementById("play-route-btn").addEventListener("click", () => {
+    if (app.state.selectedRouteId) {
+      openRouteModal(app.state.selectedRouteId);
+    }
   });
 
   document.getElementById("reset-local-btn").addEventListener("click", () => {
     app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
+    closeRouteModal();
     renderAll();
     updateStatus("Local game reset.");
   });
@@ -1167,6 +1273,18 @@ function wireControlButtons() {
   document.getElementById("pick-tango-btn").addEventListener("click", () => {
     startGameAs("Tango");
   });
+
+  document.getElementById("route-modal-close").addEventListener("click", closeRouteModal);
+  document.getElementById("route-modal-cancel").addEventListener("click", closeRouteModal);
+  document.getElementById("route-modal-confirm").addEventListener("click", async () => {
+    await confirmRouteModalPlay();
+  });
+
+  document.getElementById("route-modal-overlay").addEventListener("click", evt => {
+    if (evt.target.id === "route-modal-overlay") {
+      closeRouteModal();
+    }
+  });
 }
 
 async function init() {
@@ -1177,6 +1295,7 @@ async function init() {
     ]);
 
     const svg = await injectBoardSvg();
+    ensureSvgDefs(svg);
     normalizeSvgNodeAliases(svg, rulesData);
     tightenSvgViewBox(svg);
 
@@ -1188,7 +1307,14 @@ async function init() {
       destinationData,
       svg,
       audit,
-      state
+      state,
+      modal: {
+        routeId: null,
+        stage: null,
+        chosenColor: null,
+        selectedOptionIndex: null,
+        options: []
+      }
     };
 
     wireRouteInteractions();
@@ -1197,8 +1323,7 @@ async function init() {
     updateStatus("Pick your hero to begin.");
   } catch (error) {
     console.error(error);
-    document.getElementById("status-chip").textContent =
-      `Error loading board: ${error.message}`;
+    document.getElementById("status-chip").textContent = `Error loading board: ${error.message}`;
   }
 }
 
