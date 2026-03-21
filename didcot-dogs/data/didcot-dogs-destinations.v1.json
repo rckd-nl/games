@@ -1,43 +1,43 @@
 {
-  "version": "v1.0",
+  "version": "v1.1",
   "destinations": {
-    "chilton": {
+    "Chilton": {
       "title": "Chilton",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
     },
-    "abingdon": {
+    "Abingdon": {
       "title": "Abingdon",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris."
     },
-    "clifton_hampden": {
+    "Clifton_Hampden": {
       "title": "Clifton Hampden",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure dolor in reprehenderit in voluptate velit esse."
     },
-    "dorchester": {
+    "Dorchester": {
       "title": "Dorchester",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Excepteur sint occaecat cupidatat non proident, sunt in culpa."
     },
-    "blewbury": {
+    "Blewbury": {
       "title": "Blewbury",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed ut perspiciatis unde omnis iste natus error sit voluptatem."
     },
-    "wittenham_clumps": {
+    "Wittenham_Clumps": {
       "title": "Wittenham Clumps",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nemo enim ipsam voluptatem quia voluptas sit aspernatur."
     },
-    "wallingford": {
+    "Wallingford": {
       "title": "Wallingford",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Neque porro quisquam est, qui dolorem ipsum quia dolor."
     },
-    "east_hagbourne": {
+    "East_Hagbourne": {
       "title": "East Hagbourne",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Quis autem vel eum iure reprehenderit qui in ea voluptate."
     },
-    "brightwell_cum_sotwell": {
+    "Brightwell-cum-Sotwell": {
       "title": "Brightwell-cum-Sotwell",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. At vero eos et accusamus et iusto odio dignissimos."
     },
-    "milton_interchange": {
+    "Milton_Interchange": {
       "title": "Milton Interchange",
       "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Et harum quidem rerum facilis est et expedita distinctio."
     }
