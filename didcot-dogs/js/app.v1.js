@@ -745,4 +745,502 @@ function renderRouteBadges() {
     const cost = app.rulesData.routes[routeId].length;
 
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    group.setAttribute
+    group.setAttribute("id", `badge-${routeId}`);
+
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("class", "route-cost-badge-circle");
+    circle.setAttribute("cx", point.x);
+    circle.setAttribute("cy", point.y);
+    circle.setAttribute("r", "14");
+    circle.setAttribute("stroke", colourHex);
+
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("class", "route-cost-badge-text");
+    text.setAttribute("x", point.x);
+    text.setAttribute("y", point.y + 1);
+    text.setAttribute("fill", colourHex);
+    text.textContent = String(cost);
+
+    group.appendChild(circle);
+    group.appendChild(text);
+    layer.appendChild(group);
+  });
+}
+
+function renderRoutes() {
+  const routeIds = Object.keys(app.rulesData.routes || {});
+  const selectedRouteId = app.state.selectedRouteId;
+
+  routeIds.forEach(routeId => {
+    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if (!routeEl) return;
+
+    routeEl.classList.remove("route-claimed-eric", "route-claimed-tango", "route-eligible", "route-selected", "route-blocked");
+
+    const routeState = app.state.routes[routeId];
+    const baseColour = ROUTE_COLOUR_HEX[routeState.colour] || "#8f8f8f";
+    const baseStroke = parseFloat(routeEl.dataset.baseStrokeWidth || "4");
+
+    routeEl.style.stroke = baseColour;
+    routeEl.style.cursor = "pointer";
+    routeEl.style.strokeWidth = String(baseStroke);
+
+    if (routeState.colour === "white") {
+      routeEl.style.filter = "drop-shadow(0 0 1px rgba(0,0,0,0.35))";
+    } else {
+      routeEl.style.filter = "";
+    }
+
+    if (routeState.claimedBy) {
+      routeEl.classList.add(PLAYER_CONFIG[routeState.claimedBy].routeClass);
+      routeEl.style.strokeWidth = String(baseStroke * 1.9);
+      return;
+    }
+
+    const playability = getRoutePlayability(routeId);
+
+    if (playability.playable) {
+      routeEl.classList.add("route-eligible");
+    } else if (playability.reason !== "Route does not connect to current node.") {
+      routeEl.classList.add("route-blocked");
+    }
+
+    if (selectedRouteId === routeId) {
+      routeEl.classList.add("route-selected");
+      routeEl.style.strokeWidth = String(baseStroke * 1.15);
+    }
+  });
+
+  renderRouteBadges();
+}
+
+function renderTurnBadge() {
+  const badge = document.getElementById("turn-player-badge");
+  badge.className = `player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
+  badge.textContent = `${app.state.currentPlayer} to play`;
+
+  const instruction = document.getElementById("turn-instruction");
+  if (app.state.winner) {
+    instruction.textContent = `${app.state.winner} has won the local prototype.`;
+  } else if (!app.state.localHero) {
+    instruction.textContent = "Pick your hero to begin.";
+  } else {
+    instruction.textContent = "Choose one action: draw a card or play a selected eligible route.";
+  }
+}
+
+function renderCounts() {
+  document.getElementById("draw-pile-count").textContent = app.state.drawPile.length;
+  document.getElementById("discard-pile-count").textContent = app.state.discardPile.length;
+}
+
+function renderSelectedRouteCard() {
+  const card = document.getElementById("selected-route-card");
+  const routeId = app.state.selectedRouteId;
+
+  card.className = "selected-route-card";
+
+  if (!routeId) {
+    card.textContent = "No route selected.";
+    return;
+  }
+
+  const routeColour = app.state.routes[routeId].colour;
+  const cost = app.rulesData.routes[routeId].length;
+  const playability = getRoutePlayability(routeId);
+
+  if (playability.playable) {
+    card.classList.add("valid");
+    card.innerHTML = `
+      <strong>${formatRouteName(routeId)}</strong><br>
+      Colour: ${routeColour}<br>
+      Cost: ${cost}<br>
+      Destination node if played: ${formatNodeName(playability.targetNode)}
+    `;
+  } else {
+    card.classList.add("invalid");
+    card.innerHTML = `
+      <strong>${formatRouteName(routeId)}</strong><br>
+      Colour: ${routeColour}<br>
+      Cost: ${cost}<br>
+      ${playability.reason}
+    `;
+  }
+}
+
+function renderActiveHand() {
+  const wrap = document.getElementById("active-hand");
+  const hand = app.state.players[app.state.currentPlayer].hand;
+  const counts = countCards(hand);
+  const order = ["red", "orange", "blue", "green", "white", "black", "pink", "yellow", "rainbow"];
+
+  wrap.innerHTML = "";
+
+  const presentColours = order.filter(color => (counts[color] || 0) > 0);
+
+  if (!presentColours.length) {
+    const empty = document.createElement("div");
+    empty.className = "hand-empty";
+    empty.textContent = "No cards yet.";
+    wrap.appendChild(empty);
+    return;
+  }
+
+  presentColours.forEach(color => {
+    const card = document.createElement("div");
+    const animateClass = app.state.lastDrawCard === color ? " animate-dealt" : "";
+    card.className = `hand-card-physical ${color}${animateClass}`;
+
+    card.innerHTML = `
+      <div class="hand-card-top">
+        <div class="hand-card-name">${color}</div>
+        <div class="hand-card-count">${counts[color]}</div>
+      </div>
+      <div class="hand-card-footer">Travel card</div>
+    `;
+
+    wrap.appendChild(card);
+  });
+}
+
+function renderDestinations() {
+  const wrap = document.getElementById("destination-columns");
+  wrap.innerHTML = "";
+
+  ["Eric", "Tango"].forEach(playerName => {
+    const player = app.state.players[playerName];
+    const block = document.createElement("div");
+    block.className = "destination-player-block";
+
+    const title = document.createElement("div");
+    title.className = "destination-player-title";
+    title.textContent = `${playerName}`;
+    block.appendChild(title);
+
+    const meta = document.createElement("div");
+    meta.className = "player-summary-meta";
+    meta.innerHTML = `
+      Current node: ${formatNodeName(player.currentNode)}<br>
+      Completed journeys: ${player.completedJourneys}<br>
+      Current target: ${formatNodeName(getCurrentTargetDestination(playerName) || "—")}
+    `;
+    block.appendChild(meta);
+
+    const stack = document.createElement("div");
+    stack.className = "destination-stack";
+
+    player.destinationSequence.forEach((destId, index) => {
+      const isComplete = index < player.currentDestinationIndex;
+      const isCurrent = !player.returnToDidcot && index === player.currentDestinationIndex;
+      const dest = app.destinationData.destinations[destId];
+
+      const card = document.createElement("div");
+      card.className = "destination-card";
+      if (isComplete) card.classList.add("complete", "revealed");
+      if (isCurrent) card.classList.add("active", "revealed");
+
+      if (isComplete || isCurrent) {
+        card.innerHTML = `
+          <div class="destination-title">${dest ? dest.title : formatNodeName(destId)}</div>
+          <div class="destination-copy">${dest ? dest.description : ""}</div>
+        `;
+      } else {
+        card.innerHTML = `<div class="destination-mystery">?</div>`;
+      }
+
+      stack.appendChild(card);
+    });
+
+    const finalCard = document.createElement("div");
+    finalCard.className = "destination-card destination-final";
+    if (player.returnToDidcot) {
+      finalCard.classList.add("active", "revealed");
+      finalCard.innerHTML = `
+        <div class="destination-title">Didcot</div>
+        <div class="destination-copy">Return to Didcot to win.</div>
+      `;
+    } else if (player.completedJourneys >= 5) {
+      finalCard.classList.add("revealed");
+      finalCard.innerHTML = `
+        <div class="destination-title">Didcot</div>
+        <div class="destination-copy">Final run unlocked.</div>
+      `;
+    } else {
+      finalCard.innerHTML = `<div class="destination-mystery">?</div>`;
+    }
+
+    stack.appendChild(finalCard);
+    block.appendChild(stack);
+    wrap.appendChild(block);
+  });
+}
+
+function renderDebug(audit) {
+  const leftDebug = document.getElementById("left-debug");
+  leftDebug.innerHTML = `
+    <div class="debug-list">
+      <div><strong>Version:</strong> ${APP_VERSION}</div>
+      <div><strong>Local hero:</strong> ${app.state.localHero || "—"}</div>
+      <div><strong>Current player:</strong> ${app.state.currentPlayer}</div>
+      <div><strong>Total SVG nodes:</strong> ${audit.nodeCount}</div>
+      <div><strong>Total SVG routes:</strong> ${audit.routeCount}</div>
+      <div><strong>Missing rule nodes:</strong> ${audit.missingRuleNodes.length}</div>
+      <div><strong>Missing rule routes:</strong> ${audit.missingRuleRoutes.length}</div>
+    </div>
+  `;
+}
+
+function renderButtons() {
+  const playBtn = document.getElementById("play-route-btn");
+  const drawBtn = document.getElementById("draw-card-btn");
+  const resetBtn = document.getElementById("reset-local-btn");
+  const heroChosen = Boolean(app.state.localHero);
+  const winnerExists = Boolean(app.state.winner);
+  const selected = app.state.selectedRouteId;
+
+  playBtn.disabled = !heroChosen || winnerExists || !selected || !getRoutePlayability(selected).playable;
+  drawBtn.disabled = !heroChosen || winnerExists;
+  resetBtn.disabled = false;
+}
+
+function renderAll() {
+  renderTurnBadge();
+  renderCounts();
+  renderSelectedRouteCard();
+  renderActiveHand();
+  renderDestinations();
+  renderRoutes();
+  renderTokens();
+  renderDebug(app.audit);
+  renderButtons();
+}
+
+function chooseGreyRoutePayment(optionSet) {
+  if (optionSet.options.length === 1) {
+    return optionSet.options[0];
+  }
+
+  const choices = optionSet.options.map(opt => opt.colourChoice);
+  const answer = window.prompt(
+    `Grey route. Choose a colour: ${choices.join(", ")}`,
+    choices[0]
+  );
+
+  if (!answer) return null;
+
+  const chosen = optionSet.options.find(
+    opt => opt.colourChoice.toLowerCase() === answer.trim().toLowerCase()
+  );
+
+  return chosen || null;
+}
+
+async function playSelectedRoute() {
+  if (!app.state.localHero) {
+    updateStatus("Pick your hero first.");
+    return;
+  }
+
+  if (app.state.winner) {
+    updateStatus(`${app.state.winner} has already won.`);
+    return;
+  }
+
+  const routeId = app.state.selectedRouteId;
+  if (!routeId) {
+    updateStatus("Select a route first.");
+    return;
+  }
+
+  const playability = getRoutePlayability(routeId);
+  if (!playability.playable) {
+    updateStatus(playability.reason);
+    renderAll();
+    return;
+  }
+
+  const currentPlayerName = app.state.currentPlayer;
+  const currentPlayer = app.state.players[currentPlayerName];
+  const routeColour = app.state.routes[routeId].colour;
+  let chosenPayment = playability.payment.options[0];
+
+  if (routeColour === "grey" && playability.payment.options.length > 1) {
+    chosenPayment = chooseGreyRoutePayment(playability.payment);
+    if (!chosenPayment) {
+      updateStatus("Grey route payment cancelled.");
+      return;
+    }
+  }
+
+  const confirmed = window.confirm(`Confirm playing ${formatRouteName(routeId)}?`);
+  if (!confirmed) {
+    updateStatus("Route play cancelled.");
+    return;
+  }
+
+  const handResult = removeSpecificCardsFromHand(
+    currentPlayer.hand,
+    chosenPayment.colourChoice,
+    chosenPayment.useColourCount,
+    chosenPayment.useRainbowCount
+  );
+
+  currentPlayer.hand = handResult.nextHand;
+  app.state.discardPile.push(...handResult.spent);
+
+  const fromNode = currentPlayer.currentNode;
+  const toNode = playability.targetNode;
+
+  app.state.routes[routeId].claimedBy = currentPlayerName;
+  currentPlayer.previousNode = fromNode;
+  currentPlayer.currentNode = toNode;
+  currentPlayer.journeyRouteIds.push(routeId);
+
+  app.state.selectedRouteId = null;
+  renderAll();
+  updateStatus(`${currentPlayerName} claimed ${formatRouteName(routeId)} and moved to ${formatNodeName(toNode)}.`);
+
+  await animateTokenAlongRoute(currentPlayerName, routeId, fromNode);
+
+  const completion = completeDestinationIfNeeded(currentPlayerName);
+  if (completion?.type === "destination-complete") {
+    const nextTarget = getCurrentTargetDestination(currentPlayerName);
+    renderAll();
+    updateStatus(
+      `${currentPlayerName} reached ${formatNodeName(completion.target)}. Routes released. Next target: ${formatNodeName(nextTarget || "Didcot")}.`
+    );
+  } else if (completion?.type === "win") {
+    renderAll();
+    updateStatus(`${currentPlayerName} returned to Didcot and wins!`);
+    return;
+  }
+
+  endTurn();
+}
+
+function drawCardForCurrentPlayer() {
+  if (!app.state.localHero) {
+    updateStatus("Pick your hero first.");
+    return;
+  }
+
+  if (app.state.winner) {
+    updateStatus(`${app.state.winner} has already won.`);
+    return;
+  }
+
+  const card = drawCard();
+
+  if (!card) {
+    updateStatus("No cards available to draw.");
+    renderAll();
+    return;
+  }
+
+  app.state.players[app.state.currentPlayer].hand.push(card);
+  app.state.lastDrawCard = card;
+  renderAll();
+  updateStatus(`${app.state.currentPlayer} drew ${card}.`);
+  setTimeout(() => {
+    app.state.lastDrawCard = null;
+    renderAll();
+  }, 650);
+
+  endTurn();
+}
+
+function handleRouteHover(routeId) {
+  const playability = getRoutePlayability(routeId);
+  const routeColour = app.state.routes[routeId].colour;
+  const cost = app.rulesData.routes[routeId].length;
+
+  if (playability.playable) {
+    updateStatus(`${formatRouteName(routeId)} · ${routeColour} · cost ${cost} · eligible`);
+  } else {
+    updateStatus(`${formatRouteName(routeId)} · ${routeColour} · cost ${cost} · ${playability.reason}`);
+  }
+}
+
+function wireRouteInteractions() {
+  Object.keys(app.rulesData.routes || {}).forEach(routeId => {
+    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if (!routeEl) return;
+
+    routeEl.addEventListener("mouseenter", () => {
+      handleRouteHover(routeId);
+    });
+
+    routeEl.addEventListener("mouseleave", () => {
+      if (app.state.winner) {
+        updateStatus(`${app.state.winner} has won the local prototype.`);
+      } else {
+        updateStatus("Choose one action: draw a card or play a selected eligible route.");
+      }
+    });
+
+    routeEl.addEventListener("click", () => {
+      app.state.selectedRouteId = routeId;
+      renderAll();
+      handleRouteHover(routeId);
+    });
+  });
+}
+
+function wireControlButtons() {
+  document.getElementById("draw-card-btn").addEventListener("click", () => {
+    drawCardForCurrentPlayer();
+  });
+
+  document.getElementById("play-route-btn").addEventListener("click", async () => {
+    await playSelectedRoute();
+  });
+
+  document.getElementById("reset-local-btn").addEventListener("click", () => {
+    app.state = createInitialLocalState(app.rulesData);
+    document.getElementById("hero-overlay").classList.add("is-visible");
+    document.getElementById("hero-confirmation").textContent = "";
+    renderAll();
+    updateStatus("Local game reset.");
+  });
+}
+
+async function init() {
+  try {
+    const [rulesData, destinationData] = await Promise.all([
+      loadJson("./data/didcot-dogs-rules.v1.json"),
+      loadJson("./data/didcot-dogs-destinations.v1.json")
+    ]);
+
+    const svg = await injectBoardSvg();
+    normalizeSvgNodeAliases(svg, rulesData);
+    tightenSvgViewBox(svg);
+
+    const audit = getSvgAudit(svg, rulesData);
+    const state = createInitialLocalState(rulesData);
+
+    app = {
+      rulesData,
+      destinationData,
+      svg,
+      audit,
+      state
+    };
+
+    ensureRouteBaseStrokes();
+    renderAll();
+    wireRouteInteractions();
+    wireControlButtons();
+    setupHeroButtons();
+
+    updateStatus("Pick your hero to begin.");
+  } catch (error) {
+    console.error(error);
+    document.getElementById("status-chip").textContent =
+      `Error loading board: ${error.message}`;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  setupFullscreenButton();
+  init();
+});
