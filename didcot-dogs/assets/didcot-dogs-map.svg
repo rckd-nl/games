@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <style>
+      .cls-1 {
+        letter-spacing: -.01em;
+      }
+
+      .cls-2 {
+        letter-spacing: 0em;
+      }
+
+      .cls-3 {
+        letter-spacing: -.02em;
+      }
+
+      .cls-4 {
+        stroke-miterlimit: 10;
+      }
+
+      .cls-4, .cls-5 {
+        fill: none;
+        stroke: #231f20;
+        stroke-width: 8px;
+      }
+
+      .cls-6 {
+        letter-spacing: -.03em;
+      }
+
+      .cls-7 {
+        letter-spacing: -.03em;
+      }
+
+      .cls-8 {
+        font-size: 48px;
+      }
+
+      .cls-8, .cls-9 {
+        font-family: Viktorie, Viktorie;
+      }
+
+      .cls-10 {
+        letter-spacing: -.02em;
+      }
+
+      .cls-11 {
+        letter-spacing: -.07em;
+      }
+
+      .cls-5 {
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .cls-12 {
+        fill: red;
+      }
+
+      .cls-13 {
+        letter-spacing: -.02em;
+      }
+
+      .cls-14 {
+        letter-spacing: -.02em;
+      }
+
+      .cls-9 {
+        font-size: 24px;
+      }
+
+      .cls-15 {
+        letter-spacing: -.01em;
+      }
+
+      .cls-16 {
+        letter-spacing: .01em;
+      }
+
+      .cls-17 {
+        letter-spacing: -.03em;
+      }
+
+      .cls-18 {
+        letter-spacing: .01em;
+      }
+
+      .cls-19 {
+        letter-spacing: -.01em;
+      }
+
+      .cls-20 {
+        letter-spacing: 0em;
+      }
+
+      .cls-21 {
+        letter-spacing: -.01em;
+      }
+
+      .cls-22 {
+        letter-spacing: 0em;
+      }
+
+      .cls-23 {
+        letter-spacing: .02em;
+      }
+
+      .cls-24 {
+        letter-spacing: -.04em;
+      }
+
+      .cls-25 {
+        letter-spacing: -.09em;
+      }
+
+      .cls-26 {
+        letter-spacing: -.04em;
+      }
+
+      .cls-27 {
+        letter-spacing: -.02em;
+      }
+
+      .cls-28 {
+        letter-spacing: .01em;
+      }
+
+      .cls-29 {
+        letter-spacing: -.05em;
+      }
+
+      .cls-30 {
+        letter-spacing: -.02em;
+      }
+
+      .cls-31 {
+        letter-spacing: -.04em;
+      }
+
+      .cls-32 {
+        letter-spacing: -.02em;
+      }
+    </style>
+  </defs>
+  <g id="Routes">
+    <path id="Didcot_to_Fulscot" data-name="Didcot to Fulscot" class="cls-4" d="M847.76,620.19c3.58,12.61,12.74,38.36,36.24,61.81,19.52,19.47,40.25,28.71,52.19,33"/>
+    <path id="Abingdon_to_Culham" data-name="Abingdon to Culham" class="cls-4" d="M584.24,122.89c33.03,6.9,44.25,19.21,48.43,29.11,9.39,22.23-12.5,42.37-5.83,72.45,4.53,20.44,19.83,34.49,31.73,43.04"/>
+    <path id="Harwell_to_Chilton" data-name="Harwell to Chilton" class="cls-4" d="M553.36,682c21.89,5.2,47.15,14.67,52.04,33,5.44,20.38-17.6,39.32-37.47,68-17.74,25.61-36.91,64.69-43.13,123.81"/>
+    <path id="South_Moreton_to_Wallingford" data-name="South Moreton to Wallingford" class="cls-4" d="M1062.38,767c11.1-14.13,29.35-33.09,56.62-44.5,44.2-18.5,76.74-3.62,133-8.22,25.91-2.12,64.11-9.02,110-32.28"/>
+    <path id="North_Moreton_to_South_Moreton" data-name="North Moreton to South Moreton" class="cls-4" d="M1040.76,682c-2.09,7.96-5.61,25.73.24,47,5.32,19.35,15.78,32.05,21.38,38"/>
+    <path id="Fulscot_to_South_Moreton" data-name="Fulscot to South Moreton" class="cls-4" d="M936.19,715c11.67-1.42,28.92-1.58,44.81,7.64,14.47,8.39,17.36,18.49,31.64,28.86,9.3,6.75,24.64,14.49,49.74,15.5"/>
+    <path id="Didcot_to_North_Moreton" data-name="Didcot to North Moreton" class="cls-4" d="M847.76,620.19c16.52,14.09,43.71,33.78,81.68,47.41,46.89,16.83,87.96,16.41,111.32,14.41"/>
+    <path id="Didcot_to_Milton_Interchange" data-name="Didcot to Milton Interchange" class="cls-5" d="M503.16,534.46c133.17-18.47,178.23-4.46,187.84,17.87,10.66,24.79-24.52,54.86-13,75.67,14.47,26.15,89.54,13.86,169.76-7.81"/>
+    <path id="South_Moreton_to_Cholsey" data-name="South Moreton to Cholsey" class="cls-4" d="M1062.38,767c12.92-6.18,35.65-14.29,61.62-9,33.25,6.78,52.86,31.68,70.38,53.92,17.64,22.41,27.72,44.53,33.62,61.08"/>
+    <path id="Aston_Upthorpe_to_South_Moreton" data-name="Aston Upthorpe to South Moreton" class="cls-4" d="M990.27,906.81c7.19-24.47,18.34-54.16,36.05-85.81,11.83-21.14,24.32-39.09,36.05-54"/>
+    <path id="East_Hagbourne_to_Blewbury" data-name="East Hagbourne to Blewbury" class="cls-4" d="M819,751.5c10.33,2.85,27.01,8.91,43.24,22.5,10.13,8.48,33.67,28.2,33.27,53-.3,18.62-13.87,25.51-30.18,52-14.92,24.22-21.49,47.53-24.7,64"/>
+    <path id="Abingdon_to_Clifton_Hampden" data-name="Abingdon to Clifton Hampden" class="cls-4" d="M584.24,122.89c32.33-8.57,118.7-26.81,217.57,9.46,74.93,27.49,122.15,73.48,144.59,98.65"/>
+    <path id="Aston_Upthorpe_to_Cholsey" data-name="Aston Upthorpe to Cholsey" class="cls-4" d="M989.65,906.81c3.37,14.43,10.01,35.5,23.98,57.81,14.09,22.49,28.57,34.99,53.37,56.38,30.59,26.38,45.88,39.57,57.08,35.65,17.16-6.01,5.37-37.34,29.92-73.65,17.63-26.07,33.4-24.24,52.38-51.82,14.66-21.3,19.65-43.32,21.62-58.18"/>
+    <path id="Didcot_to_Appleford" data-name="Didcot to Appleford" class="cls-4" d="M771,367c13.4.21,31.8,2.56,40,15,18.36,27.85-39.25,74.86-23,113.86,13.2,31.68,60.89,24.68,74.24,58.14,9.07,22.72-3.72,49.03-14.49,66.19"/>
+    <path id="Sutton_Courtenay_to_Culham" data-name="Sutton Courtenay to Culham" class="cls-4" d="M658.57,267.49c-6.53,8.02-16.11,21.94-21.62,41.51-7.91,28.07-2.97,51.8,0,62.54"/>
+    <path id="Drayton_to_Milton_Interchange" data-name="Drayton to Milton Interchange" class="cls-4" d="M455.86,336.41c-4.59,20.36-10.38,58.57,0,104.59,10.85,48.08,34.03,81.1,47.3,97.47"/>
+    <path id="Drayton_to_Abingdon" data-name="Drayton to Abingdon" class="cls-4" d="M455.86,326c5.12-26.67,16.35-67.89,43.14-112,27.3-44.95,59.43-74.26,81-91.11"/>
+    <path id="Appleford_to_Sutton_Courtenay" data-name="Appleford to Sutton Courtenay" class="cls-4" d="M645.62,378c8.41,4.29,31.39,14.6,61.38,10.62,25.82-3.43,43.45-15.66,51-21.62"/>
+    <path id="Culham_to_Clifton_Hampden" data-name="Culham to Clifton Hampden" class="cls-4" d="M658.57,267.49c20.29-9.51,51.23-20.8,89.43-21.62,41.32-.88,59.85,11.48,99.76,11.14,23.15-.2,57.1-4.66,98.65-26"/>
+    <path id="Clifton_Hampden_to_Berinsfield" data-name="Clifton Hampden to Berinsfield" class="cls-4" d="M946.41,231c26.89-29.69,48.93-36.09,64.59-36,19.36.12,30.01,10.18,61,14.38,19.45,2.64,35.89,1.47,47,0"/>
+    <path id="Milton_Interchange_to_Harwell" data-name="Milton Interchange to Harwell" class="cls-4" d="M503.16,538.47c19.67,27.08,37.54,46.97,50.19,60.1,19.19,19.91,30.84,28.94,30.89,43.24.06,18.65-19.67,33.17-30.89,40.19"/>
+    <path id="Didcot_to_Long_Wittenham" data-name="Didcot to Long Wittenham" class="cls-4" d="M847.76,620.19c23.46-11.55,51.08-30.35,59.24-60.1,12.14-44.22-26.19-93.16-11-105.09,9.71-7.62,30.09,8.49,41.28-2.27,5.73-5.51,5.86-14.99,5.97-22.73.17-11.8-3.49-21-5.97-26.05"/>
+    <path id="Wittenham_Clumps_to_Brightwell-cum-Sotwell" data-name="Wittenham Clumps to Brightwell-cum-Sotwell" class="cls-4" d="M1084,415.81c-9.34,69.94,5.19,97.95,21.62,110.11,35.5,26.26,98.5-10.85,122.38,18.08,9.8,11.87,8.36,29.13,6.24,40.36"/>
+    <path id="Clifton_Hampden_to_Wittenham_Clumps" data-name="Clifton Hampden to Wittenham Clumps" class="cls-4" d="M946.41,231c-9.61,68.4,4.47,94.42,19.47,105.41,23.22,17,52.89,1.1,83.12,21.62,21.88,14.85,30.84,39.82,35,57.79"/>
+    <path id="Drayton_to_Sutton_Courtenay" data-name="Drayton to Sutton Courtenay" class="cls-4" d="M636.95,371.54c-27.57-32.24-50.95-39.6-66.95-40.54-19.3-1.14-29.96,7.81-59,10.14-23.35,1.87-42.71-1.61-55.14-4.73"/>
+    <path id="Sutton_Courtenay_to_Milton_Interchange" data-name="Sutton Courtenay to Milton Interchange" class="cls-4" d="M503.16,538.47c8.3-10.66,21.27-23.99,40.34-32.47,30.99-13.77,51.15-2.73,62.36-16.89,12-15.15-5.5-34.81,0-69.11,3.8-23.7,16.51-41.53,26.81-53"/>
+    <path id="Didcot_to_Brightwell-cum-Sotwell" data-name="Didcot to Brightwell-cum-Sotwell" class="cls-4" d="M847.76,615c28.67,14.17,51.49,15.92,66.81,15,42.51-2.54,52.63-27.07,108.43-38,35-6.85,37.11,1.6,66-7.64,37.61-12.04,44.99-29.88,69.42-32.36,16.92-1.72,42.1,3.93,75.82,40"/>
+    <path id="Berinsfield_to_Dorchester" data-name="Berinsfield to Dorchester" class="cls-4" d="M1114,209.38c9.12,30.11,23.29,44.82,35,52.7,13.44,9.05,24.08,8.73,38.92,20.06,15.27,11.65,23.51,26.61,28.08,37.38"/>
+    <path id="Dorchester_to_Shillingford" data-name="Dorchester to Shillingford" class="cls-4" d="M1216,319.51c-.39,14.43.81,47.13,21.62,78.49,16.68,25.12,38.85,38.7,49.38,45,10.57,6.32,20.07,10.42,27,13.04"/>
+    <path id="Benson_to_Wallingford" data-name="Benson to Wallingford" class="cls-4" d="M1440,516.84c3.01,27.8,6.04,57.56,9,89.13,5.86,62.52,6.33,77.8-4,87.4-21.81,20.29-72.66-2.56-83-7.38"/>
+    <path id="Drayton_to_Steventon" data-name="Drayton to Steventon" class="cls-4" d="M450.06,330.89c-8.16,21.53-16.16,45.95-23.06,73.05-6.69,26.28-11.26,50.83-14.38,73.05"/>
+    <path id="Steventon_to_Milton_Interchange" data-name="Steventon to Milton Interchange" class="cls-4" d="M503.16,538.47c-11.52-4.26-28.41-8.41-47.3-4.47-14.56,3.04-21.32,9.02-28.86,6-7.2-2.88-14.73-13.79-14.38-50.89"/>
+    <path id="Didcot_to_Harwell" data-name="Didcot to Harwell" class="cls-4" d="M847.76,620.19c-40.35,14.59-87.26,28.83-140.14,40.19-56.88,12.22-108.95,18.58-154.27,21.62"/>
+    <path id="Milton_Interchange_to_Chilton" data-name="Milton Interchange to Chilton" class="cls-4" d="M503.16,538.47c52.29,41.08,137.24,119.11,121.84,189.53-3.09,14.15-17.11,38.62-45,87-22.42,38.89-41.8,70.42-55.22,91.81"/>
+    <path id="Chilton_to_Upton" data-name="Chilton to Upton" class="cls-4" d="M524.78,906.81c46.59-14.77,73.88-36.83,90.54-55.43,17.39-19.43,28.39-40.9,43.24-39.38,12.88,1.32,21.77,19.22,27.43,35"/>
+    <path id="Blewbury_to_Aston_Upthorpe" data-name="Blewbury to Aston Upthorpe" class="cls-4" d="M840.62,943c14.64-.95,35.98-1.33,61.38,2,41.92,5.5,62.84,16.91,77,6,6.79-5.23,13.35-16.62,10.65-44.19"/>
+    <path id="Upton_to_West_Hagbourne" data-name="Upton to West Hagbourne" class="cls-4" d="M701.81,758c2.35,7.68,4.33,18.56-1.25,26-5.64,7.51-14.57,5.62-20.37,11-6.08,5.64-9.02,19.55,5.81,56.38"/>
+    <path id="Didcot_to_East_Hagbourne" data-name="Didcot to East Hagbourne" class="cls-4" d="M840.62,620.19c8.61,17.59,17.23,41.17,7.14,53.81-5.84,7.32-13.94,5.95-21.62,12-9.38,7.39-17.2,25.13-7.14,72"/>
+    <path id="Long_Wittenham_to_Wlifton_Hampden" data-name="Long Wittenham to Wlifton Hampden" class="cls-4" d="M946.41,231c-5.47,32.98-10.18,63.65-14.41,92.41-1.56,10.59-3.56,24.83-2,43.59,1.3,15.67,4.59,28.39,7.28,36.95"/>
+    <path id="West_Hagbourne_to_East_Hagbourne" data-name="West Hagbourne to East Hagbourne" class="cls-4" d="M701.81,758c10.69-4.97,27.24-11.05,48.19-12.62,31.9-2.39,56.74,6.98,69,12.62"/>
+    <path id="Brightwell-cum-Sotwell_to_Wallingford" data-name="Brightwell-cum-Sotwell to Wallingford" class="cls-4" d="M1234.24,584.36c32.54,3.65,49.37,15.51,58.76,25.88,14.51,16.03,14.47,32.1,33,50.15,12.49,12.16,26.34,18.33,36,21.62"/>
+    <path id="Long_Wittenham_to_Wittenham_Clumps" data-name="Long Wittenham to Wittenham Clumps" class="cls-4" d="M937.28,403.95c13.62,30.21,31.29,39.68,39.72,43.05,7.43,2.97,7.71,1.22,46,5.73,27.3,3.22,32,4.68,39.38,1.61,5.68-2.36,18.41-9.69,25.62-36.17"/>
+    <path id="Upton_to_Blewbury" data-name="Upton to Blewbury" class="cls-4" d="M686,851.38c6.75,10.78,18.45,26.36,37.43,38.62,18.26,11.8,31.65,13.02,57.28,22.75,14.47,5.49,35.51,14.7,59.91,30.25"/>
+    <path id="Steventon_to_Chilton" data-name="Steventon to Chilton" class="cls-4" d="M412.61,489.11c-9.46,16.7-18.84,40.1-11.61,62.62,10.49,32.7,45.97,32.33,61,68.46,10.42,25.05-4.34,30.73.22,77.77,4.32,44.54,17.79,41.78,23.78,90.66,4.4,35.91-1.28,50.36,10,78.38,7.27,18.08,17.38,31.3,25,39.81"/>
+    <path id="Shillingford_to_Benson" data-name="Shillingford to Benson" class="cls-4" d="M1313,453c28.02,7.54,44.77,19.83,55,30,11.09,11.02,15.51,20.5,29,27.73,15.24,8.16,31.48,7.78,43,6.11"/>
+    <path id="Cholsey_to_Wallingford" data-name="Cholsey to Wallingford" class="cls-4" d="M1228,873c36.33-17.26,58.37-39.24,70.12-53,20.59-24.11,30.72-47.72,42.26-74.62,10.97-25.58,17.61-47.78,21.62-63.38"/>
+    <path id="Shillingford_to_Wallingford" data-name="Shillingford to Wallingford" class="cls-4" d="M1314,456.04c-8.12,14.63-17.06,36.57-11,58.93,8.77,32.36,41.41,37.9,59,69.39,9.93,17.78,17,47.31,0,97.64"/>
+  </g>
+  <g id="Labels">
+    <text class="cls-9" transform="translate(496.96 122.89)"><tspan x="0" y="0">Abi</tspan><tspan class="cls-14" x="22.18" y="0">n</tspan><tspan x="29.02" y="0">g</tspan><tspan class="cls-17" x="35.86" y="0">d</tspan><tspan x="42.24" y="0">on</tspan></text>
+    <text class="cls-9" transform="translate(584.24 273.25)"><tspan class="cls-15" x="0" y="0">C</tspan><tspan x="10.2" y="0">ulh</tspan><tspan class="cls-15" x="29.85" y="0">a</tspan><tspan x="36.98" y="0">m</tspan></text>
+    <text id="Clifton_Hampden" data-name="Clifton Hampden" class="cls-9" transform="translate(935.78 170.83)"><tspan x="0" y="0">Clifton</tspan><tspan class="cls-6" x="-4.37" y="20">H</tspan><tspan class="cls-15" x="4.2" y="20">a</tspan><tspan x="11.33" y="20">mp</tspan><tspan class="cls-27" x="29.14" y="20">d</tspan><tspan x="35.81" y="20">en</tspan></text>
+    <text class="cls-9" transform="translate(1087.02 174.6)"><tspan class="cls-24" x="0" y="0">B</tspan><tspan x="7.42" y="0">eri</tspan><tspan class="cls-1" x="22.75" y="0">n</tspan><tspan x="29.74" y="0">sfield</tspan></text>
+    <text class="cls-9" transform="translate(1212.65 289.05)"><tspan class="cls-31" x="0" y="0">D</tspan><tspan x="12.34" y="0">or</tspan><tspan class="cls-10" x="23.62" y="0">c</tspan><tspan x="29.78" y="0">hes</tspan><tspan class="cls-6" x="48.48" y="0">t</tspan><tspan x="54.09" y="0">er</tspan></text>
+    <text class="cls-9" transform="translate(1214.33 467.49)"><tspan x="0" y="0">Shi</tspan><tspan class="cls-10" x="20.33" y="0">l</tspan><tspan x="24.48" y="0">li</tspan><tspan class="cls-27" x="33.02" y="0">n</tspan><tspan x="39.86" y="0">g</tspan><tspan class="cls-26" x="46.7" y="0">f</tspan><tspan x="52.56" y="0">o</tspan><tspan class="cls-21" x="57.77" y="0">r</tspan><tspan x="63.48" y="0">d</tspan></text>
+    <text class="cls-9" transform="translate(1471.32 508)"><tspan class="cls-24" x="0" y="0">B</tspan><tspan x="7.42" y="0">e</tspan><tspan class="cls-1" x="12.65" y="0">n</tspan><tspan x="19.63" y="0">son</tspan></text>
+    <text class="cls-9" transform="translate(1188.3 626.47)"><tspan class="cls-6" x="0" y="0">B</tspan><tspan class="cls-20" x="7.56" y="0">right</tspan><tspan class="cls-27" x="39.05" y="0">w</tspan><tspan x="48.55" y="0">e</tspan><tspan class="cls-21" x="53.78" y="0">l</tspan><tspan x="57.93" y="0">l-</tspan><tspan x="-2.82" y="20">cum-</tspan><tspan class="cls-7" x="31.38" y="20">S</tspan><tspan x="38.75" y="20">ot</tspan><tspan class="cls-27" x="50.29" y="20">w</tspan><tspan x="59.79" y="20">e</tspan><tspan class="cls-21" x="65.03" y="20">l</tspan><tspan x="69.18" y="20">l</tspan></text>
+    <text class="cls-9" transform="translate(1366.99 736.38)"><tspan class="cls-26" x="0" y="0">W</tspan><tspan x="10.92" y="0">a</tspan><tspan class="cls-10" x="18.41" y="0">l</tspan><tspan x="22.56" y="0">li</tspan><tspan class="cls-27" x="31.1" y="0">n</tspan><tspan x="37.94" y="0">g</tspan><tspan class="cls-24" x="44.78" y="0">f</tspan><tspan class="cls-2" x="50.64" y="0">o</tspan><tspan class="cls-21" x="55.85" y="0">r</tspan><tspan class="cls-20" x="61.56" y="0">d</tspan></text>
+    <text class="cls-9" transform="translate(1242.2 911.74)"><tspan x="0" y="0">Cho</tspan><tspan class="cls-19" x="23.98" y="0">l</tspan><tspan class="cls-21" x="28.2" y="0">s</tspan><tspan x="33.1" y="0">ey</tspan></text>
+    <text class="cls-9" transform="translate(1032.21 906.81)"><tspan x="0" y="0">Aston</tspan><tspan x="-8.6" y="20">Up</tspan><tspan class="cls-16" x="8.29" y="20">t</tspan><tspan class="cls-2" x="14.92" y="20">ho</tspan><tspan class="cls-32" x="28.33" y="20">r</tspan><tspan class="cls-10" x="33.97" y="20">p</tspan><tspan x="39.11" y="20">e</tspan></text>
+    <text class="cls-9" transform="translate(1081.77 672.35)"><tspan class="cls-11" x="0" y="0">N</tspan><tspan x="9.62" y="0">o</tspan><tspan class="cls-13" x="14.83" y="0">r</tspan><tspan class="cls-16" x="20.4" y="0">t</tspan><tspan x="27.02" y="0">h</tspan><tspan class="cls-3" x="-6.54" y="20">M</tspan><tspan x="6.88" y="20">o</tspan><tspan class="cls-30" x="12.08" y="20">r</tspan><tspan class="cls-20" x="17.72" y="20">eton</tspan></text>
+    <text class="cls-9" transform="translate(1082.08 794.96)"><tspan class="cls-6" x="0" y="0">S</tspan><tspan x="7.37" y="0">ou</tspan><tspan class="cls-18" x="19.51" y="0">t</tspan><tspan x="26.13" y="0">h</tspan><tspan class="cls-3" x="-6.98" y="20">M</tspan><tspan x="6.43" y="20">o</tspan><tspan class="cls-30" x="11.64" y="20">r</tspan><tspan class="cls-20" x="17.28" y="20">eton</tspan></text>
+    <text class="cls-9" transform="translate(915.11 758)"><tspan class="cls-25" x="0" y="0">F</tspan><tspan class="cls-20" x="7.51" y="0">u</tspan><tspan class="cls-19" x="14.45" y="0">l</tspan><tspan x="18.67" y="0">s</tspan><tspan class="cls-22" x="23.93" y="0">c</tspan><tspan x="30.24" y="0">ot</tspan></text>
+    <text class="cls-9" transform="translate(813.57 983.65)"><tspan class="cls-1" x="0" y="0">Bl</tspan><tspan x="12.22" y="0">ewbury</tspan></text>
+    <text class="cls-9" transform="translate(657.6 894.62)"><tspan x="0" y="0">Upton</tspan></text>
+    <text class="cls-9" transform="translate(812.32 801.29)"><tspan class="cls-29" x="0" y="0">E</tspan><tspan class="cls-2" x="8.54" y="0">ast</tspan><tspan class="cls-6" x="-16.13" y="20">H</tspan><tspan class="cls-2" x="-7.56" y="20">agbour</tspan><tspan class="cls-22" x="31.46" y="20">n</tspan><tspan class="cls-20" x="38.52" y="20">e</tspan></text>
+    <text class="cls-9" transform="translate(720.88 709.92)"><tspan class="cls-29" x="0" y="0">W</tspan><tspan x="10.7" y="0">est</tspan><tspan class="cls-6" x="-16.18" y="20">H</tspan><tspan class="cls-2" x="-7.61" y="20">agbour</tspan><tspan class="cls-22" x="31.42" y="20">n</tspan><tspan class="cls-20" x="38.47" y="20">e</tspan></text>
+    <text class="cls-9" transform="translate(501.9 950.18)"><tspan x="0" y="0">Chi</tspan><tspan class="cls-10" x="22.8" y="0">l</tspan><tspan x="26.95" y="0">ton</tspan></text>
+    <text class="cls-9" transform="translate(326.76 492.62)"><tspan x="0" y="0">S</tspan><tspan class="cls-6" x="8.09" y="0">t</tspan><tspan x="13.7" y="0">e</tspan><tspan class="cls-27" x="18.94" y="0">v</tspan><tspan x="25.2" y="0">enton</tspan></text>
+    <text class="cls-9" transform="translate(390.97 309.85)"><tspan class="cls-6" x="0" y="0">D</tspan><tspan class="cls-26" x="12.62" y="0">r</tspan><tspan x="17.83" y="0">ayton</tspan></text>
+    <text class="cls-9" transform="translate(638.27 425.57)"><tspan class="cls-10" x="0" y="0">S</tspan><tspan x="7.73" y="0">u</tspan><tspan class="cls-27" x="14.66" y="0">t</tspan><tspan x="20.57" y="0">ton</tspan><tspan x="-10.86" y="20">Cou</tspan><tspan class="cls-13" x="11.84" y="20">r</tspan><tspan class="cls-7" x="17.41" y="20">t</tspan><tspan class="cls-20" x="23.03" y="20">enay</tspan></text>
+    <text class="cls-9" transform="translate(497.44 467.49)"><tspan x="0" y="0">Mi</tspan><tspan class="cls-21" x="18.02" y="0">l</tspan><tspan x="22.18" y="0">ton</tspan><tspan x="-14.02" y="20">In</tspan><tspan class="cls-6" x="-2.69" y="20">t</tspan><tspan x="2.93" y="20">er</tspan><tspan class="cls-21" x="14.23" y="20">c</tspan><tspan class="cls-2" x="20.4" y="20">ha</tspan><tspan class="cls-27" x="36.09" y="20">n</tspan><tspan x="42.93" y="20">ge</tspan></text>
+    <text class="cls-9" transform="translate(515.26 724.75)"><tspan class="cls-6" x="0" y="0">H</tspan><tspan class="cls-2" x="8.57" y="0">ar</tspan><tspan class="cls-27" x="22.13" y="0">w</tspan><tspan x="31.63" y="0">e</tspan><tspan class="cls-10" x="36.86" y="0">l</tspan><tspan x="41.01" y="0">l</tspan></text>
+    <text class="cls-9" transform="translate(786.77 345.38)"><tspan class="cls-3" x="0" y="0">A</tspan><tspan class="cls-6" x="11.09" y="0">p</tspan><tspan class="cls-2" x="15.86" y="0">p</tspan><tspan class="cls-1" x="21.36" y="0">l</tspan><tspan class="cls-28" x="25.58" y="0">e</tspan><tspan class="cls-24" x="31.17" y="0">f</tspan><tspan x="37.03" y="0">o</tspan><tspan class="cls-21" x="42.24" y="0">r</tspan><tspan x="47.95" y="0">d</tspan></text>
+    <text class="cls-9" transform="translate(1101.88 452.73)"><tspan x="0" y="0">Wi</tspan><tspan class="cls-27" x="15.82" y="0">t</tspan><tspan class="cls-6" x="21.72" y="0">t</tspan><tspan x="27.34" y="0">enh</tspan><tspan class="cls-10" x="48.05" y="0">a</tspan><tspan class="cls-20" x="55.17" y="0">m</tspan><tspan x="10.92" y="20">Clum</tspan><tspan class="cls-23" x="45.24" y="20">p</tspan><tspan x="51.31" y="20">s</tspan></text>
+    <text class="cls-9" transform="translate(862.55 408.17)"><tspan class="cls-6" x="0" y="0">L</tspan><tspan x="10.01" y="0">o</tspan><tspan class="cls-27" x="15.22" y="0">n</tspan><tspan x="22.06" y="0">g</tspan><tspan x="-19.3" y="20">Wi</tspan><tspan class="cls-27" x="-3.48" y="20">t</tspan><tspan class="cls-6" x="2.42" y="20">t</tspan><tspan x="8.04" y="20">enh</tspan><tspan class="cls-10" x="28.75" y="20">a</tspan><tspan class="cls-20" x="35.88" y="20">m</tspan></text>
+    <text class="cls-8" transform="translate(745.11 597.84)"><tspan class="cls-13" x="0" y="0">D</tspan><tspan x="25.68" y="0">id</tspan><tspan class="cls-22" x="47.95" y="0">c</tspan><tspan x="60.58" y="0">ot</tspan></text>
+  </g>
+  <g id="Nodes">
+    <circle id="Steventon" class="cls-12" cx="412.62" cy="489.11" r="21.62" transform="translate(-158.2 778.32) rotate(-76.72)"/>
+    <circle id="Drayton" class="cls-12" cx="455.86" cy="336.41" r="21.62"/>
+    <circle id="Abingdon" class="cls-12" cx="584.24" cy="122.89" r="21.62"/>
+    <circle id="Culham" class="cls-12" cx="658.57" cy="267.49" r="21.62"/>
+    <circle id="Sutton_Courtenay" data-name="Sutton Courtenay" class="cls-12" cx="636.95" cy="371.54" r="21.62"/>
+    <circle id="Clifton_Hampden-2" data-name="Clifton Hampden" class="cls-12" cx="946.41" cy="231" r="21.62"/>
+    <circle id="Didcot" class="cls-12" cx="847.76" cy="620.19" r="21.62"/>
+    <circle id="Milton_Interchange" data-name="Milton Interchange" class="cls-12" cx="503.16" cy="538.47" r="21.62"/>
+    <circle id="Appleford" class="cls-12" cx="765.32" cy="367" r="21.62"/>
+    <circle id="Berinsfield" class="cls-12" cx="1114" cy="209.38" r="21.62"/>
+    <circle id="Dorchester" class="cls-12" cx="1216" cy="319.51" r="21.62"/>
+    <circle id="Wittenham_Clumps" data-name="Wittenham Clumps" class="cls-12" cx="1084" cy="415.81" r="21.62"/>
+    <circle id="Brightwell-cum-Sotwell" class="cls-12" cx="1234.24" cy="584.36" r="21.62"/>
+    <circle id="Wallingford" class="cls-12" cx="1362" cy="682" r="21.62"/>
+    <circle id="Benson" class="cls-12" cx="1440" cy="516.84" r="21.62"/>
+    <circle id="Cholsey" class="cls-12" cx="1228" cy="873" r="21.62"/>
+    <circle id="South_Moreton" data-name="South Moreton" class="cls-12" cx="1062.38" cy="767" r="21.62"/>
+    <circle id="Aston_Upthorpe" data-name="Aston Upthorpe" class="cls-12" cx="989.65" cy="906.81" r="21.62"/>
+    <circle id="Blewbury" class="cls-12" cx="840.62" cy="943" r="21.62"/>
+    <circle id="Upton" class="cls-12" cx="686" cy="851.38" r="21.62"/>
+    <circle id="Chilton" class="cls-12" cx="524.78" cy="906.81" r="21.62"/>
+    <circle id="Harwell" class="cls-12" cx="553.36" cy="682" r="21.62"/>
+    <circle id="West_Hagbourne" data-name="West Hagbourne" class="cls-12" cx="701.81" cy="758" r="21.62"/>
+    <circle id="East_Hagbourne" data-name="East Hagbourne" class="cls-12" cx="819" cy="758" r="21.62"/>
+    <circle id="North_Moreton" data-name="North Moreton" class="cls-12" cx="1040.76" cy="682" r="21.62"/>
+    <circle id="Fulscot" class="cls-12" cx="936.19" cy="715" r="21.62"/>
+    <circle id="Long_Wittenham" data-name="Long Wittenham" class="cls-12" cx="937.28" cy="403.95" r="21.62"/>
+    <circle id="Shillingford" class="cls-12" cx="1314" cy="456.04" r="21.62"/>
+  </g>
+</svg>
