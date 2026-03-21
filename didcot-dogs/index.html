@@ -1,1 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Didcot Dogs v1.0</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #111;
+      color: #f5f5f5;
+      font-family: Arial, sans-serif;
+      min-height: 100%;
+    }
 
+    body {
+      padding: 32px;
+    }
+
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      font-size: 32px;
+    }
+
+    .panel {
+      background: #1c1c1c;
+      border: 1px solid #333;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .ok {
+      color: #7CFC9A;
+      font-weight: bold;
+    }
+
+    .error {
+      color: #ff8c8c;
+      font-weight: bold;
+    }
+
+    pre {
+      background: #0d0d0d;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 16px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Didcot Dogs v1.0</h1>
+
+    <div class="panel">
+      <div id="status">Loading JSON files…</div>
+    </div>
+
+    <div class="panel">
+      <h2>Map Summary</h2>
+      <div id="map-summary">Waiting…</div>
+    </div>
+
+    <div class="panel">
+      <h2>Destination Summary</h2>
+      <div id="destination-summary">Waiting…</div>
+    </div>
+
+    <div class="panel">
+      <h2>Sample Data</h2>
+      <pre id="sample-output">Waiting…</pre>
+    </div>
+  </div>
+
+  <script>
+    async function loadJson(url) {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Failed to load ${url} (${response.status})`);
+      }
+      return response.json();
+    }
+
+    async function init() {
+      const statusEl = document.getElementById("status");
+      const mapSummaryEl = document.getElementById("map-summary");
+      const destinationSummaryEl = document.getElementById("destination-summary");
+      const sampleOutputEl = document.getElementById("sample-output");
+
+      try {
+        const [mapData, destinationData] = await Promise.all([
+          loadJson("./data/didcot-dogs-map.v1.json"),
+          loadJson("./data/didcot-dogs-destinations.v1.json")
+        ]);
+
+        statusEl.innerHTML = '<span class="ok">Success:</span> both JSON files loaded correctly.';
+
+        mapSummaryEl.innerHTML = `
+          <p><strong>Version:</strong> ${mapData.version}</p>
+          <p><strong>Start node:</strong> ${mapData.startNode}</p>
+          <p><strong>Total nodes:</strong> ${mapData.nodes.length}</p>
+          <p><strong>Total routes:</strong> ${mapData.routes.length}</p>
+          <p><strong>Destination pool size:</strong> ${mapData.destinationPool.length}</p>
+        `;
+
+        const destinationKeys = Object.keys(destinationData.destinations || {});
+        destinationSummaryEl.innerHTML = `
+          <p><strong>Total destination entries:</strong> ${destinationKeys.length}</p>
+          <p><strong>Destination IDs:</strong> ${destinationKeys.join(", ")}</p>
+        `;
+
+        sampleOutputEl.textContent = JSON.stringify(
+          {
+            firstNode: mapData.nodes[0],
+            firstRoute: mapData.routes[0],
+            firstDestination: destinationData.destinations[destinationKeys[0]]
+          },
+          null,
+          2
+        );
+      } catch (error) {
+        statusEl.innerHTML = `<span class="error">Error:</span> ${error.message}`;
+        mapSummaryEl.textContent = "Could not load map JSON.";
+        destinationSummaryEl.textContent = "Could not load destination JSON.";
+        sampleOutputEl.textContent = error.stack || String(error);
+        console.error(error);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
