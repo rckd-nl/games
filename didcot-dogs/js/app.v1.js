@@ -1,6 +1,6 @@
 console.log("Didcot Dogs app.v1.js loaded");
 
-const APP_VERSION = "v1.6";
+const APP_VERSION = "v1.7";
 
 const PLAYER_CONFIG = {
   Eric: {
@@ -8,14 +8,14 @@ const PLAYER_CONFIG = {
     tokenLabel: "E",
     routeClass: "route-claimed-eric",
     badgeClass: "eric",
-    tokenOffset: { x: -18, y: -18 }
+    image: "./assets/eric.png"
   },
   Tango: {
     color: "#8d1218",
     tokenLabel: "T",
     routeClass: "route-claimed-tango",
     badgeClass: "tango",
-    tokenOffset: { x: 18, y: 18 }
+    image: "./assets/tango.png"
   }
 };
 
@@ -371,25 +371,57 @@ function ensureLayer(svg, layerId) {
   return layer;
 }
 
+function ensureTokenDefs(svg) {
+  let defs = svg.querySelector("defs");
+  if (!defs) {
+    defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  ["Eric", "Tango"].forEach(playerName => {
+    const clipId = `token-clip-${playerName}`;
+    if (!svg.querySelector(`#${CSS.escape(clipId)}`)) {
+      const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+      clipPath.setAttribute("id", clipId);
+
+      const clipCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      clipCircle.setAttribute("cx", "0");
+      clipCircle.setAttribute("cy", "0");
+      clipCircle.setAttribute("r", "20");
+
+      clipPath.appendChild(clipCircle);
+      defs.appendChild(clipPath);
+    }
+  });
+}
+
 function ensurePlayerToken(svg, playerName) {
+  ensureTokenDefs(svg);
+
   const layer = ensureLayer(svg, "token-layer");
   let group = svg.querySelector(`#token-${CSS.escape(playerName)}`);
   if (group) return group;
 
   group = document.createElementNS("http://www.w3.org/2000/svg", "g");
   group.setAttribute("id", `token-${playerName}`);
+  group.setAttribute("class", "token-group");
 
   const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
   circle.setAttribute("class", "token-circle");
-  circle.setAttribute("r", "26");
-  circle.setAttribute("fill", PLAYER_CONFIG[playerName].color);
+  circle.setAttribute("r", "24");
+  circle.setAttribute("fill", "#ffffff");
 
-  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  text.setAttribute("class", "token-label");
-  text.textContent = PLAYER_CONFIG[playerName].tokenLabel;
+  const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
+  image.setAttribute("href", PLAYER_CONFIG[playerName].image);
+  image.setAttribute("x", "-20");
+  image.setAttribute("y", "-20");
+  image.setAttribute("width", "40");
+  image.setAttribute("height", "40");
+  image.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  image.setAttribute("clip-path", `url(#token-clip-${playerName})`);
 
   group.appendChild(circle);
-  group.appendChild(text);
+  group.appendChild(image);
   layer.appendChild(group);
 
   return group;
@@ -397,23 +429,22 @@ function ensurePlayerToken(svg, playerName) {
 
 function setTokenPosition(svg, playerName, x, y) {
   const token = ensurePlayerToken(svg, playerName);
-  const circle = token.querySelector("circle");
-  const text = token.querySelector("text");
-
-  circle.setAttribute("cx", x);
-  circle.setAttribute("cy", y);
-
-  text.setAttribute("x", x);
-  text.setAttribute("y", y + 1);
+  token.setAttribute("transform", `translate(${x}, ${y})`);
 }
 
 function getPlayerTokenAnchor(playerName, nodeId) {
   const center = getNodeCenter(app.svg, nodeId);
-  const offset = PLAYER_CONFIG[playerName].tokenOffset;
-  return {
-    x: center.x + offset.x,
-    y: center.y + offset.y
-  };
+  const ericNode = app.state.players.Eric.currentNode;
+  const tangoNode = app.state.players.Tango.currentNode;
+
+  if (ericNode === tangoNode && nodeId === ericNode) {
+    const sideGap = 18;
+    return playerName === "Eric"
+      ? { x: center.x - sideGap, y: center.y }
+      : { x: center.x + sideGap, y: center.y };
+  }
+
+  return { x: center.x, y: center.y };
 }
 
 function renderTokens() {
@@ -592,14 +623,10 @@ function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
     }
 
     const token = ensurePlayerToken(app.svg, playerName);
-    const circle = token.querySelector("circle");
-    const text = token.querySelector("text");
-
     const total = routeEl.getTotalLength();
     const duration = 900;
     const { a } = parseRouteId(routeId);
     const forward = fromNode === a && toNode !== a;
-    const offset = PLAYER_CONFIG[playerName].tokenOffset;
     const start = performance.now();
 
     function step(now) {
@@ -609,13 +636,19 @@ function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
       const routeProgress = forward ? eased : 1 - eased;
       const point = routeEl.getPointAtLength(total * routeProgress);
 
-      const x = point.x + offset.x;
-      const y = point.y + offset.y;
+      const ericNode = app.state.players.Eric.currentNode;
+      const tangoNode = app.state.players.Tango.currentNode;
+      let x = point.x;
+      let y = point.y;
 
-      circle.setAttribute("cx", x);
-      circle.setAttribute("cy", y);
-      text.setAttribute("x", x);
-      text.setAttribute("y", y + 1);
+      if (ericNode === tangoNode && playerName === "Eric") {
+        x -= 18;
+      }
+      if (ericNode === tangoNode && playerName === "Tango") {
+        x += 18;
+      }
+
+      token.setAttribute("transform", `translate(${x}, ${y})`);
 
       if (progress < 1) {
         requestAnimationFrame(step);
@@ -662,8 +695,9 @@ function renderRouteCostBadges() {
 
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
     text.setAttribute("x", "0");
-    text.setAttribute("y", "0.75");
+    text.setAttribute("y", "0");
     text.setAttribute("fill", hex);
+    text.setAttribute("dy", "0.35em");
     text.textContent = String(cost);
 
     group.appendChild(circle);
@@ -799,25 +833,26 @@ function renderPlayerSummary() {
   const wrap = document.getElementById("player-summary-wrap");
   wrap.innerHTML = "";
 
-  const heroName = app.state.controlledHero || "Eric";
-  const player = app.state.players[heroName];
-  const target = getCurrentTargetForPlayer(player);
+  ["Eric", "Tango"].forEach(playerName => {
+    const player = app.state.players[playerName];
+    const target = getCurrentTargetForPlayer(player);
 
-  const card = document.createElement("div");
-  card.className = `player-summary-card active`;
+    const card = document.createElement("div");
+    card.className = `player-summary-card${app.state.currentPlayer === playerName ? " active" : ""}`;
 
-  card.innerHTML = `
-    <div class="player-summary-name">${heroName}</div>
-    <div class="player-summary-meta">
-      Current node: ${formatNodeName(player.currentNode)}<br>
-      Previous node: ${player.previousNode ? formatNodeName(player.previousNode) : "—"}<br>
-      Hand size: ${player.hand.length}<br>
-      Completed: ${Math.min(player.completedCount, 5)}/5<br>
-      Active target: ${target ? formatNodeName(target) : "—"}
-    </div>
-  `;
+    card.innerHTML = `
+      <div class="player-summary-name">${playerName}</div>
+      <div class="player-summary-meta">
+        Current node: ${formatNodeName(player.currentNode)}<br>
+        Previous node: ${player.previousNode ? formatNodeName(player.previousNode) : "—"}<br>
+        Hand size: ${player.hand.length}<br>
+        Completed: ${Math.min(player.completedCount, 5)}/5<br>
+        Active target: ${target ? formatNodeName(target) : "—"}
+      </div>
+    `;
 
-  wrap.appendChild(card);
+    wrap.appendChild(card);
+  });
 }
 
 function createDestinationActiveCard(title, body, flip = false) {
@@ -853,15 +888,15 @@ function renderDestinationSequences() {
   const wrap = document.getElementById("destination-sequences");
   wrap.innerHTML = "";
 
-  const heroName = app.state.controlledHero || "Eric";
-  const player = app.state.players[heroName];
+  const shownPlayerName = app.state.currentPlayer;
+  const player = app.state.players[shownPlayerName];
 
   const sequence = document.createElement("div");
   sequence.className = "destination-sequence";
 
   const title = document.createElement("div");
   title.className = "sequence-title";
-  title.textContent = `${heroName} journey cards`;
+  title.textContent = `${shownPlayerName} journey cards`;
 
   const grid = document.createElement("div");
   grid.className = "destination-card-grid";
@@ -875,7 +910,7 @@ function renderDestinationSequences() {
     if (i < player.completedCount) {
       grid.appendChild(createDestinationCompletedCard(label));
     } else if (i === player.completedCount && player.completedCount < 5) {
-      const shouldFlip = app.state.justCompleted?.playerName === heroName;
+      const shouldFlip = app.state.justCompleted?.playerName === shownPlayerName;
       grid.appendChild(createDestinationActiveCard(label, body, shouldFlip));
     } else {
       grid.appendChild(createDestinationQuestionCard());
