@@ -733,11 +733,14 @@ function renderRouteCostBadges() {
     const text = createSvgEl("text", {
       x: "0",
       y: "0",
-      dy: "0.38em",
-      fill: isWild ? "#c64f8e" : hex
+      fill: isWild ? "#c64f8e" : hex,
+      "text-anchor": "middle",
+      "dominant-baseline": "middle",
+      "alignment-baseline": "middle"
     });
     text.textContent = String(cost);
-
+    text.setAttribute("dy", "0.02em");
+    
     group.appendChild(circle);
     group.appendChild(text);
 
@@ -1038,37 +1041,40 @@ function renderRouteModalOptionStage() {
 
   subtitle.textContent = `Choose how to pay for ${formatRouteName(routeId)}.`;
 
-  const optionGrid = document.createElement("div");
-  optionGrid.className = "route-option-grid";
+  const optionList = document.createElement("div");
+  optionList.className = "route-option-list";
 
   app.modal.options.forEach((option, index) => {
-    const chip = document.createElement("button");
-    chip.className = `route-option-chip${app.modal.selectedOptionIndex === index ? " active" : ""}`;
-    chip.type = "button";
-    chip.textContent = `${option.useColourCount} ${option.colourChoice}${option.useColourCount !== 1 ? "s" : ""}${option.useRainbowCount ? ` + ${option.useRainbowCount} rainbow` : ""}`;
-    chip.addEventListener("click", () => {
-      app.modal.selectedOptionIndex = index;
-      renderRouteModalOptionStage();
-    });
-    optionGrid.appendChild(chip);
-  });
+    const row = document.createElement("button");
+    row.className = `route-option-row${app.modal.selectedOptionIndex === index ? " active" : ""}`;
+    row.type = "button";
 
-  body.appendChild(optionGrid);
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "route-option-row-label";
+    rowLabel.textContent = `Option ${index + 1}`;
 
-  const previewRow = document.createElement("div");
-  previewRow.className = "route-preview-row";
+    const rowCards = document.createElement("div");
+    rowCards.className = "route-option-row-cards";
 
-  if (app.modal.selectedOptionIndex !== null) {
-    const selectedOption = app.modal.options[app.modal.selectedOptionIndex];
-    buildSpendPreviewCards(selectedOption).forEach(cardColor => {
+    buildSpendPreviewCards(option).forEach(cardColor => {
       const card = document.createElement("div");
       card.className = `route-spend-card ${cardColor}`;
       card.textContent = cardColor;
-      previewRow.appendChild(card);
+      rowCards.appendChild(card);
     });
-  }
 
-  body.appendChild(previewRow);
+    row.appendChild(rowLabel);
+    row.appendChild(rowCards);
+
+    row.addEventListener("click", () => {
+      app.modal.selectedOptionIndex = index;
+      renderRouteModalOptionStage();
+    });
+
+    optionList.appendChild(row);
+  });
+
+  body.appendChild(optionList);
   confirmBtn.disabled = app.modal.selectedOptionIndex === null;
 }
 
