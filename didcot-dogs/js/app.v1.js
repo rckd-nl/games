@@ -79,6 +79,8 @@ async function injectBoardSvg() {
 
 function setupFullscreenButton() {
   const btn = document.getElementById("fullscreen-btn");
+  if (!btn) return;
+
   btn.addEventListener("click", async () => {
     const el = document.documentElement;
     if (!document.fullscreenElement) await el.requestFullscreen();
@@ -687,7 +689,8 @@ function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
 }
 
 function updateStatus(text) {
-  document.getElementById("status-chip").textContent = text;
+  const chip = document.getElementById("status-chip");
+  if (chip) chip.textContent = text;
 }
 
 function ensureRouteCostLayer() {
@@ -740,16 +743,16 @@ function renderRouteCostBadges() {
     });
     text.textContent = String(cost);
     text.setAttribute("dy", "0.02em");
-    
+
     group.appendChild(circle);
     group.appendChild(text);
 
-    group.addEventListener("click", evt => {
+    group.addEventListener("click", (evt) => {
       evt.stopPropagation();
       handleRouteSelection(routeId);
     });
 
-    group.addEventListener("mouseenter", evt => {
+    group.addEventListener("mouseenter", (evt) => {
       evt.stopPropagation();
       handleRouteHover(routeId);
     });
@@ -795,7 +798,7 @@ function renderRoutes() {
     ) {
       routeEl.classList.add("route-blocked");
     }
-    
+
     if (selectedRouteId === routeId) {
       routeEl.classList.add("route-selected");
     }
@@ -806,19 +809,23 @@ function renderRoutes() {
 
 function renderTurnBadge() {
   const badge = document.getElementById("turn-player-badge");
+  if (!badge) return;
   badge.className = `player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
   badge.textContent = `${app.state.currentPlayer} to play`;
 }
 
 function renderCounts() {
-  document.getElementById("draw-pile-count").textContent = app.state.drawPile.length;
-  document.getElementById("discard-pile-count").textContent = app.state.discardPile.length;
+  const drawEl = document.getElementById("draw-pile-count");
+  const discardEl = document.getElementById("discard-pile-count");
+  if (drawEl) drawEl.textContent = app.state.drawPile.length;
+  if (discardEl) discardEl.textContent = app.state.discardPile.length;
 }
 
 function renderSelectedRouteCard() {
   const card = document.getElementById("selected-route-card");
-  const routeId = app.state.selectedRouteId;
+  if (!card) return;
 
+  const routeId = app.state.selectedRouteId;
   card.className = "selected-route-card";
 
   if (!routeId) {
@@ -859,6 +866,8 @@ function getHandStacks(hand) {
 
 function renderActiveHand() {
   const wrap = document.getElementById("active-hand");
+  if (!wrap) return;
+
   const player = app.state.players[app.state.currentPlayer];
   const stacks = getHandStacks(player.hand);
 
@@ -888,6 +897,8 @@ function renderActiveHand() {
 
 function renderPlayerSummary() {
   const wrap = document.getElementById("player-summary-wrap");
+  if (!wrap) return;
+
   wrap.innerHTML = "";
 
   ["Eric", "Tango"].forEach(playerName => {
@@ -936,6 +947,8 @@ function createDestinationCompletedCard(title) {
 
 function renderDestinationSequences() {
   const wrap = document.getElementById("destination-sequences");
+  if (!wrap) return;
+
   wrap.innerHTML = "";
 
   const shownPlayerName = app.state.currentPlayer;
@@ -984,6 +997,8 @@ function renderTargetPulse() {
 
 function renderDebug(audit) {
   const leftDebug = document.getElementById("left-debug");
+  if (!leftDebug) return;
+
   leftDebug.innerHTML = `
     <div class="debug-list">
       <div><strong>Version:</strong> ${APP_VERSION}</div>
@@ -997,6 +1012,148 @@ function renderDebug(audit) {
   `;
 }
 
+function renderMobileUi() {
+  const hudTurn = document.getElementById("mobile-hud-turn");
+  const hudDraw = document.getElementById("mobile-hud-draw");
+  const hudDestination = document.getElementById("mobile-hud-destination");
+  const sheetSummary = document.getElementById("mobile-sheet-summary");
+  const sheetSelectedRoute = document.getElementById("mobile-sheet-selected-route");
+  const sheetActions = document.getElementById("mobile-sheet-actions");
+  const sheetHand = document.getElementById("mobile-sheet-hand");
+  const sheetDestination = document.getElementById("mobile-sheet-destination");
+
+  if (!hudTurn || !hudDraw || !hudDestination || !sheetSummary || !sheetSelectedRoute || !sheetActions || !sheetHand || !sheetDestination) {
+    return;
+  }
+
+  const currentPlayerName = app.state.currentPlayer;
+  const currentPlayer = app.state.players[currentPlayerName];
+  const currentTargetId = getCurrentTargetForPlayer(currentPlayer);
+  const currentTargetTitle = currentTargetId
+    ? (app.destinationData.destinations[currentTargetId]?.title || formatNodeName(currentTargetId))
+    : "—";
+
+  hudTurn.textContent = `${currentPlayerName} to play`;
+  hudDraw.textContent = `Draw: ${app.state.drawPile.length}`;
+  hudDestination.textContent = `Target: ${currentTargetTitle}`;
+
+  sheetSummary.innerHTML = `
+    <div class="player-summary-card active">
+      <div class="player-summary-name">${currentPlayerName}</div>
+      <div class="player-summary-meta">
+        Current node: ${formatNodeName(currentPlayer.currentNode)}<br>
+        Previous node: ${currentPlayer.previousNode ? formatNodeName(currentPlayer.previousNode) : "—"}<br>
+        Hand size: ${currentPlayer.hand.length}<br>
+        Completed: ${Math.min(currentPlayer.completedCount, 5)}/5<br>
+        Draw pile: ${app.state.drawPile.length}<br>
+        Discard pile: ${app.state.discardPile.length}
+      </div>
+    </div>
+  `;
+
+  if (!app.state.selectedRouteId) {
+    sheetSelectedRoute.innerHTML = `
+      <div class="mini-heading">Selected route</div>
+      <div class="selected-route-card">No route selected.</div>
+    `;
+  } else {
+    const routeId = app.state.selectedRouteId;
+    const routeColour = getDisplayRouteColor(app.state.routes[routeId].colour);
+    const cost = app.rulesData.routes[routeId].length;
+    const playability = getRoutePlayability(routeId);
+
+    sheetSelectedRoute.innerHTML = `
+      <div class="mini-heading">Selected route</div>
+      <div class="selected-route-card ${playability.playable ? "valid" : "invalid"}">
+        <strong>${formatRouteName(routeId)}</strong><br>
+        Colour: ${routeColour}<br>
+        Cost: ${cost}<br>
+        ${playability.playable ? `Destination node if played: ${formatNodeName(playability.targetNode)}` : playability.reason}
+      </div>
+    `;
+  }
+
+  sheetActions.innerHTML = `
+    <div class="mini-heading">Actions</div>
+    <div class="controls-grid">
+      <button id="mobile-draw-card-btn" class="action-btn primary" type="button">Pick random card</button>
+      <button id="mobile-reset-local-btn" class="action-btn subtle" type="button">Reset local game</button>
+    </div>
+  `;
+
+  const stacks = getHandStacks(currentPlayer.hand);
+  sheetHand.innerHTML = `<div class="mini-heading">Active hand</div>`;
+  const handWrap = document.createElement("div");
+  handWrap.className = "hand-grid";
+
+  if (!stacks.length) {
+    const empty = document.createElement("div");
+    empty.className = "panel-copy";
+    empty.textContent = "No cards yet.";
+    handWrap.appendChild(empty);
+  } else {
+    stacks.forEach(stack => {
+      const el = document.createElement("div");
+      el.className = `hand-card ${stack.color}`;
+      el.innerHTML = `
+        <div class="card-name">${stack.color}</div>
+        <div class="card-count">${stack.count}</div>
+      `;
+      handWrap.appendChild(el);
+    });
+  }
+
+  sheetHand.appendChild(handWrap);
+
+  const destinationSequence = document.createElement("div");
+  destinationSequence.className = "destination-sequence";
+  const sequenceTitle = document.createElement("div");
+  sequenceTitle.className = "sequence-title";
+  sequenceTitle.textContent = `${currentPlayerName} journey cards`;
+  const grid = document.createElement("div");
+  grid.className = "destination-card-grid";
+
+  for (let i = 0; i < 5; i += 1) {
+    const destinationId = currentPlayer.destinationQueue[i];
+    const destination = app.destinationData.destinations[destinationId];
+    const label = destination ? destination.title : formatNodeName(destinationId);
+    const body = destination?.description || "";
+
+    if (i < currentPlayer.completedCount) {
+      grid.appendChild(createDestinationCompletedCard(label));
+    } else if (i === currentPlayer.completedCount && currentPlayer.completedCount < 5) {
+      grid.appendChild(createDestinationActiveCard(label, body, false));
+    } else {
+      grid.appendChild(createDestinationQuestionCard());
+    }
+  }
+
+  destinationSequence.appendChild(sequenceTitle);
+  destinationSequence.appendChild(grid);
+  sheetDestination.innerHTML = "";
+  sheetDestination.appendChild(destinationSequence);
+
+  const mobileDrawBtn = document.getElementById("mobile-draw-card-btn");
+  const mobileResetBtn = document.getElementById("mobile-reset-local-btn");
+
+  if (mobileDrawBtn) {
+    mobileDrawBtn.addEventListener("click", () => {
+      drawCardForCurrentPlayer();
+    });
+  }
+
+  if (mobileResetBtn) {
+    mobileResetBtn.addEventListener("click", () => {
+      app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
+      closeRouteModal();
+      closeDestinationReveal();
+      renderAll();
+      if (app.state.controlledHero) showCurrentDestinationReveal(app.state.controlledHero);
+      updateStatus("Local game reset.");
+    });
+  }
+}
+
 function buildSpendPreviewCards(option) {
   const items = [];
   for (let i = 0; i < option.useColourCount; i += 1) items.push(option.colourChoice);
@@ -1005,7 +1162,8 @@ function buildSpendPreviewCards(option) {
 }
 
 function renderButtons() {
-  document.getElementById("draw-card-btn").disabled = false;
+  const drawBtn = document.getElementById("draw-card-btn");
+  if (drawBtn) drawBtn.disabled = false;
 }
 
 function renderAll() {
@@ -1020,6 +1178,7 @@ function renderAll() {
   renderTargetPulse();
   renderDebug(app.audit);
   renderButtons();
+  renderMobileUi();
 }
 
 function buildCardChoiceEl(color, active = false) {
@@ -1337,6 +1496,14 @@ function wireControlButtons() {
 
   document.getElementById("pick-tango-btn").addEventListener("click", () => {
     startGameAs("Tango");
+  });
+
+  document.getElementById("mobile-open-sheet-btn").addEventListener("click", () => {
+    document.getElementById("mobile-sheet").classList.add("expanded");
+  });
+
+  document.getElementById("mobile-sheet-handle").addEventListener("click", () => {
+    document.getElementById("mobile-sheet").classList.toggle("expanded");
   });
 
   document.getElementById("route-modal-close").addEventListener("click", closeRouteModal);
