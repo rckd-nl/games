@@ -812,16 +812,16 @@ html, body {
 .route-claimed-eric,
 .route-claimed-tango {
   stroke-width: 13 !important;
-  animation: claimedPulse 1.1s linear infinite;
-  filter: drop-shadow(0 0 8px rgba(255,255,255,0.25));
+  animation: claimedPulse 1.1s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(255,255,255,0.22));
 }
 
 .route-claimed-eric {
-  stroke: var(--claim-blue) !important;
+  stroke: url(#claim-gradient-eric) !important;
 }
 
 .route-claimed-tango {
-  stroke: var(--claim-yellow) !important;
+  stroke: url(#claim-gradient-tango) !important;
 }
 
 .route-eligible {
@@ -842,6 +842,11 @@ html, body {
 }
 
 .token-group {
+  transform-box: fill-box;
+  transform-origin: center center;
+}
+
+.token-wobble {
   transform-box: fill-box;
   transform-origin: center center;
   animation: tokenWobble 20s steps(1, end) infinite;
@@ -903,13 +908,11 @@ html, body {
 }
 
 @keyframes claimedPulse {
-  0% {
-    stroke-dasharray: 8 18;
-    stroke-dashoffset: 0;
+  0%, 100% {
+    stroke-opacity: 1;
   }
-  100% {
-    stroke-dasharray: 8 18;
-    stroke-dashoffset: -52;
+  50% {
+    stroke-opacity: 0.88;
   }
 }
 
@@ -984,10 +987,10 @@ html, body {
   75%, 92% { transform: rotate(-15deg); }
 }
 @keyframes tokenWobble {
-  0%, 2% { transform: rotate(0deg); }
-  2.5%, 3.5% { transform: rotate(-10deg); }
-  4%, 5% { transform: rotate(10deg); }
-  5.5%, 6.5% { transform: rotate(-10deg); }
-  7%, 8% { transform: rotate(10deg); }
-  8.5%, 100% { transform: rotate(0deg); }
+  0%, 2% { rotate: 0deg; }
+  2.5%, 3.5% { rotate: -10deg; }
+  4%, 5% { rotate: 10deg; }
+  5.5%, 6.5% { rotate: -10deg; }
+  7%, 8% { rotate: 10deg; }
+  8.5%, 100% { rotate: 0deg; }
 }
