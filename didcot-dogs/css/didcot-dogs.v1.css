@@ -16,7 +16,7 @@ html, body {
 
 :root {
   --ui-font: "auster-variable", sans-serif;
-  --header-font: "fumo-dropshadow-mn", sans-serif;
+  --header-font: "squash-mn", sans-serif;
   --map-font: "viktorie", "Viktorie", serif;
   --deep-red: #8d1218;
   --eligible-red: #e53935;
