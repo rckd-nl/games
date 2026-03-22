@@ -2222,15 +2222,10 @@ html, body {
   flex-shrink: 0;
 }
 
-/* Portrait oscillation — same wobble as token */
-.hero-portrait-eric  { animation: portraitWobble 3.2s ease-in-out infinite; border-color: rgba(25,167,255,0.6); }
-.hero-portrait-tango { animation: portraitWobble 2.8s ease-in-out infinite; border-color: rgba(255,230,0,0.6); }
-
-@keyframes portraitWobble {
-  0%,100% { transform: rotate(-2deg) scale(1.00); }
-  25%      { transform: rotate(2deg)  scale(1.02); }
-  50%      { transform: rotate(-1deg) scale(1.01); }
-  75%      { transform: rotate(3deg)  scale(1.00); }
+/* Portrait — JS drives the harsh snap wobble, CSS just sets base */
+.desktop-identity-portrait {
+  will-change: transform;
+  transform-origin: center center;
 }
 
 .desktop-identity-text { display: flex; flex-direction: column; gap: 1px; }
