@@ -6,10 +6,54 @@
   <title>Didcot Dogs v2</title>
   <link rel="stylesheet" href="https://use.typekit.net/gff4ipy.css">
   <link rel="stylesheet" href="./css/didcot-dogs.v2.css" />
+  <link rel="stylesheet" href="./css/room.css" />
 </head>
 <body>
   <div id="app">
     <div id="game-shell">
+
+      <!-- Room screen — shown before hero pick in multiplayer -->
+      <div id="room-screen">
+        <div class="room-loop">
+          <div class="hero-wipe hero-wipe-a"></div>
+          <div class="hero-wipe hero-wipe-b"></div>
+          <div class="hero-wipe hero-wipe-c"></div>
+          <div class="hero-noise"></div>
+        </div>
+        <div class="room-inner">
+          <div class="room-kicker">Didcot Dogs</div>
+          <div class="room-title">PLAY</div>
+          <button id="room-create-btn" type="button">Create game</button>
+          <div class="room-or">or join a game</div>
+          <div class="room-join-wrap">
+            <input id="room-join-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" autocorrect="off" spellcheck="false" />
+            <button id="room-join-btn" type="button">Join</button>
+          </div>
+          <div id="room-error"></div>
+        </div>
+      </div>
+
+      <!-- Waiting screen — creator sees this until opponent joins -->
+      <div id="waiting-screen">
+        <div class="room-loop">
+          <div class="hero-wipe hero-wipe-a"></div>
+          <div class="hero-wipe hero-wipe-b"></div>
+          <div class="hero-noise"></div>
+        </div>
+        <div class="waiting-inner">
+          <div class="waiting-title">WAITING FOR<br>OPPONENT</div>
+          <div class="waiting-code-wrap">
+            <div class="waiting-code-label">Share this code</div>
+            <div id="waiting-code">····</div>
+          </div>
+          <div class="waiting-dots">
+            <div class="waiting-dot"></div>
+            <div class="waiting-dot"></div>
+            <div class="waiting-dot"></div>
+          </div>
+          <div class="waiting-sub">Ask your opponent to open the game<br>and enter the code above.</div>
+        </div>
+      </div>
 
       <div id="hero-overlay" class="hero-overlay active">
         <div class="hero-loop">
@@ -144,6 +188,6 @@
 
     </div>
   </div>
-  <script src="./js/app.v2.js"></script>
+  <script type="module" src="./js/app.v2.js"></script>
 </body>
 </html>
