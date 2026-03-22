@@ -1,1351 +1,1919 @@
 /*
- * didcot-dogs.v2.css  —  Didcot Dogs
- * Single consolidated stylesheet. Replace didcot-dogs.v1.css entirely.
- * Remove the v1 <link> from index.html.
+ * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
- * v2.0.1  (merge of v1 + all v2 fixes, no !important cascade wars)
- *   - FIXED: hero-overlay z-index raised to 4000 (was 80, behind mobile chrome).
- *   - FIXED: #mobile-hud display conflict removed — single display:none rule,
- *     shown via .visible class added by JS after hero pick.
- *   - FIXED: #mobile-bottom-bar and #mobile-sheet hidden until hero chosen
- *     (.visible / .visible-shell classes).
- *   - FIXED: #game-shell on mobile is 100vw/100vh (was 1920×1080 leaking through).
- *   - FIXED: #board-wrap top/bottom on mobile use CSS vars matching HUD/bar heights.
- *   - FIXED: Pay modal centred in safe zone between HUD and hand strip, scrollable,
- *     not bottom-anchored and hidden behind cards.
- *   - FIXED: status-chip z-index above bottom bar.
- *   - FIXED: SVG no CSS transform — viewBox pan/zoom only (no pixellation).
- *   - REMOVED: All duplicate and conflicting display rules from v1 @media block.
+ * v2.0.0
+ *   - FIXED: Pan/zoom now manipulates SVG viewBox directly instead of CSS
+ *     transform. SVG re-renders as vector at every zoom level — no more
+ *     pixellation at any zoom or on any device.
+ *   - FIXED: Removed willChange:transform and CSS transform from SVG element.
+ *   - FIXED: Board stays centred when fully zoomed out (no drift into empty space).
+ *   - FIXED: #mobile-hud CSS had conflicting display:none / display:grid rules;
+ *     the HUD is now shown via a class toggle so it reliably appears on mobile.
+ *   - FIXED: Board viewport (board-wrap) uses CSS variables for HUD/bar heights
+ *     so it can never bleed under them.
+ *   - IMPROVED: Pinch-to-zoom focal point is correct — zooms around the midpoint
+ *     of the two fingers in SVG coordinate space.
+ *   - IMPROVED: Pan is clamped so the board cannot be dragged entirely off screen.
+ *   - FIXED: showMobileHud() moved to startGameAs() — HUD is now hidden during
+ *     hero-pick screen and only appears once a player is chosen.
+ *   - FIXED: showMobileHud() now also adds .visible to #mobile-bottom-bar
+ *     and .visible-shell to #mobile-sheet — cards were invisible because the
+ *     uploaded file was missing those two lines.
+ *   - FIXED: openMobileSheet / toggleMobileSheet guard on .visible-shell.
+ *   - ADDED: End screen overlay — YOU WIN / YOU LOSE — fires when a player
+ *     completes their fifth destination. Styled after the hero pick sting.
+ *     "Play again" resets and returns to hero pick.
  */
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   CUSTOM PROPERTIES
-   ═══════════════════════════════════════════════════════════════════════════ */
-:root {
-  --ui-font: "auster-variable", sans-serif;
-  --header-font: "squash-mn", sans-serif;
-  --map-font: "viktorie", "Viktorie", serif;
-  --deep-red: #8d1218;
-  --eligible-red: #e53935;
-  --route-red: #d74b4b;
-  --route-orange: #db7f2f;
-  --route-blue: #2f6edb;
-  --route-green: #1e8b4c;
-  --route-black: #1d1d1d;
-  --route-pink: #c64f8e;
-  --route-yellow: #d6b300;
-  --node-navy: #223b7c;
-  --claim-blue: #19a7ff;
-  --claim-yellow: #ffe600;
-  /* Mobile layout heights — single source of truth */
-  --mobile-hud-height: 108px;
-  --mobile-bar-height: 88px;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   RESET / BASE
-   ═══════════════════════════════════════════════════════════════════════════ */
-*, *::before, *::after {
-  box-sizing: border-box;
-}
-
-html, body {
-  margin: 0;
-  padding: 0;
-  background: #0f1115;
-  color: #f4f1e8;
-  font-family: var(--ui-font);
-  font-variation-settings: "wght" 400;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  touch-action: auto;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   APP SHELL
-   ═══════════════════════════════════════════════════════════════════════════ */
-#app {
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-#game-shell {
-  width: 1920px;
-  height: 1080px;
-  position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at center, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 55%),
-    linear-gradient(180deg, #161a22 0%, #0e1015 100%);
-  font-family: var(--ui-font);
-  font-variation-settings: "wght" 400;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   HERO PICK SCREEN
-   z-index 4000 — must sit above all mobile chrome (HUD 2000, bar 2001)
-   ═══════════════════════════════════════════════════════════════════════════ */
-.hero-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 4000;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: #090c11;
-}
-
-.hero-overlay.active {
-  display: flex;
-}
-
-.hero-loop {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-
-.hero-wipe {
-  position: absolute;
-  inset: -10%;
-  transform: skewX(-18deg) translateX(-140%);
-  opacity: 0.9;
-  will-change: transform, opacity;
-}
-
-.hero-wipe-a {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(229,57,53,0.85) 45%, rgba(255,196,0,0.95) 100%);
-  animation: heroLoopA 4.6s linear infinite;
-}
-.hero-wipe-b {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(47,110,219,0.85) 45%, rgba(255,255,255,0.25) 100%);
-  animation: heroLoopB 5.2s linear infinite;
-}
-.hero-wipe-c {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(30,139,76,0.78) 45%, rgba(198,79,142,0.75) 100%);
-  animation: heroLoopC 6.1s linear infinite;
-}
-.hero-wipe-d {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,255,255,0.18) 45%, rgba(229,57,53,0.12) 100%);
-  animation: heroLoopD 7.2s linear infinite;
-}
-
-.hero-noise {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 12% 28%, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0) 24%),
-    radial-gradient(circle at 74% 18%, rgba(255,196,0,0.14) 0%, rgba(255,196,0,0) 24%),
-    radial-gradient(circle at 81% 76%, rgba(47,110,219,0.14) 0%, rgba(47,110,219,0) 30%),
-    radial-gradient(circle at 18% 82%, rgba(229,57,53,0.14) 0%, rgba(229,57,53,0) 28%);
-  mix-blend-mode: screen;
-  animation: heroNoisePulse 3.8s ease-in-out infinite;
-}
-
-.hero-inner {
-  position: relative;
-  z-index: 3;
-  text-align: center;
-  width: min(1200px, 94vw);
-  padding: 40px 24px;
-}
-
-.hero-kicker,
-.hero-title,
-.hero-name,
-#game-title,
-.panel-title,
-.mini-heading,
-.sequence-title,
-.route-modal-title,
-.destination-reveal-title {
-  font-family: var(--header-font);
-}
-
-.hero-kicker {
-  font-size: 34px;
-  color: rgba(255,255,255,0.9);
-  margin-bottom: 8px;
-}
-
-.hero-title {
-  font-size: 90px;
-  line-height: 0.95;
-  color: #ffffff;
-  text-shadow:
-    0 0 12px rgba(141,18,24,0.35),
-    0 0 30px rgba(34,59,124,0.25);
-  margin-bottom: 18px;
-}
-
-.hero-subtitle {
-  font-size: 20px;
-  color: rgba(255,255,255,0.86);
-  margin-bottom: 30px;
-  font-family: var(--ui-font);
-}
-
-.hero-choice-wrap {
-  display: flex;
-  gap: 40px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.hero-pick-card {
-  appearance: none;
-  border: 1px solid rgba(255,255,255,0.22);
-  background: rgba(255,255,255,0.08);
-  color: #ffffff;
-  width: 420px;
-  min-height: 420px;
-  border-radius: 28px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  box-shadow: 0 16px 45px rgba(0,0,0,0.28);
-  transition: transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
-}
-
-.hero-pick-card:hover {
-  transform: translateY(-8px) scale(1.02);
-  background: rgba(255,255,255,0.14);
-  box-shadow: 0 22px 55px rgba(0,0,0,0.34);
-}
-
-.hero-token-frame {
-  width: 230px;
-  height: 230px;
-  border-radius: 28px;
-  background: rgba(255,255,255,0.92);
-  border: 5px solid rgba(255,255,255,0.9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.hero-portrait {
-  width: 180px;
-  height: 180px;
-  object-fit: contain;
-  display: block;
-  transform-origin: 50% 70%;
-}
-
-.hero-portrait-eric  { animation: heroJumpEric  1.05s steps(1, end) infinite; }
-.hero-portrait-tango { animation: heroJumpTango 1.33s steps(1, end) infinite; }
-
-.hero-name { font-size: 46px; }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   START TOAST
-   ═══════════════════════════════════════════════════════════════════════════ */
-.start-toast {
-  position: absolute;
-  top: 26px;
-  left: 50%;
-  transform: translateX(-50%) translateY(-150%);
-  z-index: 4500;
-  background: rgba(255,255,255,0.95);
-  color: #111;
-  min-height: 62px;
-  padding: 0 28px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 30px;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.22);
-  transition: transform 320ms ease;
-  font-family: var(--header-font);
-}
-.start-toast.show { transform: translateX(-50%) translateY(0); }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   MODALS (route pay + destination reveal)
-   Desktop: centred overlay. Mobile: overridden below.
-   ═══════════════════════════════════════════════════════════════════════════ */
-.route-modal-overlay,
-.destination-reveal-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 3000;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: rgba(9, 12, 17, 0.45);
-  backdrop-filter: blur(4px);
-}
-
-.route-modal-overlay.open,
-.destination-reveal-overlay.open {
-  display: flex;
-}
-
-.route-modal,
-.destination-reveal-card {
-  width: 680px;
-  max-width: calc(100vw - 80px);
-  background: rgba(18, 22, 29, 0.96);
-  border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 26px;
-  box-shadow: 0 22px 60px rgba(0,0,0,0.35);
-  padding: 22px;
-  transform: translateY(20px) scale(0.96);
-  opacity: 0;
-  animation: routeModalIn 240ms ease forwards;
-}
-
-.destination-reveal-card {
-  width: 560px;
-  text-align: center;
-}
-
-.destination-reveal-title {
-  font-size: 44px;
-  margin-bottom: 10px;
-}
-
-.destination-reveal-body {
-  font-size: 18px;
-  line-height: 1.5;
-  margin-bottom: 20px;
-}
-
-.route-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.route-modal-title { font-size: 42px; line-height: 0.95; }
-
-.route-modal-close {
-  appearance: none;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  border: 1px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.06);
-  color: #fff;
-  font-size: 22px;
-  cursor: pointer;
-}
-
-.route-modal-subtitle {
-  font-size: 15px;
-  color: rgba(255,255,255,0.82);
-  margin-bottom: 16px;
-}
-
-.route-modal-body {
-  min-height: 160px;
-  margin-bottom: 18px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-  gap: 10px;
-}
-
-.route-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.route-option-grid  { display: flex; flex-wrap: wrap; gap: 12px; }
-.route-option-list  { display: grid; gap: 12px; }
-
-.route-option-row {
-  appearance: none;
-  width: 100%;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(255,255,255,0.05);
-  color: #fff;
-  border-radius: 16px;
-  padding: 12px;
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--ui-font);
-}
-.route-option-row:hover  { background: rgba(255,255,255,0.09); }
-.route-option-row.active { border-color: rgba(229,57,53,0.7); background: rgba(229,57,53,0.18); }
-
-.route-option-row-label {
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 10px;
-}
-
-.route-option-row-cards { display: flex; flex-wrap: wrap; gap: 8px; }
-
-.route-option-chip {
-  appearance: none;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(255,255,255,0.05);
-  color: #fff;
-  border-radius: 14px;
-  min-height: 44px;
-  padding: 0 14px;
-  font-size: 16px;
-  font-family: var(--ui-font);
-  cursor: pointer;
-}
-.route-option-chip.active { border-color: rgba(229,57,53,0.7); background: rgba(229,57,53,0.18); }
-
-.route-preview-row,
-.route-colour-card-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
-  min-height: 80px;
-}
-
-.route-spend-card,
-.route-colour-choice-card {
-  width: 68px;
-  height: 92px;
-  border-radius: 12px;
-  padding: 8px;
-  position: relative;
-  box-shadow: 0 8px 18px rgba(0,0,0,0.22);
-  border: 2px solid rgba(0,0,0,0.16);
-  font-size: 14px;
-  color: #fff;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
-  font-family: var(--ui-font);
-  text-transform: capitalize;
-  cursor: pointer;
-}
-.route-colour-choice-card.active { outline: 3px solid rgba(229,57,53,0.75); }
-
-.route-spend-card::before,
-.route-colour-choice-card::before {
-  content: "";
-  position: absolute;
-  inset: 6px;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.34);
-}
-
-.route-spend-card.red,    .route-colour-choice-card.red    { background: linear-gradient(180deg, #f3a3a3 0%, #d74b4b 100%); }
-.route-spend-card.orange, .route-colour-choice-card.orange { background: linear-gradient(180deg, #f2bf95 0%, #db7f2f 100%); }
-.route-spend-card.blue,   .route-colour-choice-card.blue   { background: linear-gradient(180deg, #8ab5ff 0%, #2f6edb 100%); }
-.route-spend-card.green,  .route-colour-choice-card.green  { background: linear-gradient(180deg, #72c78e 0%, #1e8b4c 100%); }
-.route-spend-card.black,  .route-colour-choice-card.black  { background: linear-gradient(180deg, #5b5b5b 0%, #1d1d1d 100%); }
-.route-spend-card.pink,   .route-colour-choice-card.pink   { background: linear-gradient(180deg, #ef9cc3 0%, #c64f8e 100%); }
-.route-spend-card.yellow, .route-colour-choice-card.yellow { background: linear-gradient(180deg, #f0dd67 0%, #d6b300 100%); color: #222; }
-.route-spend-card.rainbow { background: linear-gradient(135deg, #f3a3a3 0%, #f0dd67 24%, #72c78e 48%, #8ab5ff 72%, #ef9cc3 100%); color: #111; }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   DESKTOP TOP BAR
-   ═══════════════════════════════════════════════════════════════════════════ */
-#top-bar {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 24px;
-  z-index: 20;
-  background: linear-gradient(180deg, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0) 100%);
-}
-
-#title-block { display: flex; flex-direction: column; gap: 4px; }
-#game-title  { font-size: 34px; font-weight: 700; }
-#game-subtitle { font-size: 16px; opacity: 0.82; font-family: var(--ui-font); }
-
-#fullscreen-btn {
-  appearance: none;
-  border: 1px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.08);
-  color: #f4f1e8;
-  border-radius: 12px;
-  height: 42px;
-  padding: 0 16px;
-  font-size: 16px;
-  cursor: pointer;
-  font-family: var(--ui-font);
-}
-#fullscreen-btn:hover { background: rgba(255,255,255,0.14); }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   DESKTOP SIDE PANELS
-   ═══════════════════════════════════════════════════════════════════════════ */
-#left-panel,
-#right-panel {
-  position: absolute;
-  top: 92px;
-  width: 320px;
-  bottom: 24px;
-  border-radius: 24px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.08);
-  backdrop-filter: blur(6px);
-  padding: 18px;
-  z-index: 15;
-  overflow: hidden;
-  font-family: var(--ui-font);
-}
-#left-panel  { left: 24px; }
-#right-panel { right: 24px; }
-
-.panel-title  { font-size: 28px; font-weight: 700; margin-bottom: 14px; }
-.panel-section { margin-bottom: 18px; }
-.panel-copy   { font-size: 14px; line-height: 1.45; color: rgba(255,255,255,0.82); }
-
-.mini-heading {
-  font-size: 18px;
-  font-weight: 700;
-  color: rgba(255,255,255,0.76);
-  margin-bottom: 10px;
-}
-
-.player-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 14px;
-  border-radius: 999px;
-  font-size: 18px;
-  font-weight: 700;
-  margin-bottom: 10px;
-  font-family: var(--ui-font);
-}
-.player-badge.eric,
-.player-badge.tango {
-  background: rgba(141,18,24,0.16);
-  border: 1px solid rgba(255,255,255,0.24);
-  color: #ffffff;
-}
-
-.controls-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
-
-.action-btn {
-  appearance: none;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(255,255,255,0.07);
-  color: #f4f1e8;
-  border-radius: 14px;
-  min-height: 50px;
-  padding: 0 14px;
-  font-size: 19px;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: var(--ui-font);
-}
-.action-btn:hover    { background: rgba(255,255,255,0.12); }
-.action-btn:disabled { opacity: 0.42; cursor: not-allowed; }
-.action-btn.primary  { background: rgba(141,18,24,0.22); border-color: rgba(255,255,255,0.24); }
-.action-btn.primary:hover { background: rgba(141,18,24,0.32); }
-.action-btn.subtle   { background: rgba(255,255,255,0.04); }
-
-.counts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
-.count-card {
-  min-height: 86px;
-  border-radius: 16px;
-  border: 1px dashed rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.03);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.count-label { font-size: 16px; color: rgba(255,255,255,0.66); margin-bottom: 6px; }
-.count-value { font-size: 34px; font-weight: 700; }
-
-.selected-route-card {
-  min-height: 90px;
-  border-radius: 16px;
-  border: 1px dashed rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.03);
-  padding: 12px;
-  font-size: 16px;
-  line-height: 1.45;
-  color: rgba(255,255,255,0.9);
-}
-.selected-route-card.valid   { border-color: rgba(229,57,53,0.65); background: rgba(229,57,53,0.12); }
-.selected-route-card.invalid { border-color: rgba(255,120,120,0.40); background: rgba(255,120,120,0.08); }
-
-.hand-grid { display: flex; flex-wrap: wrap; gap: 8px; min-height: 82px; }
-
-.hand-card {
-  position: relative;
-  width: 64px;
-  height: 88px;
-  border-radius: 10px;
-  padding: 7px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
-  font-size: 11px;
-  font-weight: 700;
-  border: 2px solid rgba(0,0,0,0.16);
-  box-shadow: 0 6px 14px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.35);
-  overflow: hidden;
-  transform-origin: center bottom;
-  font-family: var(--ui-font);
-  text-transform: capitalize;
-}
-.hand-card::before {
-  content: "";
-  position: absolute;
-  inset: 5px;
-  border-radius: 7px;
-  border: 1px solid rgba(255,255,255,0.35);
-  pointer-events: none;
-}
-.hand-card .card-name  { position: relative; z-index: 2; }
-.hand-card .card-count {
-  position: absolute;
-  top: 5px; right: 5px;
-  width: 26px; height: 26px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.96);
-  color: #111;
-  font-family: var(--ui-font);
-  font-size: 14px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.hand-card.draw-in { animation: cardDrawIn 420ms cubic-bezier(.18,.88,.28,1.18); }
-
-.hand-card.red    { background: linear-gradient(180deg, #f3a3a3 0%, #d74b4b 100%); color: #fff; }
-.hand-card.orange { background: linear-gradient(180deg, #f2bf95 0%, #db7f2f 100%); color: #fff; }
-.hand-card.blue   { background: linear-gradient(180deg, #8ab5ff 0%, #2f6edb 100%); color: #fff; }
-.hand-card.green  { background: linear-gradient(180deg, #72c78e 0%, #1e8b4c 100%); color: #fff; }
-.hand-card.black  { background: linear-gradient(180deg, #5b5b5b 0%, #1d1d1d 100%); color: #fff; }
-.hand-card.pink   { background: linear-gradient(180deg, #ef9cc3 0%, #c64f8e 100%); color: #fff; }
-.hand-card.yellow { background: linear-gradient(180deg, #f0dd67 0%, #d6b300 100%); color: #222; }
-.hand-card.rainbow {
-  background: linear-gradient(135deg, #f3a3a3 0%, #f0dd67 24%, #72c78e 48%, #8ab5ff 72%, #ef9cc3 100%);
-  color: #111;
-}
-
-.player-summary-wrap { display: grid; grid-template-columns: 1fr; gap: 10px; }
-
-.player-summary-card {
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.04);
-  padding: 12px;
-}
-.player-summary-card.active {
-  border-color: rgba(229,57,53,0.55);
-  box-shadow: 0 0 0 1px rgba(229,57,53,0.18) inset;
-}
-.player-summary-name { font-size: 21px; font-weight: 700; margin-bottom: 6px; font-family: var(--header-font); }
-.player-summary-meta { font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.8); }
-
-.destination-sequences {
-  display: grid;
-  gap: 14px;
-  max-height: 610px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.destination-sequence {
-  border-radius: 18px;
-  padding: 12px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.10);
-}
-
-.sequence-title { font-size: 22px; margin-bottom: 10px; }
-.destination-card-grid { display: grid; gap: 10px; }
-
-.destination-card {
-  position: relative;
-  min-height: 92px;
-  border-radius: 16px;
-  border: 1px dashed rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.03);
-  color: rgba(255,255,255,0.92);
-  padding: 12px;
-  overflow: hidden;
-  font-family: var(--ui-font);
-}
-.destination-card.active-card {
-  border-color: rgba(229,57,53,0.6);
-  background: rgba(229,57,53,0.14);
-  box-shadow: 0 0 14px rgba(229,57,53,0.18);
-  animation: targetCardPulse 1.3s ease-in-out infinite;
-}
-.destination-card.hidden-card {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--header-font);
-  font-size: 56px;
-  line-height: 1;
-  color: rgba(255,255,255,0.72);
-}
-.destination-card.completed-card {
-  border-color: rgba(255,255,255,0.24);
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.95);
-}
-.destination-card.flip-in { animation: destinationFlipIn 700ms ease; }
-
-.destination-title { font-family: var(--header-font); font-size: 24px; margin-bottom: 6px; }
-.destination-body  { font-family: var(--ui-font); font-size: 15px; line-height: 1.35; }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   BOARD
-   ═══════════════════════════════════════════════════════════════════════════ */
-#board-wrap {
-  position: absolute;
-  left: 350px; right: 350px;
-  top: 92px; bottom: 24px;
-  touch-action: none;
-  border-radius: 28px;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at center, rgba(255,255,255,0.96) 0%, rgba(244,244,244,0.98) 58%, rgba(232,232,232,1) 100%);
-  border: 1px solid rgba(0,0,0,0.10);
-}
-
-#board-svg-host {
-  width: 100%;
-  height: 100%;
-  display: block;
-  background:
-    radial-gradient(circle at center, rgba(255,255,255,0.96) 0%, rgba(244,244,244,0.98) 58%, rgba(232,232,232,1) 100%);
-}
-
-/* SVG: viewBox drives pan/zoom — no CSS transform, no will-change raster trap */
-#board-svg-host svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-  background: transparent;
-  transform: none;
-  will-change: auto;
-}
-
-#board-svg-host text {
-  font-family: var(--map-font) !important;
-  fill: #000000 !important;
-  pointer-events: none;
-}
-
-#board-svg-host #Nodes circle {
-  fill: #ffffff !important;
-  stroke: var(--node-navy) !important;
-  stroke-width: 5 !important;
-}
-
-#board-svg-host path,
-#board-svg-host line,
-#board-svg-host polyline {
-  vector-effect: non-scaling-stroke;
-}
-
-/* Route states */
-.route-claimed-eric,
-.route-claimed-tango {
-  stroke-width: 13 !important;
-  animation: claimedPulse 1.1s ease-in-out infinite;
-  filter: drop-shadow(0 0 8px rgba(255,255,255,0.22));
-}
-.route-claimed-eric  { stroke: url(#claim-gradient-eric) !important; }
-.route-claimed-tango { stroke: url(#claim-gradient-tango) !important; }
-.route-eligible { animation: eligiblePulse 0.9s ease-in-out infinite; filter: drop-shadow(0 0 10px rgba(229,57,53,0.95)); }
-.route-selected { filter: drop-shadow(0 0 12px rgba(229,57,53,1)); }
-.route-blocked  { opacity: 0.22; }
-
-.target-node-pulse { animation: targetNodePulse 1.35s linear infinite; }
-
-/* Tokens */
-.token-group  { transform-box: fill-box; transform-origin: center center; }
-.token-wobble { transform-box: fill-box; transform-origin: center center; animation: tokenWobble 20s steps(1, end) infinite; }
-.token-circle { fill: #ffffff; stroke-width: 5; }
-.token-group.eric-token  .token-circle { stroke: var(--claim-blue); }
-.token-group.tango-token .token-circle { stroke: var(--claim-yellow); }
-
-/* Route cost badges */
-.route-cost-badge text {
-  font-family: var(--ui-font) !important;
-  font-size: 14px;
-  font-weight: 700;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
-}
-.route-cost-badge circle {
-  fill: #ffffff !important;
-  stroke-width: 2.5 !important;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   STATUS CHIP
-   ═══════════════════════════════════════════════════════════════════════════ */
-#status-chip {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 18px;
-  z-index: 25;
-  padding: 10px 16px;
-  border-radius: 999px;
-  background: rgba(0,0,0,0.45);
-  border: 1px solid rgba(255,255,255,0.1);
-  font-size: 18px;
-  color: #f4f1e8;
-  max-width: 1020px;
-  text-align: center;
-  font-family: var(--ui-font);
-}
-
-.debug-list { font-size: 13px; line-height: 1.55; opacity: 0.88; }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   MOBILE HUD
-   Hidden by default. JS adds .visible in startGameAs() — never before hero pick.
-   ═══════════════════════════════════════════════════════════════════════════ */
-#mobile-hud {
-  display: none;
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 8px);
-  left: 8px;
-  right: 8px;
-  z-index: 2000;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  pointer-events: none;
-}
-#mobile-hud.visible { display: grid; }
-
-.mobile-hud-pill,
-.mobile-hud-btn {
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--ui-font);
-  font-size: 14px;
-  font-weight: 700;
-  pointer-events: auto;
-  width: 100%;
-}
-
-.mobile-hud-pill {
-  background: rgba(12, 16, 22, 0.88);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: #ffffff;
-}
-
-.mobile-hud-btn {
-  appearance: none;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(141,18,24,0.94);
-  color: #ffffff;
-  cursor: pointer;
-}
-
-#mobile-hud-turn,
-#mobile-hud-draw,
-#mobile-hud-destination,
-#mobile-open-sheet-btn,
-#mobile-reset-view-btn { grid-column: span 1; }
-
-#mobile-hud-destination { grid-column: 1 / -1; }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   MOBILE SHEET
-   Hidden by default. JS adds .visible-shell in startGameAs().
-   .expanded then makes it actually visible/interactive.
-   ═══════════════════════════════════════════════════════════════════════════ */
-#mobile-sheet {
-  display: none;
-  position: fixed;
-  left: 8px;
-  right: 8px;
-  top: calc(env(safe-area-inset-top, 0px) + 54px);
-  bottom: calc(86px + env(safe-area-inset-bottom, 0px));
-  z-index: 1990;
-  background: rgba(15, 19, 26, 0.98);
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 12px 30px rgba(0,0,0,0.28);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(8px);
-  transition: opacity 180ms ease, transform 180ms ease;
-  overflow: hidden;
-}
-#mobile-sheet.visible-shell { display: block; }
-#mobile-sheet.expanded      { opacity: 1; pointer-events: auto; transform: translateY(0); }
-
-#mobile-sheet-handle {
-  appearance: none;
-  width: 100%;
-  height: 36px;
-  border: none;
-  background: transparent;
-  position: relative;
-  cursor: pointer;
-}
-#mobile-sheet-handle::before {
-  content: "";
-  width: 56px;
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.32);
-  position: absolute;
-  left: 50%;
-  top: 14px;
-  transform: translateX(-50%);
-}
-
-#mobile-sheet-content {
-  padding: 0 14px 18px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  height: calc(100% - 36px);
-  -webkit-overflow-scrolling: touch;
-}
-
-#mobile-sheet-summary,
-#mobile-sheet-selected-route,
-#mobile-sheet-actions,
-#mobile-sheet-hand,
-#mobile-sheet-destination { margin-bottom: 14px; }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   MOBILE BOTTOM BAR
-   Hidden by default. JS adds .visible in startGameAs().
-   ═══════════════════════════════════════════════════════════════════════════ */
-#mobile-bottom-bar {
-  display: none;
-  position: fixed;
-  left: 0; right: 0; bottom: 0;
-  z-index: 2001;
-  padding: 4px 8px calc(2px + env(safe-area-inset-bottom, 0px)) 8px;
-  background: linear-gradient(180deg,
-    rgba(10,13,19,0) 0%,
-    rgba(10,13,19,0.72) 20%,
-    rgba(10,13,19,0.96) 52%,
-    rgba(10,13,19,0.99) 100%
+console.log("Didcot Dogs app.v2.js loaded");
+
+const APP_VERSION = "v2.0.1";
+const SVG_NS = "http://www.w3.org/2000/svg";
+const XLINK_NS = "http://www.w3.org/1999/xlink";
+
+const PLAYER_CONFIG = {
+  Eric: {
+    routeClass: "route-claimed-eric",
+    badgeClass: "eric",
+    image: "./assets/eric.png",
+    tokenClass: "eric-token"
+  },
+  Tango: {
+    routeClass: "route-claimed-tango",
+    badgeClass: "tango",
+    image: "./assets/tango.png",
+    tokenClass: "tango-token"
+  }
+};
+
+const ROUTE_COLOUR_HEX = {
+  red: "#d74b4b",
+  orange: "#db7f2f",
+  blue: "#2f6edb",
+  green: "#1e8b4c",
+  black: "#1d1d1d",
+  pink: "#c64f8e",
+  yellow: "#d6b300",
+  grey: "#7a7a7a"
+};
+
+// ---------------------------------------------------------------------------
+// boardView now stores the current viewBox in SVG-user-unit space.
+// baseViewBox is the full-fit viewBox set after tightenSvgViewBox().
+// We derive the current viewBox from baseViewBox + pan/zoom.
+// ---------------------------------------------------------------------------
+let app = {
+  rulesData: null,
+  destinationData: null,
+  svg: null,
+  audit: null,
+  state: null,
+  boardView: {
+    // zoom level: 1 = fully zoomed out (fit), up to maxScale
+    scale: 1,
+    // pan offset in SVG user units (0,0 = centred / no pan)
+    panX: 0,
+    panY: 0,
+    minScale: 1,
+    maxScale: 3,
+    // set after SVG is loaded and tightened
+    baseViewBox: null   // { x, y, w, h }
+  },
+  modal: {
+    routeId: null,
+    chosenColor: null,
+    selectedOptionIndex: null,
+    options: []
+  }
+};
+
+// ---------------------------------------------------------------------------
+// JSON / text loading
+// ---------------------------------------------------------------------------
+async function loadJson(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Failed to load ${url} (${response.status})`);
+  return response.json();
+}
+
+async function loadText(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Failed to load ${url} (${response.status})`);
+  return response.text();
+}
+
+// ---------------------------------------------------------------------------
+// SVG element helpers
+// ---------------------------------------------------------------------------
+function createSvgEl(tag, attrs = {}) {
+  const el = document.createElementNS(SVG_NS, tag);
+  Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+  return el;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+// ---------------------------------------------------------------------------
+// ViewBox-based pan/zoom
+//
+// The SVG always fills #board-wrap 100%×100%.  We control what the user sees
+// by changing the viewBox attribute.  At scale=1 the viewBox equals
+// baseViewBox (full board visible, centred).  Zooming in shrinks the viewBox
+// rectangle; panning shifts it.
+// ---------------------------------------------------------------------------
+
+function getBaseViewBox() {
+  return app.boardView.baseViewBox;
+}
+
+/**
+ * Compute the current viewBox from scale + pan and apply it to the SVG.
+ * Pan is clamped so the viewport can never wander beyond the board content.
+ */
+function applyBoardViewTransform() {
+  const svg = app.svg;
+  if (!svg || !app.boardView.baseViewBox) return;
+
+  const base = app.boardView.baseViewBox;
+  const scale = app.boardView.scale;
+
+  // Zoomed viewBox size (smaller = more zoomed in)
+  const vw = base.w / scale;
+  const vh = base.h / scale;
+
+  // Centre of baseViewBox
+  const cx = base.x + base.w / 2;
+  const cy = base.y + base.h / 2;
+
+  // Pan offsets are in SVG units.  Clamp so we can't pan outside the board.
+  const maxPanX = (base.w - vw) / 2;
+  const maxPanY = (base.h - vh) / 2;
+  app.boardView.panX = clamp(app.boardView.panX, -maxPanX, maxPanX);
+  app.boardView.panY = clamp(app.boardView.panY, -maxPanY, maxPanY);
+
+  const vx = cx - vw / 2 + app.boardView.panX;
+  const vy = cy - vh / 2 + app.boardView.panY;
+
+  svg.setAttribute("viewBox", `${vx} ${vy} ${vw} ${vh}`);
+}
+
+function resetBoardView() {
+  app.boardView.scale = 1;
+  app.boardView.panX = 0;
+  app.boardView.panY = 0;
+  applyBoardViewTransform();
+}
+
+// ---------------------------------------------------------------------------
+// Convert a point in screen/client pixels (relative to board-wrap) into
+// SVG user units, using the current viewBox.
+// ---------------------------------------------------------------------------
+function clientToSvgPoint(clientX, clientY) {
+  const boardWrap = document.getElementById("board-wrap");
+  const svg = app.svg;
+  if (!boardWrap || !svg) return { x: 0, y: 0 };
+
+  const rect = boardWrap.getBoundingClientRect();
+  const relX = clientX - rect.left;
+  const relY = clientY - rect.top;
+
+  const vb = svg.viewBox.baseVal;
+  const scaleX = vb.width / rect.width;
+  const scaleY = vb.height / rect.height;
+
+  return {
+    x: vb.x + relX * scaleX,
+    y: vb.y + relY * scaleY
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Touch gesture handling — pan (1 finger) and pinch-zoom (2 fingers)
+// ---------------------------------------------------------------------------
+function getTouchDistance(t1, t2) {
+  const dx = t2.clientX - t1.clientX;
+  const dy = t2.clientY - t1.clientY;
+  return Math.hypot(dx, dy);
+}
+
+function getTouchMidpoint(t1, t2) {
+  return {
+    x: (t1.clientX + t2.clientX) / 2,
+    y: (t1.clientY + t2.clientY) / 2
+  };
+}
+
+function setupMobileBoardGestures() {
+  const boardWrap = document.getElementById("board-wrap");
+  if (!boardWrap) return;
+
+  let mode = null;
+  let startPan = null;   // { svgX, svgY } — SVG point under finger at pan start
+  let startPinch = null;
+
+  function onTouchStart(evt) {
+    if (evt.touches.length === 1) {
+      mode = "pan";
+      const svgPt = clientToSvgPoint(evt.touches[0].clientX, evt.touches[0].clientY);
+      startPan = {
+        fingerClient: { x: evt.touches[0].clientX, y: evt.touches[0].clientY },
+        panXAtStart: app.boardView.panX,
+        panYAtStart: app.boardView.panY
+      };
+    }
+
+    if (evt.touches.length === 2) {
+      mode = "pinch";
+      const mid = getTouchMidpoint(evt.touches[0], evt.touches[1]);
+      startPinch = {
+        distance: getTouchDistance(evt.touches[0], evt.touches[1]),
+        scaleAtStart: app.boardView.scale,
+        panXAtStart: app.boardView.panX,
+        panYAtStart: app.boardView.panY,
+        midSvg: clientToSvgPoint(mid.x, mid.y),
+        midClient: mid
+      };
+    }
+  }
+
+  function onTouchMove(evt) {
+    evt.preventDefault();
+
+    if (mode === "pan" && evt.touches.length === 1 && startPan) {
+      const base = app.boardView.baseViewBox;
+      const boardWrap = document.getElementById("board-wrap");
+      const rect = boardWrap.getBoundingClientRect();
+
+      // How many SVG units per screen pixel at current zoom
+      const svgUnitsPerPx = (base.w / app.boardView.scale) / rect.width;
+
+      const dx = evt.touches[0].clientX - startPan.fingerClient.x;
+      const dy = evt.touches[0].clientY - startPan.fingerClient.y;
+
+      // Panning right moves the viewport left in SVG space (negative pan)
+      app.boardView.panX = startPan.panXAtStart - dx * svgUnitsPerPx;
+      app.boardView.panY = startPan.panYAtStart - dy * svgUnitsPerPx;
+
+      applyBoardViewTransform();
+    }
+
+    if (mode === "pinch" && evt.touches.length === 2 && startPinch) {
+      const newDistance = getTouchDistance(evt.touches[0], evt.touches[1]);
+      const rawScale = startPinch.scaleAtStart * (newDistance / startPinch.distance);
+      const nextScale = clamp(rawScale, app.boardView.minScale, app.boardView.maxScale);
+
+      // Current midpoint in client space
+      const mid = getTouchMidpoint(evt.touches[0], evt.touches[1]);
+
+      // The SVG point under the pinch midpoint should stay fixed.
+      // We achieve this by adjusting pan so that midSvg stays under mid.
+      const base = app.boardView.baseViewBox;
+      const boardWrap = document.getElementById("board-wrap");
+      const rect = boardWrap.getBoundingClientRect();
+
+      // What is the SVG unit/px ratio at the NEW scale?
+      const svgUnitsPerPxNew = (base.w / nextScale) / rect.width;
+      const svgUnitsPerPxNewY = (base.h / nextScale) / rect.height;
+
+      // Mid in screen space relative to board-wrap centre
+      const relX = mid.x - rect.left - rect.width / 2;
+      const relY = mid.y - rect.top - rect.height / 2;
+
+      // The SVG point under mid at the new scale and pan
+      // We want: midSvg.x = baseCx + panX + relX * svgUnitsPerPxNew
+      // => panX = midSvg.x - baseCx - relX * svgUnitsPerPxNew
+      const baseCx = base.x + base.w / 2;
+      const baseCy = base.y + base.h / 2;
+
+      app.boardView.scale = nextScale;
+      app.boardView.panX = startPinch.midSvg.x - baseCx - relX * svgUnitsPerPxNew;
+      app.boardView.panY = startPinch.midSvg.y - baseCy - relY * svgUnitsPerPxNewY;
+
+      applyBoardViewTransform();
+    }
+  }
+
+  function onTouchEnd(evt) {
+    if (evt.touches.length === 0) {
+      mode = null;
+      startPan = null;
+      startPinch = null;
+    } else if (evt.touches.length === 1) {
+      // Finger lifted during pinch — switch to pan
+      mode = "pan";
+      startPan = {
+        fingerClient: { x: evt.touches[0].clientX, y: evt.touches[0].clientY },
+        panXAtStart: app.boardView.panX,
+        panYAtStart: app.boardView.panY
+      };
+      startPinch = null;
+    }
+  }
+
+  boardWrap.addEventListener("touchstart", onTouchStart, { passive: false });
+  boardWrap.addEventListener("touchmove", onTouchMove, { passive: false });
+  boardWrap.addEventListener("touchend", onTouchEnd);
+}
+
+// ---------------------------------------------------------------------------
+// SVG injection and setup
+// ---------------------------------------------------------------------------
+async function injectBoardSvg() {
+  const host = document.getElementById("board-svg-host");
+  const svgText = await loadText("./assets/didcot-dogs-board.v1.svg");
+  host.innerHTML = svgText;
+
+  const svg = host.querySelector("svg");
+  if (!svg) throw new Error("Injected SVG markup did not contain an <svg> element.");
+
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  svg.style.background = "transparent";
+  // No CSS transform or willChange — viewBox controls everything now
+  svg.style.willChange = "auto";
+  svg.style.transform = "";
+  return svg;
+}
+
+function setupFullscreenButton() {
+  const btn = document.getElementById("fullscreen-btn");
+  if (!btn) return;
+
+  btn.addEventListener("click", async () => {
+    const el = document.documentElement;
+    if (!document.fullscreenElement) await el.requestFullscreen();
+    else await document.exitFullscreen();
+  });
+}
+
+function normalizeSvgNodeAliases(svg, rulesData) {
+  const aliases = rulesData.svgNodeIdAliases || {};
+  Object.entries(aliases).forEach(([fromId, toId]) => {
+    const node = svg.querySelector(`#${CSS.escape(fromId)}`);
+    if (!node) return;
+    node.setAttribute("data-original-id", fromId);
+    node.setAttribute("id", toId);
+  });
+}
+
+function ensureSvgDefs(svg) {
+  let defs = svg.querySelector("defs");
+  if (!defs) {
+    defs = createSvgEl("defs");
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  if (!svg.querySelector("#wild-route-gradient")) {
+    const gradient = createSvgEl("linearGradient", {
+      id: "wild-route-gradient",
+      x1: "0%",
+      y1: "0%",
+      x2: "100%",
+      y2: "0%"
+    });
+
+    [
+      ["0%", "#ff4d4d"],
+      ["18%", "#ff9f1c"],
+      ["36%", "#ffe600"],
+      ["54%", "#2ec27e"],
+      ["72%", "#2f6edb"],
+      ["90%", "#c64f8e"],
+      ["100%", "#ff4d4d"]
+    ].forEach(([offset, color]) => {
+      const stop = createSvgEl("stop", { offset, "stop-color": color });
+      gradient.appendChild(stop);
+    });
+
+    defs.appendChild(gradient);
+  }
+
+  if (!svg.querySelector("#claim-gradient-eric")) {
+    const claimEric = createSvgEl("linearGradient", {
+      id: "claim-gradient-eric",
+      gradientUnits: "userSpaceOnUse",
+      spreadMethod: "repeat",
+      x1: "0",
+      y1: "0",
+      x2: "40",
+      y2: "0"
+    });
+
+    [
+      ["0%", "#19a7ff"],
+      ["90%", "#19a7ff"],
+      ["90%", "#ffffff"],
+      ["100%", "#ffffff"]
+    ].forEach(([offset, color]) => {
+      const stop = createSvgEl("stop", { offset, "stop-color": color });
+      claimEric.appendChild(stop);
+    });
+
+    defs.appendChild(claimEric);
+  }
+
+  if (!svg.querySelector("#claim-gradient-tango")) {
+    const claimTango = createSvgEl("linearGradient", {
+      id: "claim-gradient-tango",
+      gradientUnits: "userSpaceOnUse",
+      spreadMethod: "repeat",
+      x1: "0",
+      y1: "0",
+      x2: "40",
+      y2: "0"
+    });
+
+    [
+      ["0%", "#ffe600"],
+      ["90%", "#ffe600"],
+      ["90%", "#ffffff"],
+      ["100%", "#ffffff"]
+    ].forEach(([offset, color]) => {
+      const stop = createSvgEl("stop", { offset, "stop-color": color });
+      claimTango.appendChild(stop);
+    });
+
+    defs.appendChild(claimTango);
+  }
+}
+
+let __claimGradientAnimationHandle = null;
+
+function startClaimGradientAnimation(svg) {
+  if (__claimGradientAnimationHandle) return;
+
+  const ericGradient = svg.querySelector("#claim-gradient-eric");
+  const tangoGradient = svg.querySelector("#claim-gradient-tango");
+  if (!ericGradient || !tangoGradient) return;
+
+  const tick = (now) => {
+    const shift = -((now / 18) % 40);
+    ericGradient.setAttribute("gradientTransform", `translate(${shift} 0)`);
+    tangoGradient.setAttribute("gradientTransform", `translate(${shift} 0)`);
+    __claimGradientAnimationHandle = requestAnimationFrame(tick);
+  };
+
+  __claimGradientAnimationHandle = requestAnimationFrame(tick);
+}
+
+function getGroupBBox(group) {
+  if (!group || typeof group.getBBox !== "function") return null;
+  const bbox = group.getBBox();
+  if (!Number.isFinite(bbox.x) || !Number.isFinite(bbox.y) || !Number.isFinite(bbox.width) || !Number.isFinite(bbox.height)) {
+    return null;
+  }
+  return bbox;
+}
+
+function unionBBoxes(boxes) {
+  const valid = boxes.filter(Boolean);
+  if (!valid.length) return null;
+
+  let minX = valid[0].x;
+  let minY = valid[0].y;
+  let maxX = valid[0].x + valid[0].width;
+  let maxY = valid[0].y + valid[0].height;
+
+  for (let i = 1; i < valid.length; i += 1) {
+    const box = valid[i];
+    minX = Math.min(minX, box.x);
+    minY = Math.min(minY, box.y);
+    maxX = Math.max(maxX, box.x + box.width);
+    maxY = Math.max(maxY, box.y + box.height);
+  }
+
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function tightenSvgViewBox(svg) {
+  const routesGroup = svg.querySelector("#Routes");
+  const labelsGroup = svg.querySelector("#Labels");
+  const nodesGroup = svg.querySelector("#Nodes");
+
+  const contentBox = unionBBoxes([
+    getGroupBBox(routesGroup),
+    getGroupBBox(labelsGroup),
+    getGroupBBox(nodesGroup)
+  ]);
+
+  if (!contentBox) return;
+
+  const paddingX = 68;
+  const paddingY = 60;
+  const x = contentBox.x - paddingX;
+  const y = contentBox.y - paddingY;
+  const width = contentBox.width + paddingX * 2;
+  const height = contentBox.height + paddingY * 2;
+
+  svg.setAttribute("viewBox", `${x} ${y} ${width} ${height}`);
+
+  // Store the fitted viewBox as base for our pan/zoom system
+  app.boardView.baseViewBox = { x, y, w: width, h: height };
+}
+
+function getSvgAudit(svg, rulesData) {
+  const routesGroup = svg.querySelector("#Routes");
+  const nodesGroup = svg.querySelector("#Nodes");
+
+  const routeElements = routesGroup ? Array.from(routesGroup.querySelectorAll("[id]")) : [];
+  const nodeElements = nodesGroup ? Array.from(nodesGroup.querySelectorAll("[id]")) : [];
+
+  const routeIds = routeElements.map(el => el.id).filter(Boolean);
+  const nodeIds = nodeElements.map(el => el.id).filter(Boolean);
+
+  return {
+    routeIds,
+    nodeIds,
+    routeCount: routeIds.length,
+    nodeCount: nodeIds.length,
+    missingRuleRoutes: Object.keys(rulesData.routes || {}).filter(routeId => !routeIds.includes(routeId)),
+    missingRuleNodes: (rulesData.nodes || []).filter(nodeId => !nodeIds.includes(nodeId))
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Game logic helpers (unchanged from v1.9.5)
+// ---------------------------------------------------------------------------
+function shuffle(array) {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function parseRouteId(routeId) {
+  const parts = routeId.split("_to_");
+  if (parts.length !== 2) throw new Error(`Could not parse route ID: ${routeId}`);
+  return { a: parts[0], b: parts[1] };
+}
+
+function formatNodeName(nodeId) {
+  return String(nodeId).replaceAll("_", " ");
+}
+
+function formatRouteName(routeId) {
+  const { a, b } = parseRouteId(routeId);
+  return `${formatNodeName(a)} — ${formatNodeName(b)}`;
+}
+
+function routesShareNode(routeIdA, routeIdB) {
+  const a = parseRouteId(routeIdA);
+  const b = parseRouteId(routeIdB);
+  return a.a === b.a || a.a === b.b || a.b === b.a || a.b === b.b;
+}
+
+function assignRouteColours(routeIds, palette) {
+  const assigned = {};
+  const shuffledRoutes = shuffle(routeIds);
+
+  shuffledRoutes.forEach(routeId => {
+    const blocked = Object.keys(assigned)
+      .filter(otherId => routesShareNode(routeId, otherId))
+      .map(otherId => assigned[otherId]);
+
+    const options = shuffle(palette.filter(color => !blocked.includes(color)));
+    const fallback = shuffle(palette);
+    assigned[routeId] = options[0] || fallback[0];
+  });
+
+  return assigned;
+}
+
+function rerollSpecificRouteColours(routeIdsToReroll) {
+  const palette = app.rulesData.routeColours || [];
+  routeIdsToReroll.forEach(routeId => {
+    const blocked = Object.keys(app.state.routes)
+      .filter(otherId => otherId !== routeId && routesShareNode(routeId, otherId))
+      .map(otherId => app.state.routes[otherId].colour);
+
+    const options = shuffle(palette.filter(color => !blocked.includes(color)));
+    const fallback = shuffle(palette);
+    app.state.routes[routeId].colour = options[0] || fallback[0];
+  });
+}
+
+function buildDeck(rulesData) {
+  const drawColours = rulesData.drawColours || [];
+  const copiesPerColour = rulesData.deck?.copiesPerColour ?? 8;
+  const rainbowCount = rulesData.deck?.rainbowCount ?? 4;
+
+  const deck = [];
+  drawColours.forEach(color => {
+    for (let i = 0; i < copiesPerColour; i += 1) deck.push(color);
+  });
+  for (let i = 0; i < rainbowCount; i += 1) deck.push("rainbow");
+  return shuffle(deck);
+}
+
+function createPlayerState(startNode) {
+  return {
+    currentNode: startNode,
+    previousNode: null,
+    hand: [],
+    journeyRouteIds: [],
+    destinationQueue: [],
+    completedDestinations: [],
+    completedCount: 0,
+    lastDrawColor: null
+  };
+}
+
+function createInitialLocalState(rulesData, controlledHero = null) {
+  const routeIds = Object.keys(rulesData.routes || {});
+  const routeColours = assignRouteColours(routeIds, rulesData.routeColours || []);
+  const shuffledDestinations = shuffle(rulesData.destinationPool || []);
+  const ericQueue = shuffledDestinations.slice(0, 5);
+  const tangoQueue = shuffledDestinations.slice(5, 10);
+
+  const routes = {};
+  routeIds.forEach(routeId => {
+    routes[routeId] = { colour: routeColours[routeId], claimedBy: null };
+  });
+
+  return {
+    currentPlayer: controlledHero || "Eric",
+    controlledHero,
+    gameStarted: Boolean(controlledHero),
+    selectedRouteId: null,
+    drawPile: buildDeck(rulesData),
+    discardPile: [],
+    justCompleted: null,
+    routes,
+    players: {
+      Eric: { ...createPlayerState(rulesData.startNode), destinationQueue: ericQueue },
+      Tango: { ...createPlayerState(rulesData.startNode), destinationQueue: tangoQueue }
+    }
+  };
+}
+
+function getCurrentTargetForPlayer(player) {
+  if (player.completedCount < 5) return player.destinationQueue[player.completedCount] || null;
+  return app.rulesData.winCondition?.finalDestinationAfterFive || "Didcot";
+}
+
+function getNodeElement(svg, nodeId) {
+  return svg.querySelector(`#${CSS.escape(nodeId)}`);
+}
+
+function getNodeCenter(svg, nodeId) {
+  const el = getNodeElement(svg, nodeId);
+  if (!el) throw new Error(`Node not found in SVG: ${nodeId}`);
+
+  if (el.tagName.toLowerCase() === "circle") {
+    return { x: Number(el.getAttribute("cx")), y: Number(el.getAttribute("cy")) };
+  }
+
+  const box = el.getBBox();
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+function ensureLayer(svg, layerId) {
+  let layer = svg.querySelector(`#${CSS.escape(layerId)}`);
+  if (layer) return layer;
+  layer = createSvgEl("g", { id: layerId });
+  svg.appendChild(layer);
+  return layer;
+}
+
+function ensureTokenDefs(svg) {
+  let defs = svg.querySelector("defs");
+  if (!defs) {
+    defs = createSvgEl("defs");
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  ["Eric", "Tango"].forEach(playerName => {
+    const clipId = `token-clip-${playerName}`;
+    if (!svg.querySelector(`#${CSS.escape(clipId)}`)) {
+      const clipPath = createSvgEl("clipPath", { id: clipId });
+      const clipCircle = createSvgEl("circle", { cx: "0", cy: "0", r: "20" });
+      clipPath.appendChild(clipCircle);
+      defs.appendChild(clipPath);
+    }
+  });
+}
+
+function ensurePlayerToken(svg, playerName) {
+  ensureTokenDefs(svg);
+  const layer = ensureLayer(svg, "token-layer");
+  let group = svg.querySelector(`#token-${CSS.escape(playerName)}`);
+  if (group) return group;
+
+  group = createSvgEl("g", {
+    id: `token-${playerName}`,
+    class: `token-group ${PLAYER_CONFIG[playerName].tokenClass}`
+  });
+
+  const wobble = createSvgEl("g", { class: "token-wobble" });
+
+  const circle = createSvgEl("circle", {
+    class: "token-circle",
+    r: "24",
+    fill: "#ffffff"
+  });
+
+  const image = createSvgEl("image", {
+    x: "-20",
+    y: "-20",
+    width: "40",
+    height: "40",
+    preserveAspectRatio: "xMidYMid meet",
+    "clip-path": `url(#token-clip-${playerName})`
+  });
+  image.setAttributeNS(XLINK_NS, "xlink:href", PLAYER_CONFIG[playerName].image);
+  image.setAttribute("href", PLAYER_CONFIG[playerName].image);
+
+  wobble.appendChild(circle);
+  wobble.appendChild(image);
+  group.appendChild(wobble);
+  layer.appendChild(group);
+  return group;
+}
+
+function setTokenPosition(svg, playerName, x, y) {
+  const token = ensurePlayerToken(svg, playerName);
+  token.setAttribute("transform", `translate(${x}, ${y})`);
+}
+
+function getPlayerTokenAnchor(playerName, nodeId) {
+  const center = getNodeCenter(app.svg, nodeId);
+  const ericNode = app.state.players.Eric.currentNode;
+  const tangoNode = app.state.players.Tango.currentNode;
+
+  if (ericNode === tangoNode && nodeId === ericNode) {
+    const sideGap = 18;
+    return playerName === "Eric"
+      ? { x: center.x - sideGap, y: center.y }
+      : { x: center.x + sideGap, y: center.y };
+  }
+
+  return { x: center.x, y: center.y };
+}
+
+function renderTokens() {
+  Object.keys(app.state.players).forEach(playerName => {
+    const player = app.state.players[playerName];
+    const anchor = getPlayerTokenAnchor(playerName, player.currentNode);
+    setTokenPosition(app.svg, playerName, anchor.x, anchor.y);
+  });
+}
+
+function getConnectedNode(routeId, fromNode) {
+  const { a, b } = parseRouteId(routeId);
+  if (a === fromNode) return b;
+  if (b === fromNode) return a;
+  return null;
+}
+
+function countCards(hand) {
+  return hand.reduce((acc, card) => {
+    acc[card] = (acc[card] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function getDisplayRouteColor(routeColor) {
+  return routeColor === "grey" ? "wild" : routeColor;
+}
+
+function getPaymentOptionsForColor(routeId, playerName, chosenColor = null) {
+  const player = app.state.players[playerName];
+  const handCounts = countCards(player.hand);
+  const rainbowCount = handCounts.rainbow || 0;
+  const routeColour = app.state.routes[routeId].colour;
+  const cost = app.rulesData.routes[routeId].length;
+
+  const effectiveColor = chosenColor || routeColour;
+  const owned = handCounts[effectiveColor] || 0;
+  const minRainbow = Math.max(0, cost - owned);
+  const maxRainbow = Math.min(rainbowCount, cost);
+
+  const options = [];
+  for (let rainbowUse = minRainbow; rainbowUse <= maxRainbow; rainbowUse += 1) {
+    const useColourCount = cost - rainbowUse;
+    if (useColourCount <= owned) {
+      options.push({
+        colourChoice: effectiveColor,
+        useColourCount,
+        useRainbowCount: rainbowUse
+      });
+    }
+  }
+
+  if (routeColour === "grey") {
+    const availableColors = (app.rulesData.drawColours || []).filter(color => {
+      const count = handCounts[color] || 0;
+      return count + rainbowCount >= cost;
+    });
+
+    return {
+      affordable: availableColors.length > 0,
+      isWild: true,
+      availableColors,
+      options
+    };
+  }
+
+  return {
+    affordable: options.length > 0,
+    isWild: false,
+    availableColors: [routeColour],
+    options
+  };
+}
+
+function getRoutePlayability(routeId) {
+  const currentPlayerName = app.state.currentPlayer;
+  const currentPlayer = app.state.players[currentPlayerName];
+  const routeState = app.state.routes[routeId];
+  const connectedNode = getConnectedNode(routeId, currentPlayer.currentNode);
+
+  if (!connectedNode) return { playable: false, reason: "Route does not connect to current node." };
+  if (routeState.claimedBy) return { playable: false, reason: `Already claimed by ${routeState.claimedBy}.` };
+  if (currentPlayer.previousNode && connectedNode === currentPlayer.previousNode) {
+    return { playable: false, reason: "Cannot move straight back to previous node." };
+  }
+
+  const payment = getPaymentOptionsForColor(routeId, currentPlayerName);
+  if (!payment.affordable) {
+    return { playable: false, reason: "Not enough matching cards.", targetNode: connectedNode };
+  }
+
+  return { playable: true, targetNode: connectedNode, payment };
+}
+
+function drawCard() {
+  if (!app.state.drawPile.length) {
+    if (!app.state.discardPile.length) return null;
+    app.state.drawPile = shuffle(app.state.discardPile);
+    app.state.discardPile = [];
+  }
+  return app.state.drawPile.pop();
+}
+
+function removeSpecificCardsFromHand(hand, colourChoice, useColourCount, useRainbowCount) {
+  const nextHand = [...hand];
+  let colourLeft = useColourCount;
+  let rainbowLeft = useRainbowCount;
+  const spent = [];
+
+  for (let i = nextHand.length - 1; i >= 0 && colourLeft > 0; i -= 1) {
+    if (nextHand[i] === colourChoice) {
+      spent.push(nextHand[i]);
+      nextHand.splice(i, 1);
+      colourLeft -= 1;
+    }
+  }
+
+  for (let i = nextHand.length - 1; i >= 0 && rainbowLeft > 0; i -= 1) {
+    if (nextHand[i] === "rainbow") {
+      spent.push(nextHand[i]);
+      nextHand.splice(i, 1);
+      rainbowLeft -= 1;
+    }
+  }
+
+  return { nextHand, spent };
+}
+
+function endTurn() {
+  app.state.selectedRouteId = null;
+  closeRouteModal();
+
+  if (app.state.controlledHero) {
+    app.state.currentPlayer = app.state.controlledHero;
+  } else {
+    app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
+  }
+
+  renderAll();
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function getRouteTravelDirection(routeEl, fromNode, toNode, routeId) {
+  const total = routeEl.getTotalLength();
+  const startPoint = routeEl.getPointAtLength(0);
+  const endPoint = routeEl.getPointAtLength(total);
+
+  const fromCenter = getNodeCenter(app.svg, fromNode);
+  const toCenter = getNodeCenter(app.svg, toNode);
+
+  const startToFrom = Math.hypot(startPoint.x - fromCenter.x, startPoint.y - fromCenter.y);
+  const endToFrom = Math.hypot(endPoint.x - fromCenter.x, endPoint.y - fromCenter.y);
+  const startToTo = Math.hypot(startPoint.x - toCenter.x, startPoint.y - toCenter.y);
+  const endToTo = Math.hypot(endPoint.x - toCenter.x, endPoint.y - toCenter.y);
+
+  if (startToFrom <= endToFrom && endToTo <= startToTo) return true;
+  if (endToFrom < startToFrom && startToTo < endToTo) return false;
+
+  const parsed = parseRouteId(routeId);
+  return parsed.a === fromNode && parsed.b === toNode;
+}
+
+function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
+  return new Promise(resolve => {
+    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if (!routeEl || typeof routeEl.getTotalLength !== "function") {
+      renderTokens();
+      resolve();
+      return;
+    }
+
+    const token = ensurePlayerToken(app.svg, playerName);
+    const total = routeEl.getTotalLength();
+    const duration = 900;
+    const forward = getRouteTravelDirection(routeEl, fromNode, toNode, routeId);
+    const start = performance.now();
+
+    function step(now) {
+      const elapsed = now - start;
+      const progress = Math.min(1, elapsed / duration);
+      const eased = easeInOutCubic(progress);
+      const routeProgress = forward ? eased : 1 - eased;
+      const point = routeEl.getPointAtLength(total * routeProgress);
+
+      let x = point.x;
+      let y = point.y;
+
+      const otherPlayer = playerName === "Eric" ? "Tango" : "Eric";
+      if (app.state.players[otherPlayer].currentNode === toNode) {
+        if (playerName === "Eric") x -= 18;
+        if (playerName === "Tango") x += 18;
+      }
+
+      token.setAttribute("transform", `translate(${x}, ${y})`);
+
+      if (progress < 1) requestAnimationFrame(step);
+      else resolve();
+    }
+
+    requestAnimationFrame(step);
+  });
+}
+
+function updateStatus(text) {
+  const chip = document.getElementById("status-chip");
+  if (chip) chip.textContent = text;
+}
+
+function ensureRouteCostLayer() {
+  return ensureLayer(app.svg, "route-cost-layer");
+}
+
+function handleRouteSelection(routeId) {
+  app.state.selectedRouteId = routeId;
+  renderAll();
+  handleRouteHover(routeId);
+  openRouteModal(routeId);
+}
+
+function renderRouteCostBadges() {
+  const layer = ensureRouteCostLayer();
+  layer.innerHTML = "";
+
+  Object.keys(app.rulesData.routes || {}).forEach(routeId => {
+    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if (!routeEl || app.state.routes[routeId].claimedBy) return;
+    if (typeof routeEl.getTotalLength !== "function") return;
+
+    const len = routeEl.getTotalLength();
+    const mid = routeEl.getPointAtLength(len / 2);
+    const routeColour = app.state.routes[routeId].colour;
+    const isWild = routeColour === "grey";
+    const hex = ROUTE_COLOUR_HEX[routeColour] || "#7a7a7a";
+    const cost = app.rulesData.routes[routeId].length;
+
+    const group = createSvgEl("g", {
+      class: "route-cost-badge",
+      transform: `translate(${mid.x}, ${mid.y})`,
+      "data-route-id": routeId
+    });
+    group.style.cursor = "pointer";
+
+    const circle = createSvgEl("circle", {
+      r: "12",
+      fill: "#ffffff",
+      stroke: isWild ? "#c64f8e" : hex
+    });
+
+    const text = createSvgEl("text", {
+      x: "0",
+      y: "0",
+      fill: isWild ? "#c64f8e" : hex,
+      "text-anchor": "middle",
+      "dominant-baseline": "middle",
+      "alignment-baseline": "middle"
+    });
+    text.textContent = String(cost);
+    text.setAttribute("dy", "0.02em");
+
+    group.appendChild(circle);
+    group.appendChild(text);
+
+    group.addEventListener("click", evt => {
+      evt.stopPropagation();
+      handleRouteSelection(routeId);
+    });
+
+    group.addEventListener("mouseenter", evt => {
+      evt.stopPropagation();
+      handleRouteHover(routeId);
+    });
+
+    group.addEventListener("mouseleave", () => {
+      updateStatus("Choose one action: draw a card or click a route to play it.");
+    });
+
+    layer.appendChild(group);
+  });
+}
+
+function renderRoutes() {
+  const routeIds = Object.keys(app.rulesData.routes || {});
+  const selectedRouteId = app.state.selectedRouteId;
+
+  routeIds.forEach(routeId => {
+    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if (!routeEl) return;
+
+    routeEl.classList.remove("route-claimed-eric", "route-claimed-tango", "route-eligible", "route-selected", "route-blocked");
+
+    const routeState = app.state.routes[routeId];
+    const routeColor = routeState.colour;
+    const baseColour = ROUTE_COLOUR_HEX[routeColor] || "#7a7a7a";
+
+    routeEl.style.strokeWidth = "8";
+    routeEl.style.cursor = "pointer";
+    routeEl.style.stroke = routeColor === "grey" ? "url(#wild-route-gradient)" : baseColour;
+
+    if (routeState.claimedBy) {
+      routeEl.classList.add(PLAYER_CONFIG[routeState.claimedBy].routeClass);
+      return;
+    }
+
+    const playability = getRoutePlayability(routeId);
+
+    if (playability.playable) {
+      routeEl.classList.add("route-eligible");
+    } else if (
+      playability.reason !== "Route does not connect to current node." &&
+      !getConnectedNode(routeId, app.state.players[app.state.currentPlayer].currentNode)
+    ) {
+      routeEl.classList.add("route-blocked");
+    }
+
+    if (selectedRouteId === routeId) {
+      routeEl.classList.add("route-selected");
+    }
+  });
+
+  renderRouteCostBadges();
+}
+
+function renderTurnBadge() {
+  const badge = document.getElementById("turn-player-badge");
+  if (!badge) return;
+  badge.className = `player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
+  badge.textContent = `${app.state.currentPlayer} to play`;
+}
+
+function renderCounts() {
+  const drawEl = document.getElementById("draw-pile-count");
+  const discardEl = document.getElementById("discard-pile-count");
+  if (drawEl) drawEl.textContent = app.state.drawPile.length;
+  if (discardEl) discardEl.textContent = app.state.discardPile.length;
+}
+
+function renderSelectedRouteCard() {
+  const card = document.getElementById("selected-route-card");
+  if (!card) return;
+
+  const routeId = app.state.selectedRouteId;
+  card.className = "selected-route-card";
+
+  if (!routeId) {
+    card.textContent = "No route selected.";
+    return;
+  }
+
+  const routeColour = getDisplayRouteColor(app.state.routes[routeId].colour);
+  const cost = app.rulesData.routes[routeId].length;
+  const playability = getRoutePlayability(routeId);
+
+  if (playability.playable) {
+    card.classList.add("valid");
+    card.innerHTML = `
+      <strong>${formatRouteName(routeId)}</strong><br>
+      Colour: ${routeColour}<br>
+      Cost: ${cost}<br>
+      Destination node if played: ${formatNodeName(playability.targetNode)}
+    `;
+  } else {
+    card.classList.add("invalid");
+    card.innerHTML = `
+      <strong>${formatRouteName(routeId)}</strong><br>
+      Colour: ${routeColour}<br>
+      Cost: ${cost}<br>
+      ${playability.reason}
+    `;
+  }
+}
+
+function getHandStacks(hand) {
+  const counts = countCards(hand);
+  const order = ["red", "orange", "blue", "green", "black", "pink", "yellow", "rainbow"];
+  return order
+    .filter(color => (counts[color] || 0) > 0)
+    .map(color => ({ color, count: counts[color] }));
+}
+
+function renderHandInto(container, player, cls = "hand-card") {
+  container.innerHTML = "";
+  const stacks = getHandStacks(player.hand);
+
+  if (!stacks.length) {
+    const empty = document.createElement("div");
+    empty.className = "panel-copy";
+    empty.textContent = "No cards yet.";
+    container.appendChild(empty);
+    return;
+  }
+
+  stacks.forEach(stack => {
+    const el = document.createElement("div");
+    el.className = `${cls} ${stack.color}`;
+    if (player.lastDrawColor === stack.color && cls === "hand-card") {
+      el.classList.add("draw-in");
+    }
+    el.innerHTML = `
+      <div class="card-name">${stack.color}</div>
+      <div class="card-count">${stack.count}</div>
+    `;
+    container.appendChild(el);
+  });
+}
+
+function renderActiveHand() {
+  const wrap = document.getElementById("active-hand");
+  if (!wrap) return;
+  const player = app.state.players[app.state.currentPlayer];
+  renderHandInto(wrap, player, "hand-card");
+  player.lastDrawColor = null;
+}
+
+function renderPlayerSummary() {
+  const wrap = document.getElementById("player-summary-wrap");
+  if (!wrap) return;
+
+  wrap.innerHTML = "";
+
+  ["Eric", "Tango"].forEach(playerName => {
+    const player = app.state.players[playerName];
+    const target = getCurrentTargetForPlayer(player);
+    const card = document.createElement("div");
+    card.className = `player-summary-card${app.state.currentPlayer === playerName ? " active" : ""}`;
+    card.innerHTML = `
+      <div class="player-summary-name">${playerName}</div>
+      <div class="player-summary-meta">
+        Current node: ${formatNodeName(player.currentNode)}<br>
+        Previous node: ${player.previousNode ? formatNodeName(player.previousNode) : "—"}<br>
+        Hand size: ${player.hand.length}<br>
+        Completed: ${Math.min(player.completedCount, 5)}/5<br>
+        Active target: ${target ? formatNodeName(target) : "—"}
+      </div>
+    `;
+    wrap.appendChild(card);
+  });
+}
+
+function createDestinationActiveCard(title, body, flip = false) {
+  const el = document.createElement("div");
+  el.className = "destination-card active-card";
+  if (flip) el.classList.add("flip-in");
+  el.innerHTML = `
+    <div class="destination-title">${title}</div>
+    <div class="destination-body">${body}</div>
+  `;
+  return el;
+}
+
+function createDestinationQuestionCard() {
+  const el = document.createElement("div");
+  el.className = "destination-card hidden-card";
+  el.textContent = "?";
+  return el;
+}
+
+function createDestinationCompletedCard(title) {
+  const el = document.createElement("div");
+  el.className = "destination-card completed-card";
+  el.innerHTML = `<div class="destination-title">✓ ${title}</div>`;
+  return el;
+}
+
+function buildDestinationSequenceElement(playerName, showFlip = true) {
+  const player = app.state.players[playerName];
+  const sequence = document.createElement("div");
+  sequence.className = "destination-sequence";
+
+  const title = document.createElement("div");
+  title.className = "sequence-title";
+  title.textContent = `${playerName} routes`;
+
+  const grid = document.createElement("div");
+  grid.className = "destination-card-grid";
+
+  for (let i = 0; i < 5; i += 1) {
+    const destinationId = player.destinationQueue[i];
+    const destination = app.destinationData.destinations[destinationId];
+    const label = destination ? destination.title : formatNodeName(destinationId);
+    const body = destination?.description || "";
+
+    if (i < player.completedCount) {
+      grid.appendChild(createDestinationCompletedCard(label));
+    } else if (i === player.completedCount && player.completedCount < 5) {
+      const shouldFlip = showFlip && app.state.justCompleted?.playerName === playerName;
+      grid.appendChild(createDestinationActiveCard(label, body, shouldFlip));
+    } else {
+      grid.appendChild(createDestinationQuestionCard());
+    }
+  }
+
+  sequence.appendChild(title);
+  sequence.appendChild(grid);
+  return sequence;
+}
+
+function renderDestinationSequences() {
+  const wrap = document.getElementById("destination-sequences");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  wrap.appendChild(buildDestinationSequenceElement(app.state.currentPlayer, true));
+}
+
+function renderTargetPulse() {
+  app.svg.querySelectorAll(".target-node-pulse").forEach(el => el.classList.remove("target-node-pulse"));
+
+  const targetNodeId = getCurrentTargetForPlayer(app.state.players[app.state.currentPlayer]);
+  if (!targetNodeId) return;
+
+  const targetEl = getNodeElement(app.svg, targetNodeId);
+  if (targetEl) targetEl.classList.add("target-node-pulse");
+}
+
+function renderDebug(audit) {
+  const leftDebug = document.getElementById("left-debug");
+  if (!leftDebug) return;
+
+  leftDebug.innerHTML = `
+    <div class="debug-list">
+      <div><strong>Version:</strong> ${APP_VERSION}</div>
+      <div><strong>Local hero:</strong> ${app.state.controlledHero || "not chosen"}</div>
+      <div><strong>Current player:</strong> ${app.state.currentPlayer}</div>
+      <div><strong>Total SVG nodes:</strong> ${audit.nodeCount}</div>
+      <div><strong>Total SVG routes:</strong> ${audit.routeCount}</div>
+      <div><strong>Missing rule nodes:</strong> ${audit.missingRuleNodes.length}</div>
+      <div><strong>Missing rule routes:</strong> ${audit.missingRuleRoutes.length}</div>
+    </div>
+  `;
+}
+
+function openMobileSheet() {
+  const sheet = document.getElementById("mobile-sheet");
+  if (sheet && sheet.classList.contains("visible-shell")) sheet.classList.add("expanded");
+}
+
+function closeMobileSheet() {
+  const sheet = document.getElementById("mobile-sheet");
+  if (sheet) sheet.classList.remove("expanded");
+}
+
+function toggleMobileSheet() {
+  const sheet = document.getElementById("mobile-sheet");
+  if (!sheet || !sheet.classList.contains("visible-shell")) return;
+  sheet.classList.toggle("expanded");
+}
+
+function renderMobileRoutesPanel() {
+  const hudTurn = document.getElementById("mobile-hud-turn");
+  const hudDraw = document.getElementById("mobile-hud-draw");
+  const hudDestination = document.getElementById("mobile-hud-destination");
+  const drawBtn = document.getElementById("mobile-open-sheet-btn");
+  const routesBtn = document.getElementById("mobile-reset-view-btn");
+  const sheetSummary = document.getElementById("mobile-sheet-summary");
+  const sheetSelectedRoute = document.getElementById("mobile-sheet-selected-route");
+  const sheetActions = document.getElementById("mobile-sheet-actions");
+  const sheetHand = document.getElementById("mobile-sheet-hand");
+  const sheetDestination = document.getElementById("mobile-sheet-destination");
+  const handPeek = document.getElementById("mobile-hand-peek");
+
+  if (!hudTurn || !hudDraw || !hudDestination || !drawBtn || !routesBtn || !sheetSummary || !sheetSelectedRoute || !sheetActions || !sheetHand || !sheetDestination || !handPeek) {
+    return;
+  }
+
+  const currentPlayerName = app.state.currentPlayer;
+  const currentPlayer = app.state.players[currentPlayerName];
+  const currentTargetId = getCurrentTargetForPlayer(currentPlayer);
+  const currentTargetTitle = currentTargetId
+    ? (app.destinationData.destinations[currentTargetId]?.title || formatNodeName(currentTargetId))
+    : "—";
+
+  hudTurn.textContent = `${currentPlayerName} to play`;
+  hudDraw.textContent = `Draw: ${app.state.drawPile.length}`;
+  hudDestination.textContent = `Target: ${currentTargetTitle}`;
+
+  drawBtn.textContent = "Draw card";
+  routesBtn.textContent = "Routes";
+
+  sheetSummary.innerHTML = `
+    <div class="player-summary-card active">
+      <div class="player-summary-name">${currentPlayerName}</div>
+      <div class="player-summary-meta">
+        Current: ${formatNodeName(currentPlayer.currentNode)}<br>
+        Previous: ${currentPlayer.previousNode ? formatNodeName(currentPlayer.previousNode) : "—"}<br>
+        Completed: ${Math.min(currentPlayer.completedCount, 5)}/5<br>
+        Target: ${currentTargetTitle}
+      </div>
+    </div>
+  `;
+
+  sheetSelectedRoute.innerHTML = "";
+  sheetActions.innerHTML = "";
+  sheetHand.innerHTML = "";
+  sheetDestination.innerHTML = "";
+  sheetDestination.appendChild(buildDestinationSequenceElement(currentPlayerName, false));
+
+  handPeek.innerHTML = "";
+  renderHandInto(handPeek, currentPlayer, "mobile-hand-peek-card");
+}
+
+function buildSpendPreviewCards(option) {
+  const items = [];
+  for (let i = 0; i < option.useColourCount; i += 1) items.push(option.colourChoice);
+  for (let i = 0; i < option.useRainbowCount; i += 1) items.push("rainbow");
+  return items;
+}
+
+function renderButtons() {
+  const drawBtn = document.getElementById("draw-card-btn");
+  if (drawBtn) drawBtn.disabled = false;
+}
+
+function renderAll() {
+  renderTurnBadge();
+  renderCounts();
+  renderSelectedRouteCard();
+  renderActiveHand();
+  renderPlayerSummary();
+  renderDestinationSequences();
+  renderRoutes();
+  renderTokens();
+  renderTargetPulse();
+  renderDebug(app.audit);
+  renderButtons();
+  renderMobileRoutesPanel();
+}
+
+function buildCardChoiceEl(color, active = false) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = `route-colour-choice-card ${color}${active ? " active" : ""}`;
+  card.textContent = color === "rainbow" ? "rainbow" : color;
+  return card;
+}
+
+function renderRouteModalOptionStage() {
+  const routeId = app.modal.routeId;
+  const body = document.getElementById("route-modal-body");
+  const subtitle = document.getElementById("route-modal-subtitle");
+  const confirmBtn = document.getElementById("route-modal-confirm");
+
+  body.innerHTML = "";
+  confirmBtn.disabled = app.modal.selectedOptionIndex === null;
+
+  subtitle.textContent = `Choose how to pay for ${formatRouteName(routeId)}.`;
+
+  const optionList = document.createElement("div");
+  optionList.className = "route-option-list";
+
+  app.modal.options.forEach((option, index) => {
+    const row = document.createElement("button");
+    row.className = `route-option-row${app.modal.selectedOptionIndex === index ? " active" : ""}`;
+    row.type = "button";
+
+    const rowLabel = document.createElement("div");
+    rowLabel.className = "route-option-row-label";
+    rowLabel.textContent = `Option ${index + 1}`;
+
+    const rowCards = document.createElement("div");
+    rowCards.className = "route-option-row-cards";
+
+    buildSpendPreviewCards(option).forEach(cardColor => {
+      const card = document.createElement("div");
+      card.className = `route-spend-card ${cardColor}`;
+      card.textContent = cardColor;
+      rowCards.appendChild(card);
+    });
+
+    row.appendChild(rowLabel);
+    row.appendChild(rowCards);
+
+    row.addEventListener("click", () => {
+      app.modal.selectedOptionIndex = index;
+      renderRouteModalOptionStage();
+    });
+
+    optionList.appendChild(row);
+  });
+
+  body.appendChild(optionList);
+  confirmBtn.disabled = app.modal.selectedOptionIndex === null;
+}
+
+function openRouteModal(routeId) {
+  const playability = getRoutePlayability(routeId);
+  if (!playability.playable) {
+    updateStatus(playability.reason);
+    return;
+  }
+
+  app.modal.routeId = routeId;
+  app.modal.selectedOptionIndex = null;
+  app.modal.chosenColor = null;
+
+  const overlay = document.getElementById("route-modal-overlay");
+  const title = document.getElementById("route-modal-title");
+  const subtitle = document.getElementById("route-modal-subtitle");
+  const body = document.getElementById("route-modal-body");
+  const confirmBtn = document.getElementById("route-modal-confirm");
+
+  title.textContent = formatRouteName(routeId);
+  body.innerHTML = "";
+  confirmBtn.disabled = true;
+
+  const routeColor = app.state.routes[routeId].colour;
+
+  if (routeColor === "grey") {
+    const payment = getPaymentOptionsForColor(routeId, app.state.currentPlayer);
+    subtitle.textContent = "Wild route. Choose a colour you want to play with.";
+
+    const row = document.createElement("div");
+    row.className = "route-colour-card-row";
+
+    payment.availableColors.forEach(color => {
+      const card = buildCardChoiceEl(color, app.modal.chosenColor === color);
+      card.addEventListener("click", () => {
+        app.modal.chosenColor = color;
+        app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, color).options;
+        app.modal.selectedOptionIndex = null;
+        renderRouteModalOptionStage();
+      });
+      row.appendChild(card);
+    });
+
+    body.appendChild(row);
+  } else {
+    app.modal.chosenColor = routeColor;
+    app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, routeColor).options;
+    renderRouteModalOptionStage();
+  }
+
+  overlay.classList.add("open");
+}
+
+function closeRouteModal() {
+  document.getElementById("route-modal-overlay").classList.remove("open");
+  app.modal.routeId = null;
+  app.modal.chosenColor = null;
+  app.modal.selectedOptionIndex = null;
+  app.modal.options = [];
+}
+
+async function confirmRouteModalPlay() {
+  if (!app.modal.routeId || app.modal.selectedOptionIndex === null) return;
+
+  const routeId = app.modal.routeId;
+  const chosenPayment = app.modal.options[app.modal.selectedOptionIndex];
+  const currentPlayerName = app.state.currentPlayer;
+  const currentPlayer = app.state.players[currentPlayerName];
+  const playability = getRoutePlayability(routeId);
+
+  if (!playability.playable) {
+    closeRouteModal();
+    renderAll();
+    updateStatus(playability.reason);
+    return;
+  }
+
+  const handResult = removeSpecificCardsFromHand(
+    currentPlayer.hand,
+    chosenPayment.colourChoice,
+    chosenPayment.useColourCount,
+    chosenPayment.useRainbowCount
   );
-  border-top: 1px solid rgba(255,255,255,0.08);
-  box-shadow: 0 -10px 24px rgba(0,0,0,0.18);
-  overflow: visible;
-}
-#mobile-bottom-bar.visible { display: block; }
 
-#mobile-hand-peek {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  overflow-y: visible;
-  padding: 0 2px;
-  scrollbar-width: none;
-  min-height: 82px;
-  align-items: flex-end;
-}
-#mobile-hand-peek::-webkit-scrollbar { display: none; }
+  currentPlayer.hand = handResult.nextHand;
+  app.state.discardPile.push(...handResult.spent);
 
-.mobile-hand-peek-card {
-  width: 54px;
-  height: 74px;
-  border-radius: 10px 10px 0 0;
-  padding: 6px;
-  position: relative;
-  flex: 0 0 auto;
-  margin-top: -30px;
-  margin-bottom: 0;
-  box-shadow: 0 6px 14px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.35);
-  border: 2px solid rgba(0,0,0,0.16);
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
-  overflow: hidden;
-  font-family: var(--ui-font);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: capitalize;
-}
-.mobile-hand-peek-card::before {
-  content: "";
-  position: absolute;
-  inset: 4px;
-  border-radius: 6px 6px 0 0;
-  border: 1px solid rgba(255,255,255,0.32);
-  pointer-events: none;
-}
-.mobile-hand-peek-card .card-count {
-  position: absolute;
-  top: 4px; right: 4px;
-  width: 20px; height: 20px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.96);
-  color: #111;
-  font-size: 11px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  const fromNode = currentPlayer.currentNode;
+  const toNode = getConnectedNode(routeId, fromNode);
+
+  app.state.routes[routeId].claimedBy = currentPlayerName;
+  currentPlayer.previousNode = fromNode;
+  currentPlayer.currentNode = toNode;
+  currentPlayer.journeyRouteIds.push(routeId);
+
+  app.state.selectedRouteId = null;
+  closeRouteModal();
+  renderAll();
+  updateStatus(`${currentPlayerName} claimed ${formatRouteName(routeId)} and moved to ${formatNodeName(toNode)}.`);
+
+  await animateTokenAlongRoute(currentPlayerName, routeId, fromNode, toNode);
+  completeDestinationIfNeeded(currentPlayerName);
+  renderAll();
+
+  if (!app.state.controlledHero) {
+    endTurn();
+  }
 }
 
-.mobile-hand-peek-card.red    { background: linear-gradient(180deg, #f3a3a3 0%, #d74b4b 100%); color: #fff; }
-.mobile-hand-peek-card.orange { background: linear-gradient(180deg, #f2bf95 0%, #db7f2f 100%); color: #fff; }
-.mobile-hand-peek-card.blue   { background: linear-gradient(180deg, #8ab5ff 0%, #2f6edb 100%); color: #fff; }
-.mobile-hand-peek-card.green  { background: linear-gradient(180deg, #72c78e 0%, #1e8b4c 100%); color: #fff; }
-.mobile-hand-peek-card.black  { background: linear-gradient(180deg, #5b5b5b 0%, #1d1d1d 100%); color: #fff; }
-.mobile-hand-peek-card.pink   { background: linear-gradient(180deg, #ef9cc3 0%, #c64f8e 100%); color: #fff; }
-.mobile-hand-peek-card.yellow { background: linear-gradient(180deg, #f0dd67 0%, #d6b300 100%); color: #222; }
-.mobile-hand-peek-card.rainbow {
-  background: linear-gradient(135deg, #f3a3a3 0%, #f0dd67 24%, #72c78e 48%, #8ab5ff 72%, #ef9cc3 100%);
-  color: #111;
+function showStartToast(playerName) {
+  const toast = document.getElementById("start-toast");
+  toast.textContent = `YOU ARE ${playerName.toUpperCase()}!`;
+  toast.classList.add("show");
+  window.setTimeout(() => {
+    toast.classList.remove("show");
+  }, 2200);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   KEYFRAMES
-   ═══════════════════════════════════════════════════════════════════════════ */
-@keyframes eligiblePulse {
-  0%, 100% { stroke-opacity: 1; }
-  50%      { stroke-opacity: 0.62; }
-}
-@keyframes claimedPulse {
-  0%, 100% { stroke-opacity: 1; }
-  50%      { stroke-opacity: 0.88; }
-}
-@keyframes targetNodePulse {
-  0%   { stroke: #ff4d4d; filter: drop-shadow(0 0 2px rgba(255,77,77,0.45)); }
-  20%  { stroke: #ff9f1c; filter: drop-shadow(0 0 8px rgba(255,159,28,0.8)); }
-  40%  { stroke: #ffe600; filter: drop-shadow(0 0 8px rgba(255,230,0,0.8)); }
-  60%  { stroke: #2ec27e; filter: drop-shadow(0 0 8px rgba(46,194,126,0.8)); }
-  80%  { stroke: #2f6edb; filter: drop-shadow(0 0 8px rgba(47,110,219,0.8)); }
-  100% { stroke: #c64f8e; filter: drop-shadow(0 0 8px rgba(198,79,142,0.8)); }
-}
-@keyframes targetCardPulse {
-  0%, 100% { box-shadow: 0 0 14px rgba(229,57,53,0.18); }
-  50%      { box-shadow: 0 0 24px rgba(229,57,53,0.38); }
-}
-@keyframes cardDrawIn {
-  0%   { transform: translateY(36px) rotate(-5deg) scale(0.9); opacity: 0; }
-  100% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
-}
-@keyframes destinationFlipIn {
-  0%   { transform: rotateY(90deg); opacity: 0.2; }
-  100% { transform: rotateY(0deg);  opacity: 1; }
-}
-@keyframes routeModalIn {
-  to { transform: translateY(0) scale(1); opacity: 1; }
-}
-@keyframes heroLoopA {
-  0%   { transform: skewX(-18deg) translateX(-160%); opacity: 0; }
-  10%  { opacity: 0.9; }
-  55%  { opacity: 0.9; }
-  100% { transform: skewX(-18deg) translateX(45%);  opacity: 0; }
-}
-@keyframes heroLoopB {
-  0%   { transform: skewX(-18deg) translateX(-180%); opacity: 0; }
-  14%  { opacity: 0.88; }
-  62%  { opacity: 0.88; }
-  100% { transform: skewX(-18deg) translateX(62%);  opacity: 0; }
-}
-@keyframes heroLoopC {
-  0%   { transform: skewX(-18deg) translateX(-195%); opacity: 0; }
-  18%  { opacity: 0.82; }
-  68%  { opacity: 0.82; }
-  100% { transform: skewX(-18deg) translateX(78%);  opacity: 0; }
-}
-@keyframes heroLoopD {
-  0%   { transform: skewX(-18deg) translateX(-220%); opacity: 0; }
-  20%  { opacity: 0.55; }
-  75%  { opacity: 0.55; }
-  100% { transform: skewX(-18deg) translateX(90%);  opacity: 0; }
-}
-@keyframes heroNoisePulse {
-  0%, 100% { opacity: 0.65; }
-  50%      { opacity: 1; }
-}
-@keyframes heroJumpEric {
-  0%, 20%, 100% { transform: rotate(0deg); }
-  21%,  40%     { transform: rotate(-15deg); }
-  41%,  60%     { transform: rotate(15deg); }
-  61%,  80%     { transform: rotate(-15deg); }
-  81%,  99%     { transform: rotate(15deg); }
-}
-@keyframes heroJumpTango {
-  0%, 18%, 100% { transform: rotate(0deg); }
-  19%,  34%     { transform: rotate(15deg); }
-  35%,  54%     { transform: rotate(-15deg); }
-  55%,  74%     { transform: rotate(15deg); }
-  75%,  92%     { transform: rotate(-15deg); }
-}
-@keyframes tokenWobble {
-  0%,  2%   { rotate: 0deg; }
-  2.5%, 3.5% { rotate: -10deg; }
-  4%,  5%   { rotate: 10deg; }
-  5.5%, 6.5% { rotate: -10deg; }
-  7%,  8%   { rotate: 10deg; }
-  8.5%, 100% { rotate: 0deg; }
+function openDestinationReveal(title, body, destinationNumber = null) {
+  const prefix = destinationNumber ? `Destination #${destinationNumber}` : "Destination";
+  document.getElementById("destination-reveal-title").textContent = `${prefix} — ${title}`;
+  document.getElementById("destination-reveal-body").textContent = body;
+  document.getElementById("destination-reveal-overlay").classList.add("open");
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   MOBILE OVERRIDES  (max-width: 767px)
-   ═══════════════════════════════════════════════════════════════════════════ */
-@media (max-width: 767px) {
+function closeDestinationReveal() {
+  document.getElementById("destination-reveal-overlay").classList.remove("open");
+}
 
-  /* Shell fills viewport */
-  #game-shell {
-    width: 100vw;
-    height: 100vh;
+function showCurrentDestinationReveal(playerName) {
+  const player = app.state.players[playerName];
+  const target = getCurrentTargetForPlayer(player);
+  if (!target || player.completedCount >= 5) return;
+
+  const destination = app.destinationData.destinations[target];
+  const title = destination?.title || formatNodeName(target);
+  const body = destination?.description || "";
+  openDestinationReveal(title, body, player.completedCount + 1);
+}
+
+function startGameAs(playerName) {
+  app.state = createInitialLocalState(app.rulesData, playerName);
+  document.getElementById("hero-overlay").classList.remove("active");
+  showMobileHud();   // only show after hero chosen — hides during pick screen
+  resetBoardView();
+  showStartToast(playerName);
+  renderAll();
+  showCurrentDestinationReveal(playerName);
+  updateStatus(`${playerName} begins. Choose one action: draw a card or click a route to play it.`);
+}
+
+function completeDestinationIfNeeded(playerName) {
+  const player = app.state.players[playerName];
+  const target = getCurrentTargetForPlayer(player);
+
+  if (!target || player.currentNode !== target) {
+    app.state.justCompleted = null;
+    return false;
   }
 
-  /* Desktop chrome hidden */
-  #top-bar,
-  #left-panel,
-  #right-panel { display: none; }
+  app.state.justCompleted = { playerName, destinationId: target };
 
-  /* Board fills between HUD and bottom bar */
-  #board-wrap {
-    left: 0; right: 0;
-    top: var(--mobile-hud-height);
-    bottom: var(--mobile-bar-height);
-    border-radius: 0;
-    border: none;
+  if (player.completedCount < 5) {
+    player.completedDestinations.push(target);
+    player.completedCount += 1;
+  } else {
+    player.completedCount += 1;
   }
 
-  /* Status chip above bottom bar */
-  #status-chip {
-    bottom: calc(var(--mobile-bar-height) + 14px);
-    z-index: 2010;
-    max-width: calc(100vw - 40px);
-    font-size: 13px;
-    padding: 8px 12px;
+  const releasedRoutes = [...player.journeyRouteIds];
+  releasedRoutes.forEach(routeId => {
+    app.state.routes[routeId].claimedBy = null;
+  });
+  rerollSpecificRouteColours(releasedRoutes);
+
+  player.journeyRouteIds = [];
+  player.previousNode = null;
+
+  if (player.completedCount > 5) {
+    updateStatus(`${playerName} returned to Didcot and wins the local prototype.`);
+    setTimeout(() => showEndScreen(playerName), 800);
+  } else {
+    const nextTarget = getCurrentTargetForPlayer(player);
+    if (player.completedCount >= 5) {
+      updateStatus(`${playerName} completed five destinations. Final target: ${formatNodeName(nextTarget)}.`);
+    } else {
+      const nextDestination = app.destinationData.destinations[nextTarget];
+      updateStatus(`${playerName} reached ${formatNodeName(target)}. Next target revealed: ${formatNodeName(nextTarget)}.`);
+      openDestinationReveal(
+        nextDestination?.title || formatNodeName(nextTarget),
+        nextDestination?.description || "",
+        player.completedCount + 1
+      );
+    }
   }
 
-  /* Pay modal and destination reveal: centred in safe zone, scrollable */
-  .route-modal-overlay,
-  .destination-reveal-overlay {
-    position: fixed;
-    top: var(--mobile-hud-height);
-    bottom: var(--mobile-bar-height);
-    left: 0; right: 0;
-    padding: 12px;
-    align-items: center;
-    background: rgba(9, 12, 17, 0.72);
+  return true;
+}
+
+function drawCardForCurrentPlayer() {
+  const currentPlayerName = app.state.currentPlayer;
+  const card = drawCard();
+
+  if (!card) {
+    updateStatus("No cards available to draw.");
+    renderAll();
+    return;
   }
 
-  .route-modal,
-  .destination-reveal-card {
-    width: 100%;
-    max-width: 480px;
-    max-height: 100%;
-    border-radius: 20px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
-    padding: 18px;
+  const player = app.state.players[currentPlayerName];
+  player.hand.push(card);
+  player.lastDrawColor = card;
+  updateStatus(`${currentPlayerName} drew ${card}.`);
+  closeMobileSheet();
+  renderAll();
+
+  if (!app.state.controlledHero) {
+    endTurn();
   }
+}
 
-  .route-modal-body {
-    max-height: none;
-    overflow: visible;
+function handleRouteHover(routeId) {
+  const playability = getRoutePlayability(routeId);
+  const routeColour = getDisplayRouteColor(app.state.routes[routeId].colour);
+  const cost = app.rulesData.routes[routeId].length;
+
+  if (playability.playable) {
+    updateStatus(`${formatRouteName(routeId)} · ${routeColour} · cost ${cost} · eligible`);
+  } else {
+    updateStatus(`${formatRouteName(routeId)} · ${routeColour} · cost ${cost} · ${playability.reason}`);
   }
+}
 
-  .route-modal-title,
-  .destination-reveal-title { font-size: 26px; }
+function wireRouteInteractions() {
+  Object.keys(app.rulesData.routes || {}).forEach(routeId => {
+    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if (!routeEl) return;
 
-  .route-spend-card,
-  .route-colour-choice-card {
-    width: 48px;
-    height: 66px;
-    font-size: 10px;
+    routeEl.addEventListener("mouseenter", () => {
+      handleRouteHover(routeId);
+    });
+
+    routeEl.addEventListener("mouseleave", () => {
+      updateStatus("Choose one action: draw a card or click a route to play it.");
+    });
+
+    routeEl.addEventListener("click", () => {
+      handleRouteSelection(routeId);
+    });
+  });
+}
+
+function resetLocalGame() {
+  app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
+  closeRouteModal();
+  closeDestinationReveal();
+  closeMobileSheet();
+  resetBoardView();
+  renderAll();
+  if (app.state.controlledHero) showCurrentDestinationReveal(app.state.controlledHero);
+  updateStatus("Local game reset.");
+}
+
+function injectMobileBottomBar() {
+  if (document.getElementById("mobile-bottom-bar")) return;
+
+  const gameShell = document.getElementById("game-shell");
+  const statusChip = document.getElementById("status-chip");
+  if (!gameShell || !statusChip) return;
+
+  const wrap = document.createElement("div");
+  wrap.id = "mobile-bottom-bar";
+  wrap.innerHTML = `<div id="mobile-hand-peek"></div>`;
+
+  gameShell.insertBefore(wrap, statusChip);
+}
+
+// ---------------------------------------------------------------------------
+// Show the mobile HUD by adding a class rather than relying on conflicting
+// display:none / display:grid in CSS
+// ---------------------------------------------------------------------------
+function showMobileHud() {
+  // Reveal HUD, bottom bar, and sheet shell — all hidden during hero-pick.
+  const hud = document.getElementById("mobile-hud");
+  if (hud) hud.classList.add("visible");
+
+  const bar = document.getElementById("mobile-bottom-bar");
+  if (bar) bar.classList.add("visible");
+
+  const sheet = document.getElementById("mobile-sheet");
+  if (sheet) sheet.classList.add("visible-shell");
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// END SCREEN  (win / lose celebration)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildEndScreenOverlay() {
+  if (document.getElementById("end-screen-overlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "end-screen-overlay";
+  overlay.className = "end-screen-overlay";
+
+  overlay.innerHTML = `
+    <div class="end-screen-loop">
+      <div class="end-screen-wipe end-screen-wipe-a"></div>
+      <div class="end-screen-wipe end-screen-wipe-b"></div>
+      <div class="end-screen-wipe end-screen-wipe-c"></div>
+      <div class="end-screen-noise"></div>
+    </div>
+    <div class="end-screen-inner">
+      <div id="end-screen-kicker" class="end-screen-kicker">Didcot Dogs</div>
+      <div id="end-screen-headline" class="end-screen-headline">YOU WIN!</div>
+      <div id="end-screen-sub" class="end-screen-sub">Five destinations complete.</div>
+      <div id="end-screen-portrait" class="end-screen-portrait-wrap"></div>
+      <button id="end-screen-play-again" class="action-btn primary end-screen-btn" type="button">Play again</button>
+    </div>
+  `;
+
+  document.getElementById("game-shell").appendChild(overlay);
+
+  document.getElementById("end-screen-play-again").addEventListener("click", () => {
+    hideEndScreen();
+    resetLocalGame();
+    // Show hero pick again
+    document.getElementById("hero-overlay").classList.add("active");
+    // Hide mobile chrome until hero re-chosen
+    const hud = document.getElementById("mobile-hud");
+    const bar = document.getElementById("mobile-bottom-bar");
+    const sheet = document.getElementById("mobile-sheet");
+    if (hud) hud.classList.remove("visible");
+    if (bar) bar.classList.remove("visible");
+    if (sheet) sheet.classList.remove("visible-shell", "expanded");
+  });
+}
+
+function showEndScreen(winnerName) {
+  buildEndScreenOverlay();
+
+  const overlay = document.getElementById("end-screen-overlay");
+  const headline = document.getElementById("end-screen-headline");
+  const sub = document.getElementById("end-screen-sub");
+  const portraitWrap = document.getElementById("end-screen-portrait");
+  const kicker = document.getElementById("end-screen-kicker");
+
+  const controlledHero = app.state.controlledHero;
+  const isWin = winnerName === controlledHero;
+
+  kicker.textContent = "Didcot Dogs";
+  headline.textContent = isWin ? "YOU WIN!" : "YOU LOSE!";
+  sub.textContent = isWin
+    ? `${winnerName} completed all five destinations. Legendary.`
+    : `${winnerName} beat you to it. Better luck next time.`;
+
+  // Portrait
+  portraitWrap.innerHTML = "";
+  const img = document.createElement("img");
+  img.src = PLAYER_CONFIG[winnerName].image;
+  img.alt = winnerName;
+  img.className = "end-screen-portrait";
+  portraitWrap.appendChild(img);
+
+  overlay.className = "end-screen-overlay active" + (isWin ? " end-win" : " end-lose");
+}
+
+function hideEndScreen() {
+  const overlay = document.getElementById("end-screen-overlay");
+  if (overlay) overlay.className = "end-screen-overlay";
+}
+
+function wireControlButtons() {
+  document.getElementById("draw-card-btn").addEventListener("click", () => {
+    drawCardForCurrentPlayer();
+  });
+
+  document.getElementById("reset-local-btn").addEventListener("click", () => {
+    resetLocalGame();
+  });
+
+  document.getElementById("pick-eric-btn").addEventListener("click", () => {
+    startGameAs("Eric");
+  });
+
+  document.getElementById("pick-tango-btn").addEventListener("click", () => {
+    startGameAs("Tango");
+  });
+
+  document.getElementById("mobile-open-sheet-btn").addEventListener("click", () => {
+    drawCardForCurrentPlayer();
+  });
+
+  document.getElementById("mobile-reset-view-btn").addEventListener("click", () => {
+    toggleMobileSheet();
+  });
+
+  document.getElementById("mobile-sheet-handle").addEventListener("click", () => {
+    closeMobileSheet();
+  });
+
+  document.getElementById("route-modal-close").addEventListener("click", closeRouteModal);
+  document.getElementById("route-modal-cancel").addEventListener("click", closeRouteModal);
+  document.getElementById("route-modal-confirm").addEventListener("click", async () => {
+    await confirmRouteModalPlay();
+  });
+
+  document.getElementById("route-modal-overlay").addEventListener("click", evt => {
+    if (evt.target.id === "route-modal-overlay") closeRouteModal();
+  });
+
+  document.getElementById("destination-reveal-close").addEventListener("click", closeDestinationReveal);
+  document.getElementById("destination-reveal-overlay").addEventListener("click", evt => {
+    if (evt.target.id === "destination-reveal-overlay") closeDestinationReveal();
+  });
+}
+
+async function init() {
+  try {
+    injectMobileBottomBar();
+
+    const [rulesData, destinationData] = await Promise.all([
+      loadJson("./data/didcot-dogs-rules.v1.json"),
+      loadJson("./data/didcot-dogs-destinations.v1.json")
+    ]);
+
+    const svg = await injectBoardSvg();
+    ensureSvgDefs(svg);
+    startClaimGradientAnimation(svg);
+    normalizeSvgNodeAliases(svg, rulesData);
+    tightenSvgViewBox(svg);   // sets app.boardView.baseViewBox
+
+    const audit = getSvgAudit(svg, rulesData);
+    const state = createInitialLocalState(rulesData);
+
+    app = {
+      rulesData,
+      destinationData,
+      svg,
+      audit,
+      state,
+      boardView: {
+        scale: 1,
+        panX: 0,
+        panY: 0,
+        minScale: 1,
+        maxScale: 3,
+        baseViewBox: app.boardView.baseViewBox   // preserve from tightenSvgViewBox
+      },
+      modal: {
+        routeId: null,
+        chosenColor: null,
+        selectedOptionIndex: null,
+        options: []
+      }
+    };
+
+    wireRouteInteractions();
+    wireControlButtons();
+    setupMobileBoardGestures();
+    // showMobileHud() is called inside startGameAs() so the HUD stays
+    // hidden during the hero-pick screen.
+    resetBoardView();
+    renderAll();
+    updateStatus("Pick your hero to begin.");
+  } catch (error) {
+    console.error(error);
+    document.getElementById("status-chip").textContent = `Error loading board: ${error.message}`;
   }
-  .route-spend-card::before,
-  .route-colour-choice-card::before { inset: 4px; border-radius: 6px; }
-
-  .route-option-row-label { font-size: 12px; margin-bottom: 8px; }
-
-  /* Mobile sheet positioned within safe zone */
-  #mobile-sheet.visible-shell {
-    top: calc(var(--mobile-hud-height) + 4px);
-    bottom: calc(var(--mobile-bar-height) + 4px);
-  }
-
-  /* Hero pick screen — mobile sizing */
-  .hero-inner          { width: min(94vw, 520px); padding: 28px 18px; }
-  .hero-title          { font-size: 56px; }
-  .hero-subtitle       { font-size: 16px; }
-  .hero-choice-wrap    { gap: 18px; }
-  .hero-pick-card      { width: min(92vw, 340px); min-height: 220px; gap: 16px; }
-  .hero-token-frame    { width: 140px; height: 140px; }
-  .hero-portrait       { width: 110px; height: 110px; }
-  .hero-name           { font-size: 32px; }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   END SCREEN  (win / lose celebration)
-   Same wipe-sting structure as hero-overlay.
-   z-index 5000 — above everything including hero overlay (4000).
-   ═══════════════════════════════════════════════════════════════════════════ */
-.end-screen-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 5000;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: #090c11;
-}
-.end-screen-overlay.active { display: flex; }
+window.addEventListener("resize", () => {
+  if (!app.svg || !app.boardView.baseViewBox) return;
+  applyBoardViewTransform();
+});
 
-/* Wipe layer — reuses hero animation keyframes */
-.end-screen-loop {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-
-.end-screen-wipe {
-  position: absolute;
-  inset: -10%;
-  transform: skewX(-18deg) translateX(-140%);
-  opacity: 0.9;
-  will-change: transform, opacity;
-}
-
-/* Win: red/gold palette */
-.end-win .end-screen-wipe-a {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(229,57,53,0.9) 45%, rgba(255,196,0,1) 100%);
-  animation: heroLoopA 3.8s linear infinite;
-}
-.end-win .end-screen-wipe-b {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,196,0,0.7) 45%, rgba(229,57,53,0.5) 100%);
-  animation: heroLoopB 4.4s linear infinite;
-}
-.end-win .end-screen-wipe-c {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,255,255,0.22) 45%, rgba(255,196,0,0.18) 100%);
-  animation: heroLoopC 5.2s linear infinite;
-}
-
-/* Lose: blue/grey palette */
-.end-lose .end-screen-wipe-a {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(47,110,219,0.85) 45%, rgba(100,100,120,0.9) 100%);
-  animation: heroLoopA 4.2s linear infinite;
-}
-.end-lose .end-screen-wipe-b {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(80,80,100,0.7) 45%, rgba(47,110,219,0.4) 100%);
-  animation: heroLoopB 5.0s linear infinite;
-}
-.end-lose .end-screen-wipe-c {
-  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,255,255,0.10) 45%, rgba(47,110,219,0.08) 100%);
-  animation: heroLoopC 6.0s linear infinite;
-}
-
-.end-screen-noise {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 15% 25%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 22%),
-    radial-gradient(circle at 78% 20%, rgba(255,196,0,0.12) 0%, rgba(255,196,0,0) 22%),
-    radial-gradient(circle at 80% 78%, rgba(47,110,219,0.12) 0%, rgba(47,110,219,0) 28%),
-    radial-gradient(circle at 20% 80%, rgba(229,57,53,0.12) 0%, rgba(229,57,53,0) 26%);
-  mix-blend-mode: screen;
-  animation: heroNoisePulse 3.8s ease-in-out infinite;
-}
-
-/* Content */
-.end-screen-inner {
-  position: relative;
-  z-index: 3;
-  text-align: center;
-  width: min(900px, 92vw);
-  padding: 40px 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.end-screen-kicker {
-  font-family: var(--header-font);
-  font-size: 30px;
-  color: rgba(255,255,255,0.85);
-}
-
-.end-screen-headline {
-  font-family: var(--header-font);
-  font-size: 110px;
-  line-height: 0.9;
-  color: #ffffff;
-  text-shadow:
-    0 0 18px rgba(141,18,24,0.4),
-    0 0 40px rgba(34,59,124,0.3);
-}
-
-.end-win  .end-screen-headline { color: #ffe600; text-shadow: 0 0 24px rgba(255,196,0,0.55), 0 0 60px rgba(229,57,53,0.3); }
-.end-lose .end-screen-headline { color: rgba(255,255,255,0.55); text-shadow: none; }
-
-.end-screen-sub {
-  font-family: var(--ui-font);
-  font-size: 22px;
-  color: rgba(255,255,255,0.82);
-}
-
-.end-screen-portrait-wrap {
-  width: 160px;
-  height: 160px;
-  border-radius: 28px;
-  background: rgba(255,255,255,0.92);
-  border: 5px solid rgba(255,255,255,0.9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  margin: 8px 0;
-}
-.end-lose .end-screen-portrait-wrap {
-  filter: grayscale(0.7) brightness(0.7);
-}
-
-.end-screen-portrait {
-  width: 128px;
-  height: 128px;
-  object-fit: contain;
-}
-
-.end-screen-btn {
-  font-size: 22px;
-  min-height: 56px;
-  padding: 0 36px;
-  border-radius: 18px;
-  margin-top: 8px;
-}
-
-/* Mobile sizing */
-@media (max-width: 767px) {
-  .end-screen-headline { font-size: 72px; }
-  .end-screen-sub      { font-size: 17px; }
-  .end-screen-kicker   { font-size: 24px; }
-  .end-screen-portrait-wrap { width: 120px; height: 120px; }
-  .end-screen-portrait      { width: 96px;  height: 96px; }
-}
+document.addEventListener("DOMContentLoaded", () => {
+  setupFullscreenButton();
+  init();
+});
