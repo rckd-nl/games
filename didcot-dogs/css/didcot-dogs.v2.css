@@ -2262,12 +2262,14 @@ html, body {
 
 /* ── Mystery node SVG markers ─────────────────────────────────────────────── */
 .mystery-ring {
+  transform-box: fill-box;
+  transform-origin: center center;
   animation: mysteryRingPulse 1.4s ease-in-out infinite;
 }
 
 @keyframes mysteryRingPulse {
-  0%, 100% { stroke-opacity: 0.5; r: 26; }
-  50%       { stroke-opacity: 1;   r: 30; }
+  0%, 100% { opacity: 0.45; transform: scale(1);    }
+  50%      { opacity: 1;    transform: scale(1.22); }
 }
 
 /* ── Mystery event modal ──────────────────────────────────────────────────── */
