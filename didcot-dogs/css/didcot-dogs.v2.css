@@ -2048,3 +2048,130 @@ html, body {
   fill: unset !important;
   animation: targetNodePulse 1.35s linear infinite !important;
 }
+
+/* ── Menu button — desktop top bar ──────────────────────────────────────────── */
+#menu-btn {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.7);
+  border-radius: 12px;
+  height: 42px;
+  padding: 0 16px;
+  font-size: 15px;
+  cursor: pointer;
+  font-family: var(--ui-font);
+  transition: background 150ms ease, color 150ms ease;
+}
+#menu-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+/* ── Menu button — mobile HUD ────────────────────────────────────────────────
+   Sits in the HUD grid, spans full width on its own row                       */
+#mobile-menu-btn {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.55);
+  font-size: 12px;
+  min-height: 28px;
+  border-radius: 10px;
+}
+#mobile-menu-btn:active { background: rgba(255,255,255,0.10); }
+
+/* Bump mobile-hud-height to fit the extra row */
+@media (max-width: 767px) {
+  :root { --mobile-hud-height: 138px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.9.4  DESKTOP PANEL IMPROVEMENTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Desktop card piles ───────────────────────────────────────────────────── */
+.desktop-piles-row {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 8px 0;
+}
+
+.desktop-pile-wrap {
+  position: relative;
+}
+
+/* Scale up the pile cards for desktop */
+.desktop-pile-wrap .pile-wrap   { width: 56px; height: 76px; }
+.desktop-pile-wrap .pile-card   { width: 48px; height: 68px; border-radius: 9px; }
+.desktop-pile-wrap .pile-card-empty { width: 48px; height: 68px; }
+.desktop-pile-wrap .pile-badge  { width: 22px; height: 22px; font-size: 11px; top: -6px; right: -6px; }
+.desktop-pile-wrap .pile-label  { font-size: 10px; bottom: -18px; }
+
+/* ── Player summary — improved labels ────────────────────────────────────── */
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.summary-row:last-child { border-bottom: none; }
+
+.summary-lbl {
+  color: rgba(255,255,255,0.5);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.summary-val {
+  color: rgba(255,255,255,0.92);
+  font-weight: 700;
+  text-align: right;
+}
+
+.summary-secret {
+  color: rgba(255,255,255,0.28);
+  font-style: italic;
+  letter-spacing: 0.1em;
+}
+
+/* ── Debug panel — collapsed by default ──────────────────────────────────── */
+.left-debug-hidden {
+  display: none !important;
+}
+
+.debug-toggle-btn {
+  appearance: none;
+  background: none;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  color: rgba(255,255,255,0.35);
+  font-family: var(--ui-font);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  width: 100%;
+  text-align: left;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.debug-toggle-btn:hover { color: rgba(255,255,255,0.6); border-color: rgba(255,255,255,0.2); }
+
+/* ── Panel menu button ────────────────────────────────────────────────────── */
+.panel-menu-btn {
+  margin-top: auto;
+  font-size: 14px;
+  min-height: 38px;
+}
+
+/* Make left panel use flex column so menu btn can sit at bottom */
+#left-panel {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+#left-panel .panel-section { flex-shrink: 0; }
