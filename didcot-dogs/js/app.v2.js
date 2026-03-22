@@ -1,1467 +1,2235 @@
 /*
- * app.v2.js — Didcot Dogs
+ * didcot-dogs.v2.css  —  Didcot Dogs
+ * Single consolidated stylesheet. Replace didcot-dogs.v1.css entirely.
+ * Remove the v1 <link> from index.html.
  *
  * CHANGELOG
- * v2.10.3
- *   - FIXED: Players only see their own hand, destination sequences, and journey
- *     progress. Opponent hand and routes are never shown in the UI.
- *   - FIXED: renderDestinationSequences() now renders only the local player's
- *     sequence (was always rendering currentPlayer, which leaked on turn swap).
- *   - FIXED: renderActiveHand() renders local player's hand only.
- *   - FIXED: renderPlayerSummary() hides opponent card count and target.
- *   - FIXED: Desktop scales down gracefully on sub-1920 screens using CSS
- *     transform scale rather than fixed 1920px — board stays centred and visible.
- *   - FIXED: Draw card button uses header font, larger touch target.
- *   - ADDED: "← Menu" button on waiting screen so creator can abort.
+ * v2.0.1  (merge of v1 + all v2 fixes, no !important cascade wars)
+ *   - FIXED: hero-overlay z-index raised to 4000 (was 80, behind mobile chrome).
+ *   - FIXED: #mobile-hud display conflict removed — single display:none rule,
+ *     shown via .visible class added by JS after hero pick.
+ *   - FIXED: #mobile-bottom-bar and #mobile-sheet hidden until hero chosen
+ *     (.visible / .visible-shell classes).
+ *   - FIXED: #game-shell on mobile is 100vw/100vh (was 1920×1080 leaking through).
+ *   - FIXED: #board-wrap top/bottom on mobile use CSS vars matching HUD/bar heights.
+ *   - FIXED: Pay modal centred in safe zone between HUD and hand strip, scrollable,
+ *     not bottom-anchored and hidden behind cards.
+ *   - FIXED: status-chip z-index above bottom bar.
+ *   - FIXED: SVG no CSS transform — viewBox pan/zoom only (no pixellation).
+ *   - REMOVED: All duplicate and conflicting display rules from v1 @media block.
  *
- * v2.9.1 — Firebase array fix
- * v2.9.0 — Complete rewrite of multiplayer integration.
+ * v2.10.2
+ *   - FIXED: #game-shell mobile override now uses !important to prevent the base
+ *     1920×1080 rule from winning on portrait phones (e.g. 656px wide). This also
+ *     fixes #left-panel and #right-panel bleeding over the board.
+ *   - FIXED: Same !important applied to landscape mobile override.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.10.3");
-
-const APP_VERSION = "v2.10.3";
-const DEV_AUTO_SIM = false;
-const SVG_NS = "http://www.w3.org/2000/svg";
-const XLINK_NS = "http://www.w3.org/1999/xlink";
-
-// ─── Firebase ─────────────────────────────────────────────────────────────────
-let _db = null;
-let _firebaseSet, _firebaseGet, _firebaseRef, _firebaseOnValue, _firebaseOnDisconnect, _firebaseServerTimestamp;
-
-async function initFirebase() {
-  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
-  const fb = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js");
-
-  _firebaseSet          = fb.set;
-  _firebaseGet          = fb.get;
-  _firebaseRef          = fb.ref;
-  _firebaseOnValue      = fb.onValue;
-  _firebaseOnDisconnect = fb.onDisconnect;
-  _firebaseServerTimestamp = fb.serverTimestamp;
-
-  const firebaseApp = initializeApp({
-    apiKey:            "AIzaSyADtUD_GrSbfzss3CeO79VbDeAOmIwxGfI",
-    authDomain:        "didcot-dogs.firebaseapp.com",
-    databaseURL:       "https://didcot-dogs-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId:         "didcot-dogs",
-    storageBucket:     "didcot-dogs.firebasestorage.app",
-    messagingSenderId: "1087104000704",
-    appId:             "1:1087104000704:web:13dbe3478e3a0cc9e5c325"
-  });
-
-  _db = fb.getDatabase(firebaseApp);
-  console.log("[DD] Firebase initialised");
+/* ═══════════════════════════════════════════════════════════════════════════
+   CUSTOM PROPERTIES
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --ui-font: "auster-variable", sans-serif;
+  --header-font: "squash-mn", sans-serif;
+  --map-font: "viktorie", "Viktorie", serif;
+  --deep-red: #8d1218;
+  --eligible-red: #e53935;
+  --route-red: #d74b4b;
+  --route-orange: #db7f2f;
+  --route-blue: #2f6edb;
+  --route-green: #1e8b4c;
+  --route-black: #1d1d1d;
+  --route-pink: #c64f8e;
+  --route-yellow: #d6b300;
+  --node-navy: #223b7c;
+  --claim-blue: #19a7ff;
+  --claim-yellow: #ffe600;
+  /* Mobile layout heights — single source of truth */
+  --mobile-hud-height: 108px;
+  --mobile-bar-height: 88px;
 }
 
-function dbRef(path) { return _firebaseRef(_db, path); }
-
-function generateRoomCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return code;
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESET / BASE
+   ═══════════════════════════════════════════════════════════════════════════ */
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
-async function fbCreateRoom(state) {
-  let code, attempts = 0;
-  while (attempts < 10) {
-    code = generateRoomCode();
-    const existing = await _firebaseGet(dbRef(`rooms/${code}/state`));
-    if (!existing.exists()) break;
-    attempts++;
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #0f1115;
+  color: #f4f1e8;
+  font-family: var(--ui-font);
+  font-variation-settings: "wght" 400;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   APP SHELL
+   ═══════════════════════════════════════════════════════════════════════════ */
+#app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#game-shell {
+  width: 1920px;
+  height: 1080px;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 55%),
+    linear-gradient(180deg, #161a22 0%, #0e1015 100%);
+  font-family: var(--ui-font);
+  font-variation-settings: "wght" 400;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HERO PICK SCREEN
+   z-index 4000 — must sit above all mobile chrome (HUD 2000, bar 2001)
+   ═══════════════════════════════════════════════════════════════════════════ */
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #090c11;
+}
+
+.hero-overlay.active {
+  display: flex;
+}
+
+.hero-loop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.hero-wipe {
+  position: absolute;
+  inset: -10%;
+  transform: skewX(-18deg) translateX(-140%);
+  opacity: 0.9;
+  will-change: transform, opacity;
+}
+
+.hero-wipe-a {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(229,57,53,0.85) 45%, rgba(255,196,0,0.95) 100%);
+  animation: heroLoopA 4.6s linear infinite;
+}
+.hero-wipe-b {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(47,110,219,0.85) 45%, rgba(255,255,255,0.25) 100%);
+  animation: heroLoopB 5.2s linear infinite;
+}
+.hero-wipe-c {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(30,139,76,0.78) 45%, rgba(198,79,142,0.75) 100%);
+  animation: heroLoopC 6.1s linear infinite;
+}
+.hero-wipe-d {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,255,255,0.18) 45%, rgba(229,57,53,0.12) 100%);
+  animation: heroLoopD 7.2s linear infinite;
+}
+
+.hero-noise {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 12% 28%, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0) 24%),
+    radial-gradient(circle at 74% 18%, rgba(255,196,0,0.14) 0%, rgba(255,196,0,0) 24%),
+    radial-gradient(circle at 81% 76%, rgba(47,110,219,0.14) 0%, rgba(47,110,219,0) 30%),
+    radial-gradient(circle at 18% 82%, rgba(229,57,53,0.14) 0%, rgba(229,57,53,0) 28%);
+  mix-blend-mode: screen;
+  animation: heroNoisePulse 3.8s ease-in-out infinite;
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 3;
+  text-align: center;
+  width: min(1200px, 94vw);
+  padding: 40px 24px;
+}
+
+.hero-kicker,
+.hero-title,
+.hero-name,
+#game-title,
+.panel-title,
+.mini-heading,
+.sequence-title,
+.route-modal-title,
+.destination-reveal-title {
+  font-family: var(--header-font);
+}
+
+.hero-kicker {
+  font-size: 34px;
+  color: rgba(255,255,255,0.9);
+  margin-bottom: 8px;
+}
+
+.hero-title {
+  font-size: 90px;
+  line-height: 0.95;
+  color: #ffffff;
+  text-shadow:
+    0 0 12px rgba(141,18,24,0.35),
+    0 0 30px rgba(34,59,124,0.25);
+  margin-bottom: 18px;
+}
+
+.hero-subtitle {
+  font-size: 20px;
+  color: rgba(255,255,255,0.86);
+  margin-bottom: 30px;
+  font-family: var(--ui-font);
+}
+
+.hero-choice-wrap {
+  display: flex;
+  gap: 40px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.hero-pick-card {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.08);
+  color: #ffffff;
+  width: 420px;
+  min-height: 420px;
+  border-radius: 28px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  box-shadow: 0 16px 45px rgba(0,0,0,0.28);
+  transition: transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+
+.hero-pick-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  background: rgba(255,255,255,0.14);
+  box-shadow: 0 22px 55px rgba(0,0,0,0.34);
+}
+
+.hero-token-frame {
+  width: 230px;
+  height: 230px;
+  border-radius: 28px;
+  background: rgba(255,255,255,0.92);
+  border: 5px solid rgba(255,255,255,0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hero-portrait {
+  width: 180px;
+  height: 180px;
+  object-fit: contain;
+  display: block;
+  transform-origin: 50% 70%;
+}
+
+.hero-portrait-eric  { animation: heroJumpEric  1.05s steps(1, end) infinite; }
+.hero-portrait-tango { animation: heroJumpTango 1.33s steps(1, end) infinite; }
+
+.hero-name { font-size: 46px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   START TOAST
+   ═══════════════════════════════════════════════════════════════════════════ */
+.start-toast {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-150%);
+  z-index: 4500;
+  background: rgba(255,255,255,0.95);
+  color: #111;
+  min-height: 62px;
+  padding: 0 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.22);
+  transition: transform 320ms ease;
+  font-family: var(--header-font);
+}
+.start-toast.show { transform: translateX(-50%) translateY(0); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODALS (route pay + destination reveal)
+   Desktop: centred overlay. Mobile: overridden below.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.route-modal-overlay,
+.destination-reveal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 12, 17, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.route-modal-overlay.open,
+.destination-reveal-overlay.open {
+  display: flex;
+}
+
+.route-modal,
+.destination-reveal-card {
+  width: 680px;
+  max-width: calc(100vw - 80px);
+  background: rgba(18, 22, 29, 0.96);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 26px;
+  box-shadow: 0 22px 60px rgba(0,0,0,0.35);
+  padding: 22px;
+  transform: translateY(20px) scale(0.96);
+  opacity: 0;
+  animation: routeModalIn 240ms ease forwards;
+}
+
+.destination-reveal-card {
+  width: 560px;
+  text-align: center;
+}
+
+.destination-reveal-title {
+  font-size: 44px;
+  margin-bottom: 10px;
+}
+
+.destination-reveal-body {
+  font-size: 18px;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.route-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.route-modal-title { font-size: 42px; line-height: 0.95; }
+
+.route-modal-close {
+  appearance: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.route-modal-subtitle {
+  font-size: 15px;
+  color: rgba(255,255,255,0.82);
+  margin-bottom: 16px;
+}
+
+.route-modal-body {
+  min-height: 160px;
+  margin-bottom: 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  gap: 10px;
+}
+
+.route-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.route-option-grid  { display: flex; flex-wrap: wrap; gap: 12px; }
+.route-option-list  { display: grid; gap: 12px; }
+
+.route-option-row {
+  appearance: none;
+  width: 100%;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  border-radius: 16px;
+  padding: 12px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--ui-font);
+}
+.route-option-row:hover  { background: rgba(255,255,255,0.09); }
+.route-option-row.active { border-color: rgba(229,57,53,0.7); background: rgba(229,57,53,0.18); }
+
+.route-option-row-label {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.route-option-row-cards { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.route-option-chip {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  border-radius: 14px;
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 16px;
+  font-family: var(--ui-font);
+  cursor: pointer;
+}
+.route-option-chip.active { border-color: rgba(229,57,53,0.7); background: rgba(229,57,53,0.18); }
+
+.route-preview-row,
+.route-colour-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  min-height: 80px;
+}
+
+.route-spend-card,
+.route-colour-choice-card {
+  width: 68px;
+  height: 92px;
+  border-radius: 12px;
+  padding: 8px;
+  position: relative;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.22);
+  border: 2px solid rgba(0,0,0,0.16);
+  font-size: 14px;
+  color: #fff;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  font-family: var(--ui-font);
+  text-transform: capitalize;
+  cursor: pointer;
+}
+.route-colour-choice-card.active { outline: 3px solid rgba(229,57,53,0.75); }
+
+.route-spend-card::before,
+.route-colour-choice-card::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.34);
+}
+
+.route-spend-card.red,    .route-colour-choice-card.red    { background: linear-gradient(180deg, #f3a3a3 0%, #d74b4b 100%); }
+.route-spend-card.orange, .route-colour-choice-card.orange { background: linear-gradient(180deg, #f2bf95 0%, #db7f2f 100%); }
+.route-spend-card.blue,   .route-colour-choice-card.blue   { background: linear-gradient(180deg, #8ab5ff 0%, #2f6edb 100%); }
+.route-spend-card.green,  .route-colour-choice-card.green  { background: linear-gradient(180deg, #72c78e 0%, #1e8b4c 100%); }
+.route-spend-card.black,  .route-colour-choice-card.black  { background: linear-gradient(180deg, #5b5b5b 0%, #1d1d1d 100%); }
+.route-spend-card.pink,   .route-colour-choice-card.pink   { background: linear-gradient(180deg, #ef9cc3 0%, #c64f8e 100%); }
+.route-spend-card.yellow, .route-colour-choice-card.yellow { background: linear-gradient(180deg, #f0dd67 0%, #d6b300 100%); color: #222; }
+.route-spend-card.rainbow { background: linear-gradient(135deg, #f3a3a3 0%, #f0dd67 24%, #72c78e 48%, #8ab5ff 72%, #ef9cc3 100%); color: #111; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESKTOP TOP BAR
+   ═══════════════════════════════════════════════════════════════════════════ */
+#top-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  z-index: 20;
+  background: linear-gradient(180deg, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0) 100%);
+}
+
+#title-block { display: flex; flex-direction: column; gap: 4px; }
+#game-title  { font-size: 34px; font-weight: 700; }
+#game-subtitle { font-size: 16px; opacity: 0.82; font-family: var(--ui-font); }
+
+#fullscreen-btn {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.08);
+  color: #f4f1e8;
+  border-radius: 12px;
+  height: 42px;
+  padding: 0 16px;
+  font-size: 16px;
+  cursor: pointer;
+  font-family: var(--ui-font);
+}
+#fullscreen-btn:hover { background: rgba(255,255,255,0.14); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESKTOP SIDE PANELS
+   ═══════════════════════════════════════════════════════════════════════════ */
+#left-panel,
+#right-panel {
+  position: absolute;
+  top: 92px;
+  width: 320px;
+  bottom: 24px;
+  border-radius: 24px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(6px);
+  padding: 18px;
+  z-index: 15;
+  overflow: hidden;
+  font-family: var(--ui-font);
+}
+#left-panel  { left: 24px; }
+#right-panel { right: 24px; }
+
+.panel-title  { font-size: 28px; font-weight: 700; margin-bottom: 14px; }
+.panel-section { margin-bottom: 18px; }
+.panel-copy   { font-size: 14px; line-height: 1.45; color: rgba(255,255,255,0.82); }
+
+.mini-heading {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.76);
+  margin-bottom: 10px;
+}
+
+.player-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  font-family: var(--ui-font);
+}
+.player-badge.eric,
+.player-badge.tango {
+  background: rgba(141,18,24,0.16);
+  border: 1px solid rgba(255,255,255,0.24);
+  color: #ffffff;
+}
+
+.controls-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+
+.action-btn {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.07);
+  color: #f4f1e8;
+  border-radius: 14px;
+  min-height: 50px;
+  padding: 0 14px;
+  font-size: 19px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--ui-font);
+}
+.action-btn:hover    { background: rgba(255,255,255,0.12); }
+.action-btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.action-btn.primary  { background: rgba(141,18,24,0.22); border-color: rgba(255,255,255,0.24); }
+.action-btn.primary:hover { background: rgba(141,18,24,0.32); }
+.action-btn.subtle   { background: rgba(255,255,255,0.04); }
+
+.counts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.count-card {
+  min-height: 86px;
+  border-radius: 16px;
+  border: 1px dashed rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.03);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.count-label { font-size: 16px; color: rgba(255,255,255,0.66); margin-bottom: 6px; }
+.count-value { font-size: 34px; font-weight: 700; }
+
+.selected-route-card {
+  min-height: 90px;
+  border-radius: 16px;
+  border: 1px dashed rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.03);
+  padding: 12px;
+  font-size: 16px;
+  line-height: 1.45;
+  color: rgba(255,255,255,0.9);
+}
+.selected-route-card.valid   { border-color: rgba(229,57,53,0.65); background: rgba(229,57,53,0.12); }
+.selected-route-card.invalid { border-color: rgba(255,120,120,0.40); background: rgba(255,120,120,0.08); }
+
+.hand-grid { display: flex; flex-wrap: wrap; gap: 8px; min-height: 82px; }
+
+.hand-card {
+  position: relative;
+  width: 64px;
+  height: 88px;
+  border-radius: 10px;
+  padding: 7px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  border: 2px solid rgba(0,0,0,0.16);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.35);
+  overflow: hidden;
+  transform-origin: center bottom;
+  font-family: var(--ui-font);
+  text-transform: capitalize;
+}
+.hand-card::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 7px;
+  border: 1px solid rgba(255,255,255,0.35);
+  pointer-events: none;
+}
+.hand-card .card-name  { position: relative; z-index: 2; }
+.hand-card .card-count {
+  position: absolute;
+  top: 5px; right: 5px;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.96);
+  color: #111;
+  font-family: var(--ui-font);
+  font-size: 14px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hand-card.draw-in { animation: cardDrawIn 420ms cubic-bezier(.18,.88,.28,1.18); }
+
+.hand-card.red    { background: linear-gradient(180deg, #f3a3a3 0%, #d74b4b 100%); color: #fff; }
+.hand-card.orange { background: linear-gradient(180deg, #f2bf95 0%, #db7f2f 100%); color: #fff; }
+.hand-card.blue   { background: linear-gradient(180deg, #8ab5ff 0%, #2f6edb 100%); color: #fff; }
+.hand-card.green  { background: linear-gradient(180deg, #72c78e 0%, #1e8b4c 100%); color: #fff; }
+.hand-card.black  { background: linear-gradient(180deg, #5b5b5b 0%, #1d1d1d 100%); color: #fff; }
+.hand-card.pink   { background: linear-gradient(180deg, #ef9cc3 0%, #c64f8e 100%); color: #fff; }
+.hand-card.yellow { background: linear-gradient(180deg, #f0dd67 0%, #d6b300 100%); color: #222; }
+.hand-card.rainbow {
+  background: linear-gradient(135deg, #f3a3a3 0%, #f0dd67 24%, #72c78e 48%, #8ab5ff 72%, #ef9cc3 100%);
+  color: #111;
+}
+
+.player-summary-wrap { display: grid; grid-template-columns: 1fr; gap: 10px; }
+
+.player-summary-card {
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  padding: 12px;
+}
+.player-summary-card.active {
+  border-color: rgba(229,57,53,0.55);
+  box-shadow: 0 0 0 1px rgba(229,57,53,0.18) inset;
+}
+.player-summary-name { font-size: 21px; font-weight: 700; margin-bottom: 6px; font-family: var(--header-font); }
+.player-summary-meta { font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.8); }
+
+.destination-sequences {
+  display: grid;
+  gap: 14px;
+  max-height: 610px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.destination-sequence {
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+
+.sequence-title { font-size: 22px; margin-bottom: 10px; }
+.destination-card-grid { display: grid; gap: 10px; }
+
+.destination-card {
+  position: relative;
+  min-height: 92px;
+  border-radius: 16px;
+  border: 1px dashed rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.03);
+  color: rgba(255,255,255,0.92);
+  padding: 12px;
+  overflow: hidden;
+  font-family: var(--ui-font);
+}
+.destination-card.active-card {
+  border-color: rgba(229,57,53,0.6);
+  background: rgba(229,57,53,0.14);
+  box-shadow: 0 0 14px rgba(229,57,53,0.18);
+  animation: targetCardPulse 1.3s ease-in-out infinite;
+}
+.destination-card.hidden-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--header-font);
+  font-size: 56px;
+  line-height: 1;
+  color: rgba(255,255,255,0.72);
+}
+.destination-card.completed-card {
+  border-color: rgba(255,255,255,0.24);
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.95);
+}
+.destination-card.flip-in { animation: destinationFlipIn 700ms ease; }
+
+.destination-title { font-family: var(--header-font); font-size: 24px; margin-bottom: 6px; }
+.destination-body  { font-family: var(--ui-font); font-size: 15px; line-height: 1.35; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BOARD
+   ═══════════════════════════════════════════════════════════════════════════ */
+#board-wrap {
+  position: absolute;
+  left: 350px; right: 350px;
+  top: 92px; bottom: 24px;
+  touch-action: none;
+  border-radius: 28px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center, rgba(255,255,255,0.96) 0%, rgba(244,244,244,0.98) 58%, rgba(232,232,232,1) 100%);
+  border: 1px solid rgba(0,0,0,0.10);
+}
+
+#board-svg-host {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background:
+    radial-gradient(circle at center, rgba(255,255,255,0.96) 0%, rgba(244,244,244,0.98) 58%, rgba(232,232,232,1) 100%);
+}
+
+/* SVG: viewBox drives pan/zoom — no CSS transform, no will-change raster trap */
+#board-svg-host svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: transparent;
+  transform: none;
+  will-change: auto;
+}
+
+#board-svg-host text {
+  font-family: var(--map-font) !important;
+  fill: #000000 !important;
+  pointer-events: none;
+}
+
+#board-svg-host #Nodes circle {
+  fill: #ffffff !important;
+  stroke: var(--node-navy) !important;
+  stroke-width: 5 !important;
+}
+
+#board-svg-host path,
+#board-svg-host line,
+#board-svg-host polyline {
+  vector-effect: non-scaling-stroke;
+}
+
+/* Route states */
+.route-claimed-eric,
+.route-claimed-tango {
+  stroke-width: 13 !important;
+  animation: claimedPulse 1.1s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(255,255,255,0.22));
+}
+.route-claimed-eric  { stroke: url(#claim-gradient-eric) !important; }
+.route-claimed-tango { stroke: url(#claim-gradient-tango) !important; }
+.route-eligible { animation: eligiblePulse 0.9s ease-in-out infinite; filter: drop-shadow(0 0 10px rgba(229,57,53,0.95)); }
+.route-selected { filter: drop-shadow(0 0 12px rgba(229,57,53,1)); }
+.route-blocked  { opacity: 0.22; }
+
+.target-node-pulse { animation: targetNodePulse 1.35s linear infinite; }
+
+/* Tokens */
+.token-group  { transform-box: fill-box; transform-origin: center center; }
+.token-wobble { transform-box: fill-box; transform-origin: center center; animation: tokenWobble 20s steps(1, end) infinite; }
+.token-circle { fill: #ffffff; stroke-width: 5; }
+.token-group.eric-token  .token-circle { stroke: var(--claim-blue); }
+.token-group.tango-token .token-circle { stroke: var(--claim-yellow); }
+
+/* Route cost badges */
+.route-cost-badge text {
+  font-family: var(--ui-font) !important;
+  font-size: 14px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+.route-cost-badge circle {
+  fill: #ffffff !important;
+  stroke-width: 2.5 !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATUS CHIP
+   ═══════════════════════════════════════════════════════════════════════════ */
+#status-chip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 18px;
+  z-index: 25;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 18px;
+  color: #f4f1e8;
+  max-width: 1020px;
+  text-align: center;
+  font-family: var(--ui-font);
+}
+
+.debug-list { font-size: 13px; line-height: 1.55; opacity: 0.88; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE HUD
+   Hidden by default. JS adds .visible in startGameAs() — never before hero pick.
+   ═══════════════════════════════════════════════════════════════════════════ */
+#mobile-hud {
+  display: none;
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 8px;
+  right: 8px;
+  z-index: 2000;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  pointer-events: none;
+}
+#mobile-hud.visible { display: grid; }
+
+.mobile-hud-pill,
+.mobile-hud-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--ui-font);
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: auto;
+  width: 100%;
+}
+
+.mobile-hud-pill {
+  background: rgba(12, 16, 22, 0.88);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #ffffff;
+}
+
+.mobile-hud-btn {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(141,18,24,0.94);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+#mobile-hud-turn,
+#mobile-hud-draw,
+#mobile-hud-destination,
+#mobile-open-sheet-btn,
+#mobile-reset-view-btn { grid-column: span 1; }
+
+#mobile-hud-destination { grid-column: 1 / -1; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE SHEET
+   Hidden by default. JS adds .visible-shell in startGameAs().
+   .expanded then makes it actually visible/interactive.
+   ═══════════════════════════════════════════════════════════════════════════ */
+#mobile-sheet {
+  display: none;
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  top: calc(env(safe-area-inset-top, 0px) + 54px);
+  bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+  z-index: 1990;
+  background: rgba(15, 19, 26, 0.98);
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.28);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  overflow: hidden;
+}
+#mobile-sheet.visible-shell { display: block; }
+#mobile-sheet.expanded      { opacity: 1; pointer-events: auto; transform: translateY(0); }
+
+#mobile-sheet-handle {
+  appearance: none;
+  width: 100%;
+  height: 36px;
+  border: none;
+  background: transparent;
+  position: relative;
+  cursor: pointer;
+}
+#mobile-sheet-handle::before {
+  content: "";
+  width: 56px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.32);
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+}
+
+#mobile-sheet-content {
+  padding: 0 14px 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: calc(100% - 36px);
+  -webkit-overflow-scrolling: touch;
+}
+
+#mobile-sheet-summary,
+#mobile-sheet-selected-route,
+#mobile-sheet-actions,
+#mobile-sheet-hand,
+#mobile-sheet-destination { margin-bottom: 14px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE BOTTOM BAR
+   Hidden by default. JS adds .visible in startGameAs().
+   ═══════════════════════════════════════════════════════════════════════════ */
+#mobile-bottom-bar {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 2001;
+  padding: 4px 8px calc(2px + env(safe-area-inset-bottom, 0px)) 8px;
+  background: linear-gradient(180deg,
+    rgba(10,13,19,0) 0%,
+    rgba(10,13,19,0.72) 20%,
+    rgba(10,13,19,0.96) 52%,
+    rgba(10,13,19,0.99) 100%
+  );
+  border-top: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 -10px 24px rgba(0,0,0,0.18);
+  overflow: visible;
+}
+#mobile-bottom-bar.visible { display: block; }
+
+#mobile-hand-peek {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0 2px;
+  scrollbar-width: none;
+  min-height: 82px;
+  align-items: flex-end;
+}
+#mobile-hand-peek::-webkit-scrollbar { display: none; }
+
+.mobile-hand-peek-card {
+  width: 54px;
+  height: 74px;
+  border-radius: 10px 10px 0 0;
+  padding: 6px;
+  position: relative;
+  flex: 0 0 auto;
+  margin-top: -30px;
+  margin-bottom: 0;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.35);
+  border: 2px solid rgba(0,0,0,0.16);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  overflow: hidden;
+  font-family: var(--ui-font);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.mobile-hand-peek-card::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 6px 6px 0 0;
+  border: 1px solid rgba(255,255,255,0.32);
+  pointer-events: none;
+}
+.mobile-hand-peek-card .card-count {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.96);
+  color: #111;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-hand-peek-card.red    { background: linear-gradient(180deg, #f3a3a3 0%, #d74b4b 100%); color: #fff; }
+.mobile-hand-peek-card.orange { background: linear-gradient(180deg, #f2bf95 0%, #db7f2f 100%); color: #fff; }
+.mobile-hand-peek-card.blue   { background: linear-gradient(180deg, #8ab5ff 0%, #2f6edb 100%); color: #fff; }
+.mobile-hand-peek-card.green  { background: linear-gradient(180deg, #72c78e 0%, #1e8b4c 100%); color: #fff; }
+.mobile-hand-peek-card.black  { background: linear-gradient(180deg, #5b5b5b 0%, #1d1d1d 100%); color: #fff; }
+.mobile-hand-peek-card.pink   { background: linear-gradient(180deg, #ef9cc3 0%, #c64f8e 100%); color: #fff; }
+.mobile-hand-peek-card.yellow { background: linear-gradient(180deg, #f0dd67 0%, #d6b300 100%); color: #222; }
+.mobile-hand-peek-card.rainbow {
+  background: linear-gradient(135deg, #f3a3a3 0%, #f0dd67 24%, #72c78e 48%, #8ab5ff 72%, #ef9cc3 100%);
+  color: #111;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   KEYFRAMES
+   ═══════════════════════════════════════════════════════════════════════════ */
+@keyframes eligiblePulse {
+  0%, 100% { stroke-opacity: 1; }
+  50%      { stroke-opacity: 0.62; }
+}
+@keyframes claimedPulse {
+  0%, 100% { stroke-opacity: 1; }
+  50%      { stroke-opacity: 0.88; }
+}
+@keyframes targetNodePulse {
+  0%   { stroke: #ff4d4d; fill: #ff4d4d; filter: drop-shadow(0 0 2px rgba(255,77,77,0.45)); }
+  20%  { stroke: #ff9f1c; fill: #ff9f1c; filter: drop-shadow(0 0 8px rgba(255,159,28,0.8)); }
+  40%  { stroke: #ffe600; fill: #ffe600; filter: drop-shadow(0 0 8px rgba(255,230,0,0.8)); }
+  60%  { stroke: #2ec27e; fill: #2ec27e; filter: drop-shadow(0 0 8px rgba(46,194,126,0.8)); }
+  80%  { stroke: #2f6edb; fill: #2f6edb; filter: drop-shadow(0 0 8px rgba(47,110,219,0.8)); }
+  100% { stroke: #c64f8e; fill: #c64f8e; filter: drop-shadow(0 0 8px rgba(198,79,142,0.8)); }
+}
+@keyframes targetCardPulse {
+  0%, 100% { box-shadow: 0 0 14px rgba(229,57,53,0.18); }
+  50%      { box-shadow: 0 0 24px rgba(229,57,53,0.38); }
+}
+@keyframes cardDrawIn {
+  0%   { transform: translateY(36px) rotate(-5deg) scale(0.9); opacity: 0; }
+  100% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+}
+@keyframes destinationFlipIn {
+  0%   { transform: rotateY(90deg); opacity: 0.2; }
+  100% { transform: rotateY(0deg);  opacity: 1; }
+}
+@keyframes routeModalIn {
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes heroLoopA {
+  0%   { transform: skewX(-18deg) translateX(-160%); opacity: 0; }
+  10%  { opacity: 0.9; }
+  55%  { opacity: 0.9; }
+  100% { transform: skewX(-18deg) translateX(45%);  opacity: 0; }
+}
+@keyframes heroLoopB {
+  0%   { transform: skewX(-18deg) translateX(-180%); opacity: 0; }
+  14%  { opacity: 0.88; }
+  62%  { opacity: 0.88; }
+  100% { transform: skewX(-18deg) translateX(62%);  opacity: 0; }
+}
+@keyframes heroLoopC {
+  0%   { transform: skewX(-18deg) translateX(-195%); opacity: 0; }
+  18%  { opacity: 0.82; }
+  68%  { opacity: 0.82; }
+  100% { transform: skewX(-18deg) translateX(78%);  opacity: 0; }
+}
+@keyframes heroLoopD {
+  0%   { transform: skewX(-18deg) translateX(-220%); opacity: 0; }
+  20%  { opacity: 0.55; }
+  75%  { opacity: 0.55; }
+  100% { transform: skewX(-18deg) translateX(90%);  opacity: 0; }
+}
+@keyframes heroNoisePulse {
+  0%, 100% { opacity: 0.65; }
+  50%      { opacity: 1; }
+}
+@keyframes heroJumpEric {
+  0%, 20%, 100% { transform: rotate(0deg); }
+  21%,  40%     { transform: rotate(-15deg); }
+  41%,  60%     { transform: rotate(15deg); }
+  61%,  80%     { transform: rotate(-15deg); }
+  81%,  99%     { transform: rotate(15deg); }
+}
+@keyframes heroJumpTango {
+  0%, 18%, 100% { transform: rotate(0deg); }
+  19%,  34%     { transform: rotate(15deg); }
+  35%,  54%     { transform: rotate(-15deg); }
+  55%,  74%     { transform: rotate(15deg); }
+  75%,  92%     { transform: rotate(-15deg); }
+}
+@keyframes tokenWobble {
+  0%,  2%   { rotate: 0deg; }
+  2.5%, 3.5% { rotate: -10deg; }
+  4%,  5%   { rotate: 10deg; }
+  5.5%, 6.5% { rotate: -10deg; }
+  7%,  8%   { rotate: 10deg; }
+  8.5%, 100% { rotate: 0deg; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE OVERRIDES  (max-width: 767px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+
+  /* Shell fills viewport — !important overrides the base 1920×1080 rule */
+  #game-shell {
+    width: 100vw !important;
+    height: 100vh !important;
   }
-  await _firebaseSet(dbRef(`rooms/${code}/state`), { ...state, phase: "waiting", createdAt: Date.now() });
-  await _firebaseSet(dbRef(`rooms/${code}/presence/Eric`), { connected: true, lastSeen: Date.now() });
-  console.log("[DD] Room created:", code);
-  return code;
-}
 
-async function fbJoinRoom(code) {
-  const snap = await _firebaseGet(dbRef(`rooms/${code}/state`));
-  if (!snap.exists()) throw new Error(`Room ${code} not found.`);
-  const state = snap.val();
-  await _firebaseSet(dbRef(`rooms/${code}/presence/Tango`), { connected: true, lastSeen: Date.now() });
-  if (state.phase === "waiting") {
-    await _firebaseSet(dbRef(`rooms/${code}/state/phase`), "playing");
+  /* Desktop chrome hidden */
+  #top-bar,
+  #left-panel,
+  #right-panel { display: none !important; }
+
+  /* Board fills between HUD and bottom bar */
+  #board-wrap {
+    left: 0 !important; right: 0 !important;
+    top: var(--mobile-hud-height) !important;
+    bottom: var(--mobile-bar-height) !important;
+    border-radius: 0;
+    border: none;
   }
-  console.log("[DD] Room joined:", code, "state:", state.currentPlayer, "routes:", Object.keys(state.routes||{}).length);
-  return state;
-}
 
-async function fbPushState(code, state) {
-  if (!code || !_db) return;
-  const { controlledHero, ...firebaseState } = state;
-  try {
-    await _firebaseSet(dbRef(`rooms/${code}/state`), firebaseState);
-  } catch(e) { console.error("[DD] pushState failed:", e); }
-}
-
-function fbSubscribeRoom(code, callback) {
-  _firebaseOnValue(dbRef(`rooms/${code}/state`), snap => {
-    if (snap.exists()) callback(snap.val());
-  });
-}
-
-function fbSubscribePresence(code, callback) {
-  _firebaseOnValue(dbRef(`rooms/${code}/presence`), snap => {
-    callback(snap.val() || {});
-  });
-}
-
-// ─── App state ────────────────────────────────────────────────────────────────
-const app = {
-  rulesData: null, destinationData: null, svg: null, audit: null, state: null,
-  roomCode: null, localHero: null,
-  boardView: { scale:1, panX:0, panY:0, minScale:1, maxScale:3, baseViewBox:null },
-  modal: { routeId:null, chosenColor:null, selectedOptionIndex:null, options:[] }
-};
-
-const PLAYER_CONFIG = {
-  Eric:  { routeClass:"route-claimed-eric",  badgeClass:"eric",  image:"./assets/eric.png",  tokenClass:"eric-token" },
-  Tango: { routeClass:"route-claimed-tango", badgeClass:"tango", image:"./assets/tango.png", tokenClass:"tango-token" }
-};
-
-const ROUTE_COLOUR_HEX = {
-  red:"#d74b4b", orange:"#db7f2f", blue:"#2f6edb", green:"#1e8b4c",
-  black:"#1d1d1d", pink:"#c64f8e", yellow:"#d6b300", grey:"#7a7a7a"
-};
-
-const CARD_COLOUR_HEX_MAP = {
-  red:["#f3a3a3","#d74b4b"], orange:["#f2bf95","#db7f2f"], blue:["#8ab5ff","#2f6edb"],
-  green:["#72c78e","#1e8b4c"], black:["#5b5b5b","#1d1d1d"], pink:["#ef9cc3","#c64f8e"],
-  yellow:["#f0dd67","#d6b300"], rainbow:["#f3a3a3","#8ab5ff"]
-};
-
-const GLOW_COLOURS = {
-  red:"rgba(215,75,75,0.9)", orange:"rgba(219,127,47,0.9)", blue:"rgba(47,110,219,0.9)",
-  green:"rgba(30,139,76,0.9)", black:"rgba(120,120,120,0.8)", pink:"rgba(198,79,142,0.9)",
-  yellow:"rgba(214,179,0,0.9)", rainbow:"rgba(255,255,255,0.7)"
-};
-
-const TOAST_NOTABLE = Symbol("notable");
-const TOAST_SILENT  = Symbol("silent");
-
-// ─── Utilities ────────────────────────────────────────────────────────────────
-async function loadJson(url) {
-  const r = await fetch(url, { cache:"no-store" });
-  if (!r.ok) throw new Error(`Failed to load ${url} (${r.status})`);
-  return r.json();
-}
-async function loadText(url) {
-  const r = await fetch(url, { cache:"no-store" });
-  if (!r.ok) throw new Error(`Failed to load ${url} (${r.status})`);
-  return r.text();
-}
-function createSvgEl(tag, attrs={}) {
-  const el = document.createElementNS(SVG_NS, tag);
-  Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k,v));
-  return el;
-}
-function clamp(v,mn,mx) { return Math.max(mn, Math.min(mx, v)); }
-function shuffle(arr) {
-  const a=[...arr];
-  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
-  return a;
-}
-function parseRouteId(id) {
-  const p=id.split("_to_");
-  if(p.length!==2) throw new Error(`Bad route ID: ${id}`);
-  return {a:p[0],b:p[1]};
-}
-function formatNodeName(id) { return String(id).replaceAll("_"," "); }
-function formatRouteName(id) { const {a,b}=parseRouteId(id); return `${formatNodeName(a)} — ${formatNodeName(b)}`; }
-function routesShareNode(a,b) {
-  const pa=parseRouteId(a), pb=parseRouteId(b);
-  return pa.a===pb.a||pa.a===pb.b||pa.b===pb.a||pa.b===pb.b;
-}
-function countCards(hand) {
-  return hand.reduce((acc,c)=>{ acc[c]=(acc[c]||0)+1; return acc; },{});
-}
-function getDisplayRouteColor(c) { return c==="grey"?"wild":c; }
-
-// Returns the hero whose perspective we're rendering from.
-// In solo play this is controlledHero; in multiplayer it's localHero.
-function getViewHero() {
-  return app.localHero || app.state?.controlledHero || app.state?.currentPlayer || "Eric";
-}
-
-// ─── Board view ───────────────────────────────────────────────────────────────
-function applyBoardViewTransform() {
-  const svg=app.svg; if(!svg||!app.boardView.baseViewBox) return;
-  const base=app.boardView.baseViewBox, scale=app.boardView.scale;
-  const vw=base.w/scale, vh=base.h/scale;
-  const cx=base.x+base.w/2, cy=base.y+base.h/2;
-  const mX=(base.w-vw)/2, mY=(base.h-vh)/2;
-  app.boardView.panX=clamp(app.boardView.panX,-mX,mX);
-  app.boardView.panY=clamp(app.boardView.panY,-mY,mY);
-  svg.setAttribute("viewBox",`${cx-vw/2+app.boardView.panX} ${cy-vh/2+app.boardView.panY} ${vw} ${vh}`);
-}
-function resetBoardView() {
-  app.boardView.scale=1; app.boardView.panX=0; app.boardView.panY=0;
-  applyBoardViewTransform();
-}
-function clientToSvgPoint(cx,cy) {
-  const bw=document.getElementById("board-wrap"), svg=app.svg;
-  if(!bw||!svg) return {x:0,y:0};
-  const r=bw.getBoundingClientRect(), vb=svg.viewBox.baseVal;
-  return { x:vb.x+(cx-r.left)*vb.width/r.width, y:vb.y+(cy-r.top)*vb.height/r.height };
-}
-
-// ─── Desktop scale-to-fit ─────────────────────────────────────────────────────
-// Scales #game-shell down on sub-1920 screens so nothing is cut off.
-function applyDesktopScale() {
-  const shell = document.getElementById("game-shell");
-  if (!shell) return;
-  const isMobile = window.innerWidth <= 767 ||
-    (window.innerHeight <= 500 && window.innerWidth > window.innerHeight);
-  if (isMobile) {
-    shell.style.transform = "";
-    shell.style.transformOrigin = "";
-    return;
+  /* Status chip above bottom bar */
+  #status-chip {
+    bottom: calc(var(--mobile-bar-height) + 14px);
+    z-index: 2010;
+    max-width: calc(100vw - 40px);
+    font-size: 13px;
+    padding: 8px 12px;
   }
-  const scaleX = window.innerWidth  / 1920;
-  const scaleY = window.innerHeight / 1080;
-  const scale  = Math.min(scaleX, scaleY, 1); // never upscale
-  if (scale < 1) {
-    shell.style.transform = `scale(${scale})`;
-    shell.style.transformOrigin = "top center";
-    // Shrink #app height so scroll doesn't appear
-    const app_el = document.getElementById("app");
-    if (app_el) app_el.style.height = `${1080 * scale}px`;
-  } else {
-    shell.style.transform = "";
-    shell.style.transformOrigin = "";
-    const app_el = document.getElementById("app");
-    if (app_el) app_el.style.height = "";
+
+  /* Pay modal and destination reveal: centred in safe zone, scrollable */
+  .route-modal-overlay,
+  .destination-reveal-overlay {
+    position: fixed;
+    top: var(--mobile-hud-height);
+    bottom: var(--mobile-bar-height);
+    left: 0; right: 0;
+    padding: 12px;
+    align-items: center;
+    background: rgba(9, 12, 17, 0.72);
   }
-}
 
-function setupMobileBoardGestures() {
-  const bw=document.getElementById("board-wrap"); if(!bw) return;
-  let mode=null, startPan=null, startPinch=null;
-  bw.addEventListener("touchstart", evt=>{
-    if(evt.touches.length===1){
-      mode="pan";
-      startPan={fingerClient:{x:evt.touches[0].clientX,y:evt.touches[0].clientY},panXAtStart:app.boardView.panX,panYAtStart:app.boardView.panY};
-    }
-    if(evt.touches.length===2){
-      mode="pinch";
-      const midX=(evt.touches[0].clientX+evt.touches[1].clientX)/2, midY=(evt.touches[0].clientY+evt.touches[1].clientY)/2, mid={x:midX,y:midY};
-      const dx=evt.touches[1].clientX-evt.touches[0].clientX, dy=evt.touches[1].clientY-evt.touches[0].clientY;
-      startPinch={distance:Math.hypot(dx,dy),scaleAtStart:app.boardView.scale,panXAtStart:app.boardView.panX,panYAtStart:app.boardView.panY,midSvg:clientToSvgPoint(midX,midY),midClient:{x:midX,y:midY}};
-    }
-  },{passive:false});
-  bw.addEventListener("touchmove", evt=>{
-    evt.preventDefault();
-    if(mode==="pan"&&evt.touches.length===1&&startPan){
-      const base=app.boardView.baseViewBox, r=bw.getBoundingClientRect();
-      const spx=(base.w/app.boardView.scale)/r.width;
-      app.boardView.panX=startPan.panXAtStart-(evt.touches[0].clientX-startPan.fingerClient.x)*spx;
-      app.boardView.panY=startPan.panYAtStart-(evt.touches[0].clientY-startPan.fingerClient.y)*((base.h/app.boardView.scale)/r.height);
-      applyBoardViewTransform();
-    }
-    if(mode==="pinch"&&evt.touches.length===2&&startPinch){
-      const dx=evt.touches[1].clientX-evt.touches[0].clientX, dy=evt.touches[1].clientY-evt.touches[0].clientY;
-      const nd=Math.hypot(dx,dy), ns=clamp(startPinch.scaleAtStart*(nd/startPinch.distance),1,3);
-      const midX=(evt.touches[0].clientX+evt.touches[1].clientX)/2, midY=(evt.touches[0].clientY+evt.touches[1].clientY)/2, mid={x:midX,y:midY};
-      const base=app.boardView.baseViewBox, r=bw.getBoundingClientRect();
-      app.boardView.scale=ns;
-      app.boardView.panX=startPinch.midSvg.x-(base.x+base.w/2)-(mid.x-r.left-r.width/2)*(base.w/ns)/r.width;
-      app.boardView.panY=startPinch.midSvg.y-(base.y+base.h/2)-(mid.y-r.top-r.height/2)*(base.h/ns)/r.height;
-      applyBoardViewTransform();
-    }
-  },{passive:false});
-  bw.addEventListener("touchend", evt=>{
-    if(evt.touches.length===0){mode=null;startPan=null;startPinch=null;}
-    else if(evt.touches.length===1){
-      mode="pan";
-      startPan={fingerClient:{x:evt.touches[0].clientX,y:evt.touches[0].clientY},panXAtStart:app.boardView.panX,panYAtStart:app.boardView.panY};
-      startPinch=null;
-    }
-  });
-}
-
-// ─── SVG setup ────────────────────────────────────────────────────────────────
-async function injectBoardSvg() {
-  const host=document.getElementById("board-svg-host");
-  host.innerHTML=await loadText("./assets/didcot-dogs-board.v1.svg");
-  const svg=host.querySelector("svg");
-  if(!svg) throw new Error("No SVG element found");
-  svg.removeAttribute("width"); svg.removeAttribute("height");
-  svg.setAttribute("preserveAspectRatio","xMidYMid meet");
-  svg.style.background="transparent"; svg.style.willChange="auto"; svg.style.transform="";
-  return svg;
-}
-
-function setupFullscreenButton() {
-  const btn=document.getElementById("fullscreen-btn"); if(!btn) return;
-  btn.addEventListener("click", async()=>{
-    if(!document.fullscreenElement) await document.documentElement.requestFullscreen();
-    else await document.exitFullscreen();
-  });
-}
-
-function normalizeSvgNodeAliases(svg,rulesData) {
-  Object.entries(rulesData.svgNodeIdAliases||{}).forEach(([from,to])=>{
-    const n=svg.querySelector(`#${CSS.escape(from)}`); if(!n) return;
-    n.setAttribute("data-original-id",from); n.setAttribute("id",to);
-  });
-}
-
-function ensureSvgDefs(svg) {
-  let defs=svg.querySelector("defs");
-  if(!defs){defs=createSvgEl("defs");svg.insertBefore(defs,svg.firstChild);}
-  if(!svg.querySelector("#wild-route-gradient")){
-    const g=createSvgEl("linearGradient",{id:"wild-route-gradient",x1:"0%",y1:"0%",x2:"100%",y2:"0%"});
-    [["0%","#ff4d4d"],["18%","#ff9f1c"],["36%","#ffe600"],["54%","#2ec27e"],["72%","#2f6edb"],["90%","#c64f8e"],["100%","#ff4d4d"]].forEach(([o,c])=>g.appendChild(createSvgEl("stop",{offset:o,"stop-color":c})));
-    defs.appendChild(g);
+  .route-modal,
+  .destination-reveal-card {
+    width: 100%;
+    max-width: 480px;
+    max-height: 100%;
+    border-radius: 20px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 18px;
   }
-  ["eric","tango"].forEach(n=>{
-    const id=`claim-gradient-${n}`;
-    if(!svg.querySelector(`#${id}`)){
-      const g=createSvgEl("linearGradient",{id,gradientUnits:"userSpaceOnUse",spreadMethod:"repeat",x1:"0",y1:"0",x2:"40",y2:"0"});
-      const col=n==="eric"?"#19a7ff":"#ffe600";
-      [["0%",col],["90%",col],["90%","#ffffff"],["100%","#ffffff"]].forEach(([o,c])=>g.appendChild(createSvgEl("stop",{offset:o,"stop-color":c})));
-      defs.appendChild(g);
-    }
-  });
-}
 
-let __claimAnim=null;
-function startClaimGradientAnimation(svg) {
-  if(__claimAnim) return;
-  const eg=svg.querySelector("#claim-gradient-eric"), tg=svg.querySelector("#claim-gradient-tango");
-  if(!eg||!tg) return;
-  const tick=now=>{
-    const s=-((now/18)%40);
-    eg.setAttribute("gradientTransform",`translate(${s} 0)`);
-    tg.setAttribute("gradientTransform",`translate(${s} 0)`);
-    __claimAnim=requestAnimationFrame(tick);
-  };
-  __claimAnim=requestAnimationFrame(tick);
-}
-
-function tightenSvgViewBox(svg) {
-  const groups=["#Routes","#Labels","#Nodes"].map(s=>svg.querySelector(s));
-  const boxes=groups.map(g=>{if(!g||!g.getBBox)return null;const b=g.getBBox();return isFinite(b.x)?b:null;}).filter(Boolean);
-  if(!boxes.length) return;
-  const x=Math.min(...boxes.map(b=>b.x))-68, y=Math.min(...boxes.map(b=>b.y))-60;
-  const x2=Math.max(...boxes.map(b=>b.x+b.width))+68, y2=Math.max(...boxes.map(b=>b.y+b.height))+60;
-  svg.setAttribute("viewBox",`${x} ${y} ${x2-x} ${y2-y}`);
-  app.boardView.baseViewBox={x,y,w:x2-x,h:y2-y};
-}
-
-function getSvgAudit(svg,rulesData) {
-  const rg=svg.querySelector("#Routes"), ng=svg.querySelector("#Nodes");
-  const rids=(rg?[...rg.querySelectorAll("[id]")]:[]).map(e=>e.id).filter(Boolean);
-  const nids=(ng?[...ng.querySelectorAll("[id]")]:[]).map(e=>e.id).filter(Boolean);
-  return {routeIds:rids,nodeIds:nids,routeCount:rids.length,nodeCount:nids.length,
-    missingRuleRoutes:Object.keys(rulesData.routes||{}).filter(id=>!rids.includes(id)),
-    missingRuleNodes:(rulesData.nodes||[]).filter(id=>!nids.includes(id))};
-}
-
-// ─── Game state ───────────────────────────────────────────────────────────────
-function assignRouteColours(routeIds,palette) {
-  const assigned={};
-  shuffle(routeIds).forEach(id=>{
-    const blocked=Object.keys(assigned).filter(o=>routesShareNode(id,o)).map(o=>assigned[o]);
-    const opts=shuffle(palette.filter(c=>!blocked.includes(c)));
-    assigned[id]=opts[0]||shuffle(palette)[0];
-  });
-  return assigned;
-}
-
-function rerollSpecificRouteColours(ids) {
-  const palette=app.rulesData.routeColours||[];
-  ids.forEach(id=>{
-    const blocked=Object.keys(app.state.routes).filter(o=>o!==id&&routesShareNode(id,o)).map(o=>app.state.routes[o].colour);
-    const opts=shuffle(palette.filter(c=>!blocked.includes(c)));
-    app.state.routes[id].colour=opts[0]||shuffle(palette)[0];
-  });
-}
-
-function buildDeck(rulesData) {
-  const cols=rulesData.drawColours||[], cpc=rulesData.deck?.copiesPerColour??8, rc=rulesData.deck?.rainbowCount??4;
-  const deck=[];
-  cols.forEach(c=>{for(let i=0;i<cpc;i++)deck.push(c);});
-  for(let i=0;i<rc;i++)deck.push("rainbow");
-  return shuffle(deck);
-}
-
-function createPlayerState(startNode) {
-  return {currentNode:startNode,previousNode:null,hand:[],journeyRouteIds:[],destinationQueue:[],completedDestinations:[],completedCount:0,lastDrawColor:null};
-}
-
-function createInitialLocalState(rulesData) {
-  const routeIds=Object.keys(rulesData.routes||{});
-  const colours=assignRouteColours(routeIds,rulesData.routeColours||[]);
-  const dests=shuffle(rulesData.destinationPool||[]);
-  const routes={};
-  routeIds.forEach(id=>{routes[id]={colour:colours[id],claimedBy:null};});
-  return {
-    currentPlayer:"Eric", gameStarted:false, selectedRouteId:null,
-    drawPile:buildDeck(rulesData), discardPile:[], justCompleted:null, routes,
-    players:{
-      Eric:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(0,5)},
-      Tango:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(5,10)}
-    }
-  };
-}
-
-function getCurrentTargetForPlayer(player) {
-  if(player.completedCount<5) return player.destinationQueue[player.completedCount]||null;
-  return app.rulesData.winCondition?.finalDestinationAfterFive||"Didcot";
-}
-
-// ─── Token / node helpers ─────────────────────────────────────────────────────
-function getNodeElement(svg,nodeId) { return svg.querySelector(`#${CSS.escape(nodeId)}`); }
-function getNodeCenter(svg,nodeId) {
-  const el=getNodeElement(svg,nodeId);
-  if(!el) throw new Error(`Node not found: ${nodeId}`);
-  if(el.tagName.toLowerCase()==="circle") return {x:+el.getAttribute("cx"),y:+el.getAttribute("cy")};
-  const b=el.getBBox(); return {x:b.x+b.width/2,y:b.y+b.height/2};
-}
-function ensureLayer(svg,id) {
-  let l=svg.querySelector(`#${CSS.escape(id)}`);
-  if(!l){l=createSvgEl("g",{id});svg.appendChild(l);}
-  return l;
-}
-function ensureTokenDefs(svg) {
-  let defs=svg.querySelector("defs");
-  if(!defs){defs=createSvgEl("defs");svg.insertBefore(defs,svg.firstChild);}
-  ["Eric","Tango"].forEach(n=>{
-    const id=`token-clip-${n}`;
-    if(!svg.querySelector(`#${CSS.escape(id)}`)){
-      const cp=createSvgEl("clipPath",{id});
-      cp.appendChild(createSvgEl("circle",{cx:"0",cy:"0",r:"20"}));
-      defs.appendChild(cp);
-    }
-  });
-}
-function ensurePlayerToken(svg,playerName) {
-  ensureTokenDefs(svg);
-  const layer=ensureLayer(svg,"token-layer");
-  let g=svg.querySelector(`#token-${CSS.escape(playerName)}`);
-  if(g) return g;
-  g=createSvgEl("g",{id:`token-${playerName}`,class:`token-group ${PLAYER_CONFIG[playerName].tokenClass}`});
-  const w=createSvgEl("g",{class:"token-wobble"});
-  w.appendChild(createSvgEl("circle",{class:"token-circle",r:"24",fill:"#ffffff"}));
-  const img=createSvgEl("image",{x:"-20",y:"-20",width:"40",height:"40",preserveAspectRatio:"xMidYMid meet","clip-path":`url(#token-clip-${playerName})`});
-  img.setAttributeNS(XLINK_NS,"xlink:href",PLAYER_CONFIG[playerName].image);
-  img.setAttribute("href",PLAYER_CONFIG[playerName].image);
-  w.appendChild(img); g.appendChild(w); layer.appendChild(g);
-  return g;
-}
-function setTokenPosition(svg,name,x,y) { ensurePlayerToken(svg,name).setAttribute("transform",`translate(${x},${y})`); }
-function getPlayerTokenAnchor(name,nodeId) {
-  const c=getNodeCenter(app.svg,nodeId);
-  const en=app.state.players.Eric.currentNode, tn=app.state.players.Tango.currentNode;
-  if(en===tn&&nodeId===en) return name==="Eric"?{x:c.x-18,y:c.y}:{x:c.x+18,y:c.y};
-  return {x:c.x,y:c.y};
-}
-function renderTokens() {
-  Object.keys(app.state.players).forEach(n=>{
-    const a=getPlayerTokenAnchor(n,app.state.players[n].currentNode);
-    setTokenPosition(app.svg,n,a.x,a.y);
-  });
-}
-
-function getConnectedNode(routeId,fromNode) {
-  const {a,b}=parseRouteId(routeId);
-  return a===fromNode?b:b===fromNode?a:null;
-}
-
-// ─── Payment / playability ────────────────────────────────────────────────────
-function getPaymentOptionsForColor(routeId,playerName,chosenColor=null) {
-  const player=app.state.players[playerName], hc=countCards(player.hand);
-  const rc=hc.rainbow||0, routeColour=app.state.routes[routeId].colour, cost=app.rulesData.routes[routeId].length;
-  const ec=chosenColor||routeColour, owned=hc[ec]||0;
-  const minR=Math.max(0,cost-owned), maxR=Math.min(rc,cost);
-  const options=[];
-  for(let r=minR;r<=maxR;r++){const uc=cost-r;if(uc<=owned)options.push({colourChoice:ec,useColourCount:uc,useRainbowCount:r});}
-  if(routeColour==="grey"){
-    const av=(app.rulesData.drawColours||[]).filter(c=>(hc[c]||0)+rc>=cost);
-    return {affordable:av.length>0,isWild:true,availableColors:av,options};
+  .route-modal-body {
+    max-height: none;
+    overflow: visible;
   }
-  return {affordable:options.length>0,isWild:false,availableColors:[routeColour],options};
-}
 
-function getRoutePlayability(routeId) {
-  const pn=app.state.currentPlayer, player=app.state.players[pn], rs=app.state.routes[routeId];
-  const cn=getConnectedNode(routeId,player.currentNode);
-  if(!cn) return {playable:false,reason:"Route does not connect to current node."};
-  if(rs.claimedBy) return {playable:false,reason:`Already claimed by ${rs.claimedBy}.`};
-  if(player.previousNode&&cn===player.previousNode) return {playable:false,reason:"Cannot move straight back to previous node."};
-  const pay=getPaymentOptionsForColor(routeId,pn);
-  if(!pay.affordable) return {playable:false,reason:"Not enough matching cards.",targetNode:cn};
-  return {playable:true,targetNode:cn,payment:pay};
-}
+  .route-modal-title,
+  .destination-reveal-title { font-size: 26px; }
 
-function drawCard() {
-  if(!app.state.drawPile.length){
-    if(!app.state.discardPile.length) return null;
-    app.state.drawPile=shuffle(app.state.discardPile); app.state.discardPile=[];
+  .route-spend-card,
+  .route-colour-choice-card {
+    width: 48px;
+    height: 66px;
+    font-size: 10px;
   }
-  return app.state.drawPile.pop();
+  .route-spend-card::before,
+  .route-colour-choice-card::before { inset: 4px; border-radius: 6px; }
+
+  .route-option-row-label { font-size: 12px; margin-bottom: 8px; }
+
+  /* Mobile sheet positioned within safe zone */
+  #mobile-sheet.visible-shell {
+    top: calc(var(--mobile-hud-height) + 4px);
+    bottom: calc(var(--mobile-bar-height) + 4px);
+  }
+
+  /* Hero pick screen — mobile sizing */
+  .hero-inner          { width: min(94vw, 520px); padding: 28px 18px; }
+  .hero-title          { font-size: 56px; }
+  .hero-subtitle       { font-size: 16px; }
+  .hero-choice-wrap    { gap: 18px; }
+  .hero-pick-card      { width: min(92vw, 340px); min-height: 220px; gap: 16px; }
+  .hero-token-frame    { width: 140px; height: 140px; }
+  .hero-portrait       { width: 110px; height: 110px; }
+  .hero-name           { font-size: 32px; }
 }
 
-function removeSpecificCardsFromHand(hand,colour,useCol,useRain) {
-  const h=[...hand]; let cl=useCol,rl=useRain; const spent=[];
-  for(let i=h.length-1;i>=0&&cl>0;i--){if(h[i]===colour){spent.push(h[i]);h.splice(i,1);cl--;}}
-  for(let i=h.length-1;i>=0&&rl>0;i--){if(h[i]==="rainbow"){spent.push(h[i]);h.splice(i,1);rl--;}}
-  return {nextHand:h,spent};
+/* ═══════════════════════════════════════════════════════════════════════════
+   END SCREEN  (win / lose celebration)
+   Same wipe-sting structure as hero-overlay.
+   z-index 5000 — above everything including hero overlay (4000).
+   ═══════════════════════════════════════════════════════════════════════════ */
+.end-screen-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #090c11;
+}
+.end-screen-overlay.active { display: flex; }
+
+/* Wipe layer — reuses hero animation keyframes */
+.end-screen-loop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
 
-// ─── Turn management ──────────────────────────────────────────────────────────
-function isMyTurn() {
-  if(!app.roomCode) return true;
-  if(!app.localHero) return true;
-  return app.state.currentPlayer===app.localHero;
+.end-screen-wipe {
+  position: absolute;
+  inset: -10%;
+  transform: skewX(-18deg) translateX(-140%);
+  opacity: 0.9;
+  will-change: transform, opacity;
 }
 
-function endTurn() {
-  app.state.selectedRouteId=null;
-  closeRouteModal();
-  app.state.currentPlayer=app.state.currentPlayer==="Eric"?"Tango":"Eric";
-  console.log("[DD] endTurn → now",app.state.currentPlayer);
-  renderAll();
-  if(app.roomCode) {
-    fbPushState(app.roomCode, app.state).then(()=>updateRoomHud());
+/* Win: red/gold palette */
+.end-win .end-screen-wipe-a {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(229,57,53,0.9) 45%, rgba(255,196,0,1) 100%);
+  animation: heroLoopA 3.8s linear infinite;
+}
+.end-win .end-screen-wipe-b {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,196,0,0.7) 45%, rgba(229,57,53,0.5) 100%);
+  animation: heroLoopB 4.4s linear infinite;
+}
+.end-win .end-screen-wipe-c {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,255,255,0.22) 45%, rgba(255,196,0,0.18) 100%);
+  animation: heroLoopC 5.2s linear infinite;
+}
+
+/* Lose: blue/grey palette */
+.end-lose .end-screen-wipe-a {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(47,110,219,0.85) 45%, rgba(100,100,120,0.9) 100%);
+  animation: heroLoopA 4.2s linear infinite;
+}
+.end-lose .end-screen-wipe-b {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(80,80,100,0.7) 45%, rgba(47,110,219,0.4) 100%);
+  animation: heroLoopB 5.0s linear infinite;
+}
+.end-lose .end-screen-wipe-c {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,255,255,0.10) 45%, rgba(47,110,219,0.08) 100%);
+  animation: heroLoopC 6.0s linear infinite;
+}
+
+.end-screen-noise {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 15% 25%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 22%),
+    radial-gradient(circle at 78% 20%, rgba(255,196,0,0.12) 0%, rgba(255,196,0,0) 22%),
+    radial-gradient(circle at 80% 78%, rgba(47,110,219,0.12) 0%, rgba(47,110,219,0) 28%),
+    radial-gradient(circle at 20% 80%, rgba(229,57,53,0.12) 0%, rgba(229,57,53,0) 26%);
+  mix-blend-mode: screen;
+  animation: heroNoisePulse 3.8s ease-in-out infinite;
+}
+
+/* Content */
+.end-screen-inner {
+  position: relative;
+  z-index: 3;
+  text-align: center;
+  width: min(900px, 92vw);
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.end-screen-kicker {
+  font-family: var(--header-font);
+  font-size: 30px;
+  color: rgba(255,255,255,0.85);
+}
+
+.end-screen-headline {
+  font-family: var(--header-font);
+  font-size: 110px;
+  line-height: 0.9;
+  color: #ffffff;
+  text-shadow:
+    0 0 18px rgba(141,18,24,0.4),
+    0 0 40px rgba(34,59,124,0.3);
+}
+
+.end-win  .end-screen-headline { color: #ffe600; text-shadow: 0 0 24px rgba(255,196,0,0.55), 0 0 60px rgba(229,57,53,0.3); }
+.end-lose .end-screen-headline { color: rgba(255,255,255,0.55); text-shadow: none; }
+
+.end-screen-sub {
+  font-family: var(--ui-font);
+  font-size: 22px;
+  color: rgba(255,255,255,0.82);
+}
+
+.end-screen-portrait-wrap {
+  width: 160px;
+  height: 160px;
+  border-radius: 28px;
+  background: rgba(255,255,255,0.92);
+  border: 5px solid rgba(255,255,255,0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin: 8px 0;
+}
+.end-lose .end-screen-portrait-wrap {
+  filter: grayscale(0.7) brightness(0.7);
+}
+
+.end-screen-portrait {
+  width: 128px;
+  height: 128px;
+  object-fit: contain;
+}
+
+.end-screen-btn {
+  font-size: 22px;
+  min-height: 56px;
+  padding: 0 36px;
+  border-radius: 18px;
+  margin-top: 8px;
+}
+
+/* Mobile sizing */
+@media (max-width: 767px) {
+  .end-screen-headline { font-size: 72px; }
+  .end-screen-sub      { font-size: 17px; }
+  .end-screen-kicker   { font-size: 24px; }
+  .end-screen-portrait-wrap { width: 120px; height: 120px; }
+  .end-screen-portrait      { width: 96px;  height: 96px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.1.0 UI IMPROVEMENTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── HUD destination pill ─────────────────────────────────────────────────── */
+#mobile-hud-destination {
+  min-height: 44px;
+  background: rgba(12, 16, 22, 0.92);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-left: 3px solid var(--eligible-red);
+  border-radius: 14px;
+  justify-content: flex-start;
+  padding: 0 14px;
+  gap: 10px;
+  font-size: 15px;
+}
+
+#mobile-hud-destination[data-complete="true"] {
+  border-left-color: var(--claim-yellow);
+}
+
+.hud-dest-progress {
+  font-family: var(--header-font);
+  font-size: 13px;
+  color: var(--eligible-red);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+#mobile-hud-destination[data-complete="true"] .hud-dest-progress {
+  color: var(--claim-yellow);
+}
+
+.hud-dest-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ffffff;
+}
+
+/* ── HUD turn / draw pills ────────────────────────────────────────────────── */
+#mobile-hud-turn {
+  font-family: var(--header-font);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+#mobile-hud-draw {
+  font-size: 13px;
+  color: rgba(255,255,255,0.72);
+}
+
+/* ── HUD action buttons — rounded-square, tactile ────────────────────────── */
+.mobile-hud-btn {
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 6px rgba(0,0,0,0.3);
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  transition: background 120ms ease, transform 80ms ease;
+}
+
+.mobile-hud-btn:active {
+  transform: scale(0.96);
+}
+
+#mobile-open-sheet-btn {
+  background: linear-gradient(180deg, #a81820 0%, var(--deep-red) 100%);
+  border-color: rgba(255,255,255,0.2);
+}
+
+#mobile-reset-view-btn {
+  background: rgba(30, 35, 48, 0.95);
+  border-color: rgba(255,255,255,0.14);
+}
+
+/* ── Hand strip — taller cards + chevron affordance ──────────────────────── */
+.hand-chevron {
+  text-align: center;
+  font-size: 20px;
+  line-height: 1;
+  color: rgba(255,255,255,0.28);
+  padding: 4px 0 0;
+  letter-spacing: 2px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.mobile-hand-peek-card {
+  height: 86px;
+}
+
+/* ── Destination reveal — scale-in animation ─────────────────────────────── */
+.destination-reveal-card {
+  animation: destRevealIn 320ms cubic-bezier(0.18, 0.88, 0.28, 1.12) forwards;
+}
+
+@keyframes destRevealIn {
+  0%   { transform: translateY(24px) scale(0.88) rotateX(8deg); opacity: 0; }
+  100% { transform: translateY(0)    scale(1)    rotateX(0deg); opacity: 1; }
+}
+
+/* ── Route pay modal — cost header banner ────────────────────────────────── */
+.route-modal-cost-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 15px;
+  color: rgba(255,255,255,0.82);
+}
+
+.route-modal-cost-banner strong {
+  font-family: var(--header-font);
+  font-size: 20px;
+  color: #ffffff;
+}
+
+.route-modal-cost-pip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.22);
+  font-family: var(--header-font);
+  font-size: 16px;
+  color: #ffffff;
+}
+
+@media (max-width: 767px) {
+  .route-spend-card,
+  .route-colour-choice-card {
+    width: 64px;
+    height: 88px;
+    font-size: 11px;
+    border-radius: 10px;
+  }
+  .route-spend-card::before,
+  .route-colour-choice-card::before {
+    inset: 5px;
+    border-radius: 7px;
   }
 }
 
-// ─── Animation ────────────────────────────────────────────────────────────────
-function easeInOutCubic(t){return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;}
-
-function getRouteTravelDirection(el,from,to,routeId){
-  const tot=el.getTotalLength(),sp=el.getPointAtLength(0),ep=el.getPointAtLength(tot);
-  const fc=getNodeCenter(app.svg,from),tc=getNodeCenter(app.svg,to);
-  const sf=Math.hypot(sp.x-fc.x,sp.y-fc.y),ef=Math.hypot(ep.x-fc.x,ep.y-fc.y);
-  const st=Math.hypot(sp.x-tc.x,sp.y-tc.y),et=Math.hypot(ep.x-tc.x,ep.y-tc.y);
-  if(sf<=ef&&et<=st) return true;
-  if(ef<sf&&st<et) return false;
-  return parseRouteId(routeId).a===from;
+/* ── Identity card (replaces start toast) ────────────────────────────────── */
+.identity-card {
+  position: absolute;
+  inset: 0;
+  z-index: 4800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
 }
 
-function animateTokenAlongRoute(playerName,routeId,fromNode,toNode){
-  return new Promise(resolve=>{
-    const el=app.svg.querySelector(`#${CSS.escape(routeId)}`);
-    if(!el||!el.getTotalLength){renderTokens();resolve();return;}
-    const token=ensurePlayerToken(app.svg,playerName),tot=el.getTotalLength();
-    const fwd=getRouteTravelDirection(el,fromNode,toNode,routeId),start=performance.now();
-    function step(now){
-      const t=Math.min(1,(now-start)/900),e=easeInOutCubic(t),p=fwd?e:1-e;
-      const pt=el.getPointAtLength(tot*p);
-      let x=pt.x,y=pt.y;
-      const op=playerName==="Eric"?"Tango":"Eric";
-      if(app.state.players[op].currentNode===toNode){x+=playerName==="Eric"?-18:18;}
-      token.setAttribute("transform",`translate(${x},${y})`);
-      if(t<1) requestAnimationFrame(step); else resolve();
-    }
-    requestAnimationFrame(step);
-  });
+.identity-card.identity-in {
+  animation: identityIn 300ms ease forwards;
 }
 
-// ─── Status / toast ───────────────────────────────────────────────────────────
-let __toastTimer=null;
-function updateStatus(text,priority=TOAST_SILENT){
-  const chip=document.getElementById("status-chip"); if(chip) chip.textContent=text;
-  if(priority===TOAST_NOTABLE) showMobileToast(text);
+.identity-card.identity-out {
+  animation: identityOut 400ms ease forwards;
 }
-function showMobileToast(text){
-  let t=document.getElementById("mobile-toast");
-  if(!t){
-    t=document.createElement("div"); t.id="mobile-toast"; t.className="mobile-toast";
-    const hud=document.getElementById("mobile-hud");
-    if(hud&&hud.parentNode) hud.parentNode.insertBefore(t,hud.nextSibling);
-    else document.getElementById("game-shell").appendChild(t);
+
+.identity-wipe {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg,
+    rgba(141,18,24,0.92) 0%,
+    rgba(9,12,17,0.97) 60%,
+    rgba(9,12,17,0.99) 100%
+  );
+}
+
+.identity-inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.identity-kicker {
+  font-family: var(--ui-font);
+  font-size: 18px;
+  color: rgba(255,255,255,0.6);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.identity-portrait-wrap {
+  width: 140px;
+  height: 140px;
+  border-radius: 28px;
+  background: rgba(255,255,255,0.95);
+  border: 4px solid rgba(255,255,255,0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+}
+
+.identity-portrait {
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+}
+
+.identity-name {
+  font-family: var(--header-font);
+  font-size: 72px;
+  line-height: 0.95;
+  color: #ffffff;
+  text-shadow: 0 0 30px rgba(141,18,24,0.6);
+}
+
+@keyframes identityIn {
+  0%   { opacity: 0; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes identityOut {
+  0%   { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.96); }
+}
+
+@media (max-width: 767px) {
+  .identity-name           { font-size: 52px; }
+  .identity-portrait-wrap  { width: 110px; height: 110px; }
+  .identity-portrait       { width: 88px; height: 88px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.2.0  CARD PILE VISUALS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#mobile-hud {
+  grid-template-columns: 1fr auto auto;
+  grid-template-rows: auto auto auto;
+  align-items: center;
+}
+
+#mobile-hud-turn        { grid-column: 1; grid-row: 1; }
+#mobile-hud-draw        { grid-column: 2; grid-row: 1; justify-self: center; }
+#mobile-hud-discard     { grid-column: 3; grid-row: 1; justify-self: center; }
+#mobile-hud-destination { grid-column: 1 / -1; grid-row: 2; }
+#mobile-open-sheet-btn  { grid-column: 1; grid-row: 3; }
+#mobile-reset-view-btn  { grid-column: 2 / -1; grid-row: 3; }
+
+.mobile-hud-pile {
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: 0;
+  width: auto;
+  pointer-events: none;
+}
+
+.pile-wrap {
+  position: relative;
+  width: 38px;
+  height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pile-card {
+  position: absolute;
+  width: 34px;
+  height: 48px;
+  border-radius: 6px;
+  border: 1.5px solid rgba(0,0,0,0.18);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  top: var(--pile-offset, 0px);
+  transform: rotate(var(--pile-rot, 0deg));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.pile-card-back {
+  background: linear-gradient(160deg, #1e2535 0%, #0e1118 100%);
+  border-color: rgba(255,255,255,0.08);
+}
+
+.pile-card-face { }
+
+.pile-card-empty {
+  background: rgba(255,255,255,0.04);
+  border: 1.5px dashed rgba(255,255,255,0.14);
+  border-radius: 6px;
+  width: 34px;
+  height: 48px;
+  position: absolute;
+  top: 0;
+}
+
+.pile-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(229,57,53,0.92);
+  border: 1.5px solid rgba(255,255,255,0.9);
+  color: #fff;
+  font-family: var(--ui-font);
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  z-index: 10;
+}
+
+.pile-badge-discard {
+  background: rgba(30,35,48,0.95);
+  border-color: rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.75);
+}
+
+.pile-label {
+  position: absolute;
+  bottom: -14px;
+  font-family: var(--ui-font);
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.38);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+:root {
+  --mobile-hud-height: 124px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.3.0  CARD DRAW ANIMATION + LANDSCAPE MOBILE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.flying-card {
+  border-radius: 8px;
+  border: 2px solid rgba(0,0,0,0.18);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  backface-visibility: hidden;
+}
+
+.flying-card-back {
+  background: linear-gradient(160deg, #1e2535 0%, #0e1118 100%);
+}
+
+.flying-card-face {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45), 0 0 16px rgba(255,255,255,0.15);
+}
+
+.mobile-hand-peek-card.card-glow-steady {
+  animation: cardGlowBreath 2s ease-in-out infinite;
+}
+
+@keyframes cardGlowBreath {
+  0%, 100% {
+    box-shadow:
+      0 6px 14px rgba(0,0,0,0.22),
+      inset 0 1px 0 rgba(255,255,255,0.35),
+      0 0 0 2px var(--glow-colour, rgba(255,255,255,0.7)),
+      0 0 14px var(--glow-colour, rgba(255,255,255,0.4));
   }
-  t.textContent=text; t.classList.remove("mobile-toast-hide"); t.classList.add("mobile-toast-show");
-  if(__toastTimer) clearTimeout(__toastTimer);
-  __toastTimer=setTimeout(()=>{t.classList.remove("mobile-toast-show");t.classList.add("mobile-toast-hide");},2000);
-}
-
-// ─── Room HUD ─────────────────────────────────────────────────────────────────
-function updateRoomHud(){
-  if(!app.roomCode) return;
-  const mine=app.state.currentPlayer===app.localHero;
-  const hero=app.localHero||"?";
-  const cfg=PLAYER_CONFIG[hero];
-
-  const identity=document.getElementById("desktop-identity");
-  if(identity&&cfg){
-    identity.innerHTML=`
-      <div class="desktop-identity-inner">
-        <img class="desktop-identity-portrait"
-             id="desktop-identity-portrait"
-             data-hero="${hero}"
-             src="${cfg.image}" alt="${hero}"
-             style="border-color:${hero==="Eric"?"rgba(25,167,255,0.6)":"rgba(255,230,0,0.6)"}">
-        <div class="desktop-identity-text">
-          <div class="desktop-identity-label">YOU ARE</div>
-          <div class="desktop-identity-name">${hero.toUpperCase()}</div>
-          <div class="desktop-identity-room">Room: <strong>${app.roomCode}</strong></div>
-        </div>
-      </div>`;
-  }
-
-  requestAnimationFrame(startPortraitWobble);
-
-  const ti=document.getElementById("desktop-turn-indicator");
-  if(ti){
-    ti.className=`desktop-turn-indicator ${mine?"desktop-turn-mine":"desktop-turn-theirs"}`;
-    ti.textContent=mine?"YOUR TURN":`${app.state.currentPlayer}'s turn`;
-  }
-
-  renderTurnBadge();
-
-  const turnPill=document.getElementById("mobile-hud-turn");
-  if(turnPill){
-    turnPill.innerHTML=`
-      <span style="opacity:0.55;font-size:11px;letter-spacing:0.08em">${app.roomCode}</span>
-      <span style="margin:0 6px;opacity:0.3">·</span>
-      <span style="color:${mine?"#ffe600":"rgba(255,255,255,0.6)"}">
-        ${mine?"YOUR TURN":`${app.state.currentPlayer}'s turn`}
-      </span>`;
-    turnPill.style.fontFamily="var(--header-font)";
-  }
-}
-
-// ─── Room screen ──────────────────────────────────────────────────────────────
-function showScreen(id){ const e=document.getElementById(id); if(e) e.classList.add("active"); }
-function hideScreen(id){ const e=document.getElementById(id); if(e) e.classList.remove("active"); }
-
-function wireRoomButtons(){
-  const createBtn=document.getElementById("room-create-btn");
-  const joinBtn=document.getElementById("room-join-btn");
-  const joinInput=document.getElementById("room-join-input");
-  const errorEl=document.getElementById("room-error");
-
-  createBtn.disabled=false; createBtn.textContent="Create game";
-  joinBtn.disabled=false; joinBtn.textContent="Join";
-  if(errorEl) errorEl.textContent="";
-
-  createBtn.onclick = async()=>{
-    createBtn.disabled=true; createBtn.textContent="Creating…"; errorEl.textContent="";
-    try {
-      const state=createInitialLocalState(app.rulesData);
-      state.currentPlayer="Eric";
-      const code=await fbCreateRoom(state);
-      app.roomCode=code;
-
-      hideScreen("room-screen");
-      document.getElementById("hero-overlay").classList.add("active");
-
-      function creatorPickHero(hero){
-        const joinerHero=hero==="Eric"?"Tango":"Eric";
-        app.localHero=hero;
-        app.state={...state, controlledHero:hero, currentPlayer:hero};
-        sessionStorage.setItem("dd_room_code",code);
-        sessionStorage.setItem("dd_hero",hero);
-        fbPushState(code,{...state,currentPlayer:hero,phase:"waiting"});
-        document.getElementById("hero-overlay").classList.remove("active");
-        showMobileHud(); resetBoardView(); renderAll();
-        showCurrentDestinationReveal(hero); showStartToast(hero);
-        updateRoomHud();
-        // Show waiting screen with cancel button
-        const codeEl=document.getElementById("waiting-code");
-        if(codeEl) codeEl.textContent=code;
-        showScreen("waiting-screen");
-        // Wire the waiting screen cancel button
-        const cancelBtn=document.getElementById("waiting-cancel-btn");
-        if(cancelBtn) cancelBtn.onclick=()=>returnToMenu();
-
-        let started=false;
-        fbSubscribePresence(code, presence=>{
-          if(presence?.[joinerHero]?.connected&&!started){
-            started=true;
-            hideScreen("waiting-screen");
-            console.log("[DD] Opponent joined, subscribing");
-            let skipFirst=true;
-            fbSubscribeRoom(code, remoteState=>{
-              if(!remoteState||!remoteState.players) return;
-              if(skipFirst){skipFirst=false;return;}
-              console.log("[DD] Creator received remote state, currentPlayer:",remoteState.currentPlayer);
-              app.state={...restoreArrays({...remoteState}),controlledHero:hero};
-              renderAll(); updateRoomHud();
-            });
-          }
-        });
-      }
-      document.getElementById("pick-eric-btn").onclick=()=>creatorPickHero("Eric");
-      document.getElementById("pick-tango-btn").onclick=()=>creatorPickHero("Tango");
-    } catch(err){
-      errorEl.textContent=err.message;
-      createBtn.disabled=false; createBtn.textContent="Create game";
-    }
-  };
-
-  joinBtn.onclick = async()=>{
-    const code=(joinInput.value||"").toUpperCase().trim();
-    if(code.length!==4){ errorEl.textContent="Enter a 4-character code."; return; }
-    joinBtn.disabled=true; joinBtn.textContent="Joining…"; errorEl.textContent="";
-    try {
-      const firebaseState=await fbJoinRoom(code);
-      const creatorHero=firebaseState.currentPlayer||"Eric";
-      const joinerHero=creatorHero==="Eric"?"Tango":"Eric";
-      app.roomCode=code; app.localHero=joinerHero;
-      sessionStorage.setItem("dd_room_code",code); sessionStorage.setItem("dd_hero",joinerHero);
-      hideScreen("room-screen");
-      launchGame(joinerHero, firebaseState);
-    } catch(err){
-      errorEl.textContent=err.message;
-      joinBtn.disabled=false; joinBtn.textContent="Join";
-    }
-  };
-
-  joinInput.onkeydown=e=>{if(e.key==="Enter")joinBtn.click();};
-  joinInput.oninput=()=>{joinInput.value=joinInput.value.toUpperCase();};
-}
-
-function restoreArrays(state) {
-  const toArr = v => {
-    if (!v) return [];
-    if (Array.isArray(v)) return v;
-    const keys = Object.keys(v);
-    if (keys.length === 0) return [];
-    if (keys.every(k => !isNaN(k))) return keys.sort((a,b)=>+a-+b).map(k=>v[k]);
-    return v;
-  };
-  state.drawPile    = toArr(state.drawPile);
-  state.discardPile = toArr(state.discardPile);
-  if (state.players) {
-    Object.keys(state.players).forEach(name => {
-      const p = state.players[name];
-      p.hand              = toArr(p.hand);
-      p.journeyRouteIds   = toArr(p.journeyRouteIds);
-      p.destinationQueue  = toArr(p.destinationQueue);
-      p.completedDestinations = toArr(p.completedDestinations);
-    });
-  }
-  return state;
-}
-
-function launchGame(hero, firebaseState){
-  console.log("[DD] launchGame hero:",hero,"routes:",Object.keys(firebaseState.routes||{}).length,"deck:",firebaseState.drawPile?.length,"currentPlayer:",firebaseState.currentPlayer);
-  app.state={...restoreArrays({...firebaseState}), controlledHero:hero};
-  app.localHero=hero;
-  document.getElementById("hero-overlay").classList.remove("active");
-  showMobileHud();
-  resetBoardView();
-  showStartToast(hero);
-  renderAll();
-  showCurrentDestinationReveal(hero);
-  updateRoomHud();
-
-  let skipFirst=true;
-  fbSubscribeRoom(app.roomCode, remoteState=>{
-    if(!remoteState||!remoteState.players) return;
-    if(skipFirst){ skipFirst=false; return; }
-    console.log("[DD] Remote state received, currentPlayer:",remoteState.currentPlayer,"localHero:",hero);
-    app.state={...restoreArrays({...remoteState}), controlledHero:hero};
-    renderAll();
-    updateRoomHud();
-  });
-}
-
-// ─── Return to menu ───────────────────────────────────────────────────────────
-function returnToMenu(){
-  sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
-  app.roomCode=null; app.localHero=null;
-  cancelAutoSim(); closeRouteModal(); closeDestinationReveal(); closeMobileSheet();
-  app.state=createInitialLocalState(app.rulesData);
-
-  ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
-  const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
-  ["waiting-screen","resuming-screen"].forEach(hideScreen);
-  hideEndScreen();
-
-  document.getElementById("hero-overlay").classList.remove("active");
-
-  const pe=document.getElementById("pick-eric-btn");
-  const pt=document.getElementById("pick-tango-btn");
-  if(pe) pe.onclick=null;
-  if(pt) pt.onclick=null;
-
-  const di=document.getElementById("desktop-identity");
-  if(di) di.innerHTML="";
-  const ti=document.getElementById("desktop-turn-indicator");
-  if(ti) ti.textContent="";
-  const rhud=document.getElementById("room-hud");
-  if(rhud) rhud.style.display="none";
-
-  resetBoardView(); renderAll();
-  showScreen("room-screen");
-  wireRoomButtons();
-}
-
-// ─── Portrait harsh wobble ────────────────────────────────────────────────────
-let __wobbleTimer = null;
-function startPortraitWobble() {
-  if (__wobbleTimer) return;
-  function snap() {
-    const img = document.getElementById("desktop-identity-portrait");
-    if (!img) { __wobbleTimer = null; return; }
-    const deg = (Math.random() < 0.5 ? -1 : 1) * 15;
-    img.style.transform = `rotate(${deg}deg)`;
-    img.style.transition = "transform 60ms step-end";
-    const next = 500 + Math.random() * 1000;
-    __wobbleTimer = setTimeout(snap, next);
-  }
-  snap();
-}
-function stopPortraitWobble() {
-  if (__wobbleTimer) { clearTimeout(__wobbleTimer); __wobbleTimer = null; }
-  const img = document.getElementById("desktop-identity-portrait");
-  if (img) { img.style.transform = ""; }
-}
-
-// ─── Rendering ────────────────────────────────────────────────────────────────
-function ensureRouteCostLayer(){ return ensureLayer(app.svg,"route-cost-layer"); }
-
-function handleRouteSelection(routeId){
-  app.state.selectedRouteId=routeId; renderAll();
-  handleRouteHover(routeId); openRouteModal(routeId);
-}
-
-function renderRouteCostBadges(){
-  const layer=ensureRouteCostLayer(); layer.innerHTML="";
-  Object.keys(app.rulesData.routes||{}).forEach(routeId=>{
-    const el=app.svg.querySelector(`#${CSS.escape(routeId)}`);
-    if(!el||app.state.routes[routeId].claimedBy) return;
-    if(!el.getTotalLength) return;
-    const len=el.getTotalLength(), mid=el.getPointAtLength(len/2);
-    const rc=app.state.routes[routeId].colour, wild=rc==="grey";
-    const hex=ROUTE_COLOUR_HEX[rc]||"#7a7a7a", cost=app.rulesData.routes[routeId].length;
-    const g=createSvgEl("g",{class:"route-cost-badge",transform:`translate(${mid.x},${mid.y})`,"data-route-id":routeId});
-    g.style.cursor="pointer";
-    g.appendChild(createSvgEl("circle",{r:"12",fill:"#ffffff",stroke:wild?"#c64f8e":hex}));
-    const txt=createSvgEl("text",{x:"0",y:"0",fill:wild?"#c64f8e":hex,"text-anchor":"middle","dominant-baseline":"middle"});
-    txt.textContent=String(cost); txt.setAttribute("dy","0.02em"); g.appendChild(txt);
-    g.addEventListener("click",evt=>{evt.stopPropagation();handleRouteSelection(routeId);});
-    g.addEventListener("mouseenter",evt=>{evt.stopPropagation();handleRouteHover(routeId);});
-    g.addEventListener("mouseleave",()=>updateStatus("Choose one action: draw a card or click a route to play it."));
-    layer.appendChild(g);
-  });
-}
-
-function renderRoutes(){
-  Object.keys(app.rulesData.routes||{}).forEach(routeId=>{
-    const el=app.svg.querySelector(`#${CSS.escape(routeId)}`); if(!el) return;
-    el.classList.remove("route-claimed-eric","route-claimed-tango","route-eligible","route-selected","route-blocked");
-    const rs=app.state.routes[routeId], rc=rs.colour;
-    el.style.strokeWidth="8"; el.style.cursor="pointer";
-    el.style.stroke=rc==="grey"?"url(#wild-route-gradient)":ROUTE_COLOUR_HEX[rc]||"#7a7a7a";
-    if(rs.claimedBy){el.classList.add(PLAYER_CONFIG[rs.claimedBy].routeClass);return;}
-    const play=getRoutePlayability(routeId);
-    if(play.playable) el.classList.add("route-eligible");
-    if(app.state.selectedRouteId===routeId) el.classList.add("route-selected");
-  });
-  renderRouteCostBadges();
-}
-
-function renderTurnBadge(){
-  const b=document.getElementById("turn-player-badge"); if(!b) return;
-  b.className=`player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
-  b.textContent=`${app.state.currentPlayer} to play`;
-  const ti=document.getElementById("desktop-turn-indicator");
-  if(ti){
-    const mine=isMyTurn();
-    ti.className=`desktop-turn-indicator ${mine?"desktop-turn-mine":"desktop-turn-theirs"}`;
-    ti.textContent=mine?"YOUR TURN":`${app.state.currentPlayer}'s turn`;
+  50% {
+    box-shadow:
+      0 6px 14px rgba(0,0,0,0.22),
+      inset 0 1px 0 rgba(255,255,255,0.35),
+      0 0 0 3px var(--glow-colour, rgba(255,255,255,0.9)),
+      0 0 26px var(--glow-colour, rgba(255,255,255,0.6));
   }
 }
 
-function renderCounts(){
-  const d=document.getElementById("draw-pile-count"), dc=document.getElementById("discard-pile-count");
-  if(d) d.textContent=app.state.drawPile.length;
-  if(dc) dc.textContent=app.state.discardPile.length;
-}
+/* ── Landscape mobile ─────────────────────────────────────────────────────── */
+@media (orientation: landscape) and (max-height: 500px) {
 
-function renderSelectedRouteCard(){
-  const card=document.getElementById("selected-route-card"); if(!card) return;
-  const routeId=app.state.selectedRouteId; card.className="selected-route-card";
-  if(!routeId){card.textContent="No route selected.";return;}
-  const rc=getDisplayRouteColor(app.state.routes[routeId].colour), cost=app.rulesData.routes[routeId].length;
-  const play=getRoutePlayability(routeId);
-  if(play.playable){
-    card.classList.add("valid");
-    card.innerHTML=`<strong>${formatRouteName(routeId)}</strong><br>Colour: ${rc}<br>Cost: ${cost}<br>→ ${formatNodeName(play.targetNode)}`;
-  } else {
-    card.classList.add("invalid");
-    card.innerHTML=`<strong>${formatRouteName(routeId)}</strong><br>${play.reason}`;
+  #game-shell {
+    width: 100vw !important;
+    height: 100vh !important;
   }
-}
 
-function getHandStacks(hand){
-  const counts=countCards(hand);
-  return ["red","orange","blue","green","black","pink","yellow","rainbow"].filter(c=>counts[c]>0).map(c=>({color:c,count:counts[c]}));
-}
+  #top-bar,
+  #left-panel,
+  #right-panel { display: none !important; }
 
-function renderHandInto(container,player,cls="hand-card"){
-  container.innerHTML="";
-  const stacks=getHandStacks(player.hand);
-  if(!stacks.length){const e=document.createElement("div");e.className="panel-copy";e.textContent="No cards yet.";container.appendChild(e);return;}
-  stacks.forEach(s=>{
-    const el=document.createElement("div"); el.className=`${cls} ${s.color}`;
-    if(player.lastDrawColor===s.color&&cls==="hand-card") el.classList.add("draw-in");
-    if(player.lastDrawColor===s.color&&cls==="mobile-hand-peek-card"){
-      el.style.setProperty("--glow-colour",GLOW_COLOURS[s.color]||"rgba(255,255,255,0.7)");
-      el.classList.add("card-glow-steady");
-    }
-    el.innerHTML=`<div class="card-name">${s.color}</div><div class="card-count">${s.count}</div>`;
-    container.appendChild(el);
-  });
-}
-
-// Always render the VIEW HERO's hand — never the opponent's
-function renderActiveHand(){
-  const wrap=document.getElementById("active-hand"); if(!wrap) return;
-  const hero=getViewHero();
-  const player=app.state.players[hero];
-  renderHandInto(wrap,player,"hand-card");
-  player.lastDrawColor=null;
-}
-
-// Only show OWN player summary info — opponent details hidden
-function renderPlayerSummary(){
-  const wrap=document.getElementById("player-summary-wrap"); if(!wrap) return;
-  wrap.innerHTML="";
-  const hero=getViewHero();
-  ["Eric","Tango"].forEach(n=>{
-    const p=app.state.players[n];
-    const isMe=n===hero;
-    const t=isMe?getCurrentTargetForPlayer(p):null;
-    const card=document.createElement("div");
-    card.className=`player-summary-card${app.state.currentPlayer===n?" active":""}`;
-    if(isMe){
-      const targetTitle=t?(app.destinationData?.destinations[t]?.title||formatNodeName(t)):"—";
-      card.innerHTML=`
-        <div class="player-summary-name">${n} <span style="font-size:13px;opacity:0.5;font-family:var(--ui-font)">(you)</span></div>
-        <div class="player-summary-meta">
-          <span class="summary-row"><span class="summary-lbl">Location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
-          <span class="summary-row"><span class="summary-lbl">Cards</span><span class="summary-val">${p.hand.length}</span></span>
-          <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,5)}/5</span></span>
-          <span class="summary-row"><span class="summary-lbl">Target</span><span class="summary-val">${targetTitle}</span></span>
-        </div>`;
-    } else {
-      // Opponent — only show location and journey count, nothing secret
-      card.innerHTML=`
-        <div class="player-summary-name">${n}</div>
-        <div class="player-summary-meta">
-          <span class="summary-row"><span class="summary-lbl">Location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
-          <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,5)}/5</span></span>
-        </div>`;
-    }
-    wrap.appendChild(card);
-  });
-}
-
-// Only render the VIEW HERO's destination sequence
-function buildDestinationSequenceElement(playerName,showFlip=true){
-  const player=app.state.players[playerName];
-  const seq=document.createElement("div"); seq.className="destination-sequence";
-  const title=document.createElement("div"); title.className="sequence-title"; title.textContent="Your routes";
-  const grid=document.createElement("div"); grid.className="destination-card-grid";
-  for(let i=0;i<5;i++){
-    const did=player.destinationQueue[i], dest=app.destinationData.destinations[did];
-    const label=dest?dest.title:formatNodeName(did), body=dest?.description||"";
-    let el;
-    if(i<player.completedCount){
-      el=document.createElement("div");el.className="destination-card completed-card";
-      el.innerHTML=`<div class="destination-title">✓ ${label}</div>`;
-    } else if(i===player.completedCount&&player.completedCount<5){
-      el=document.createElement("div");el.className="destination-card active-card";
-      if(showFlip&&app.state.justCompleted?.playerName===playerName)el.classList.add("flip-in");
-      el.innerHTML=`<div class="destination-title">${label}</div><div class="destination-body">${body}</div>`;
-    } else {
-      el=document.createElement("div");el.className="destination-card hidden-card";el.textContent="?";
-    }
-    grid.appendChild(el);
+  #board-wrap {
+    left: 0 !important; right: 0 !important;
+    top: var(--mobile-hud-height) !important;
+    bottom: var(--mobile-bar-height) !important;
+    border-radius: 0;
+    border: none;
   }
-  seq.appendChild(title); seq.appendChild(grid); return seq;
-}
 
-// Always render only the local player's destination sequence
-function renderDestinationSequences(){
-  const wrap=document.getElementById("destination-sequences"); if(!wrap) return;
-  wrap.innerHTML="";
-  const hero=getViewHero();
-  wrap.appendChild(buildDestinationSequenceElement(hero,true));
-}
+  #mobile-hud { display: grid; }
+  #mobile-hud.visible { display: grid; }
 
-function renderTargetPulse(){
-  app.svg.querySelectorAll(".target-node-pulse").forEach(e=>e.classList.remove("target-node-pulse"));
-  // Pulse the VIEW HERO's target, not whoever's turn it is
-  const hero=getViewHero();
-  const tid=getCurrentTargetForPlayer(app.state.players[hero]); if(!tid) return;
-  app.svg.querySelectorAll(`#${CSS.escape(tid)}`).forEach(e=>e.classList.add("target-node-pulse"));
-}
+  #mobile-bottom-bar.visible { display: block; }
 
-function renderDebug(audit){
-  const d=document.getElementById("left-debug"); if(!d) return;
-  d.innerHTML=`<div class="debug-list">
-    <div><strong>Version:</strong> ${APP_VERSION}</div>
-    <div><strong>Room:</strong> ${app.roomCode||"solo"}</div>
-    <div><strong>Hero:</strong> ${app.localHero||app.state.controlledHero||"—"}</div>
-    <div><strong>Turn:</strong> ${app.state.currentPlayer}</div>
-    <div><strong>My turn:</strong> ${isMyTurn()}</div>
-    <div><strong>SVG nodes:</strong> ${audit.nodeCount} routes: ${audit.routeCount}</div>
-  </div>`;
-}
-
-// Card piles
-const PAW_SVG=`<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" style="width:18px;height:18px;opacity:0.22"><ellipse cx="20" cy="26" rx="9" ry="7" fill="white"/><ellipse cx="11" cy="19" rx="4.5" ry="3.5" fill="white"/><ellipse cx="29" cy="19" rx="4.5" ry="3.5" fill="white"/><ellipse cx="15" cy="13" rx="3.5" ry="2.8" fill="white"/><ellipse cx="25" cy="13" rx="3.5" ry="2.8" fill="white"/></svg>`;
-
-function seededRotation(seed,i){let h=0;for(let j=0;j<seed.length;j++)h=(Math.imul(31,h)+seed.charCodeAt(j))|0;return[-14,-8,-4,4,9,15][Math.abs(h+i)%6];}
-
-function renderDrawPile(container,count){
-  container.innerHTML="";
-  const w=document.createElement("div"); w.className="pile-wrap";
-  const sc=Math.min(count,3);
-  for(let i=0;i<sc;i++){const c=document.createElement("div");c.className="pile-card pile-card-back";c.style.setProperty("--pile-offset",`${i*-2}px`);c.style.setProperty("--pile-rot",`${(i-1)*3}deg`);if(i===sc-1)c.innerHTML=PAW_SVG;w.appendChild(c);}
-  if(!count){const e=document.createElement("div");e.className="pile-card pile-card-empty";w.appendChild(e);}
-  const b=document.createElement("div");b.className="pile-badge";b.textContent=count;w.appendChild(b);
-  const l=document.createElement("div");l.className="pile-label";l.textContent="Draw";w.appendChild(l);
-  container.appendChild(w);
-}
-
-function renderDiscardPile(container,discardPile){
-  container.innerHTML="";
-  const w=document.createElement("div"); w.className="pile-wrap";
-  const count=discardPile.length, top=discardPile.slice(-3);
-  if(!count){const e=document.createElement("div");e.className="pile-card pile-card-empty";w.appendChild(e);}
-  else{top.forEach((col,i)=>{const c=document.createElement("div");c.className="pile-card pile-card-face";c.style.setProperty("--pile-rot",`${seededRotation(col+i,i)}deg`);c.style.setProperty("--pile-offset",`${i*-1}px`);const cols=CARD_COLOUR_HEX_MAP[col]||["#5b5b5b","#1d1d1d"];c.style.background=col==="rainbow"?"linear-gradient(135deg,#f3a3a3,#f0dd67,#72c78e,#8ab5ff,#ef9cc3)":`linear-gradient(180deg,${cols[0]},${cols[1]})`;w.appendChild(c);});}
-  const b=document.createElement("div");b.className="pile-badge pile-badge-discard";b.textContent=count;w.appendChild(b);
-  const l=document.createElement("div");l.className="pile-label";l.textContent="Discard";w.appendChild(l);
-  container.appendChild(w);
-}
-
-function renderMobileRoutesPanel(){
-  const hudTurn=document.getElementById("mobile-hud-turn");
-  const hudDraw=document.getElementById("mobile-hud-draw");
-  const hudDest=document.getElementById("mobile-hud-destination");
-  const drawBtn=document.getElementById("mobile-open-sheet-btn");
-  const routesBtn=document.getElementById("mobile-reset-view-btn");
-  const sheetSum=document.getElementById("mobile-sheet-summary");
-  const sheetHand=document.getElementById("mobile-sheet-hand");
-  const sheetDest=document.getElementById("mobile-sheet-destination");
-  const handPeek=document.getElementById("mobile-hand-peek");
-  if(!hudTurn||!hudDraw||!hudDest||!handPeek) return;
-
-  // Always show the VIEW HERO's data
-  const hero=getViewHero();
-  const player=app.state.players[hero];
-  const tid=getCurrentTargetForPlayer(player);
-  const ttitle=tid?(app.destinationData.destinations[tid]?.title||formatNodeName(tid)):"—";
-  const comp=Math.min(player.completedCount,5);
-
-  hudTurn.textContent=app.state.currentPlayer;
-  renderDrawPile(hudDraw,app.state.drawPile.length);
-  const discEl=document.getElementById("mobile-hud-discard");
-  if(discEl) renderDiscardPile(discEl,app.state.discardPile);
-
-  hudDest.innerHTML=`<span class="hud-dest-progress">${comp}/5</span><span class="hud-dest-label">▸ ${ttitle}</span>`;
-  hudDest.dataset.complete=comp>=5?"true":"false";
-  if(drawBtn) drawBtn.textContent="Draw card";
-  if(routesBtn) routesBtn.textContent="Routes";
-
-  const bar=document.getElementById("mobile-bottom-bar");
-  if(bar&&!bar.querySelector(".hand-chevron")){const ch=document.createElement("div");ch.className="hand-chevron";ch.innerHTML="&#8964;";bar.insertBefore(ch,bar.firstChild);}
-
-  if(sheetSum) sheetSum.innerHTML=`<div class="player-summary-card active"><div class="player-summary-name">${hero}</div><div class="player-summary-meta">Node: ${formatNodeName(player.currentNode)}<br>Done: ${comp}/5<br>Target: ${ttitle}</div></div>`;
-  if(sheetHand){sheetHand.innerHTML="";renderHandInto(sheetHand,player,"mobile-hand-peek-card");}
-  if(sheetDest){sheetDest.innerHTML="";sheetDest.appendChild(buildDestinationSequenceElement(hero,false));}
-  handPeek.innerHTML=""; renderHandInto(handPeek,player,"mobile-hand-peek-card");
-}
-
-function renderButtons(){
-  const b=document.getElementById("draw-card-btn");
-  if(!b) return;
-  const mine=isMyTurn();
-  b.disabled=!mine;
-  b.textContent=mine?"Draw card":"Waaaaiit…";
-  b.classList.toggle("btn-waiting",!mine);
-}
-
-function renderDesktopPiles(){
-  const drawEl=document.getElementById("desktop-draw-pile");
-  const discEl=document.getElementById("desktop-discard-pile");
-  if(drawEl) renderDrawPile(drawEl, app.state.drawPile.length);
-  if(discEl) renderDiscardPile(discEl, app.state.discardPile);
-}
-
-function renderAll(){
-  renderTurnBadge(); renderCounts(); renderSelectedRouteCard(); renderActiveHand();
-  renderPlayerSummary(); renderDestinationSequences(); renderRoutes(); renderTokens();
-  renderTargetPulse(); renderDebug(app.audit); renderButtons(); renderMobileRoutesPanel();
-  renderDesktopPiles();
-  if(app.roomCode) updateRoomHud();
-}
-
-// ─── Modals ───────────────────────────────────────────────────────────────────
-function openMobileSheet(){const s=document.getElementById("mobile-sheet");if(s&&s.classList.contains("visible-shell"))s.classList.add("expanded");}
-function closeMobileSheet(){const s=document.getElementById("mobile-sheet");if(s)s.classList.remove("expanded");}
-function toggleMobileSheet(){const s=document.getElementById("mobile-sheet");if(!s||!s.classList.contains("visible-shell"))return;s.classList.toggle("expanded");}
-
-function buildCardChoiceEl(color,active=false){
-  const card=document.createElement("button");card.type="button";
-  card.className=`route-colour-choice-card ${color}${active?" active":""}`;card.textContent=color;return card;
-}
-
-function renderRouteModalOptionStage(){
-  const routeId=app.modal.routeId;
-  const body=document.getElementById("route-modal-body"),confirmBtn=document.getElementById("route-modal-confirm");
-  body.innerHTML=""; confirmBtn.disabled=app.modal.selectedOptionIndex===null;
-  document.getElementById("route-modal-subtitle").textContent=`Choose how to pay for ${formatRouteName(routeId)}.`;
-  const list=document.createElement("div"); list.className="route-option-list";
-  app.modal.options.forEach((opt,idx)=>{
-    const row=document.createElement("button");row.className=`route-option-row${app.modal.selectedOptionIndex===idx?" active":""}`;row.type="button";
-    const lbl=document.createElement("div");lbl.className="route-option-row-label";lbl.textContent=`Option ${idx+1}`;
-    const cards=document.createElement("div");cards.className="route-option-row-cards";
-    [...Array(opt.useColourCount).fill(opt.colourChoice),...Array(opt.useRainbowCount).fill("rainbow")].forEach(c=>{const cd=document.createElement("div");cd.className=`route-spend-card ${c}`;cd.textContent=c;cards.appendChild(cd);});
-    row.appendChild(lbl);row.appendChild(cards);
-    row.addEventListener("click",()=>{app.modal.selectedOptionIndex=idx;renderRouteModalOptionStage();});
-    list.appendChild(row);
-  });
-  body.appendChild(list); confirmBtn.disabled=app.modal.selectedOptionIndex===null;
-}
-
-function openRouteModal(routeId){
-  const play=getRoutePlayability(routeId);
-  if(!play.playable){updateStatus(play.reason,TOAST_NOTABLE);return;}
-  app.modal.routeId=routeId; app.modal.selectedOptionIndex=null; app.modal.chosenColor=null;
-  const overlay=document.getElementById("route-modal-overlay");
-  document.getElementById("route-modal-title").textContent=formatRouteName(routeId);
-  const body=document.getElementById("route-modal-body"); body.innerHTML="";
-  document.getElementById("route-modal-confirm").disabled=true;
-  const rc=app.state.routes[routeId].colour,cost=app.rulesData.routes[routeId].length;
-  const banner=document.createElement("div");banner.className="route-modal-cost-banner";
-  banner.innerHTML=`<span><strong>${formatRouteName(routeId)}</strong><br><span style="font-size:13px;opacity:0.7">${rc==="grey"?"wild":rc} route</span></span><span class="route-modal-cost-pip">${cost}</span>`;
-  body.appendChild(banner);
-  if(rc==="grey"){
-    const pay=getPaymentOptionsForColor(routeId,app.state.currentPlayer);
-    document.getElementById("route-modal-subtitle").textContent="Wild route. Choose a colour.";
-    const row=document.createElement("div");row.className="route-colour-card-row";
-    pay.availableColors.forEach(color=>{
-      const card=buildCardChoiceEl(color,app.modal.chosenColor===color);
-      card.addEventListener("click",()=>{app.modal.chosenColor=color;app.modal.options=getPaymentOptionsForColor(routeId,app.state.currentPlayer,color).options;app.modal.selectedOptionIndex=null;renderRouteModalOptionStage();});
-      row.appendChild(card);
-    });
-    body.appendChild(row);
-  } else {
-    app.modal.chosenColor=rc;
-    app.modal.options=getPaymentOptionsForColor(routeId,app.state.currentPlayer,rc).options;
-    renderRouteModalOptionStage();
+  #status-chip {
+    bottom: calc(var(--mobile-bar-height) + 14px);
+    z-index: 2010;
+    max-width: calc(100vw - 40px);
+    font-size: 13px;
+    padding: 8px 12px;
   }
-  overlay.classList.add("open");
-}
 
-function closeRouteModal(){
-  document.getElementById("route-modal-overlay").classList.remove("open");
-  app.modal.routeId=null; app.modal.chosenColor=null; app.modal.selectedOptionIndex=null; app.modal.options=[];
-}
-
-async function confirmRouteModalPlay(){
-  if(!isMyTurn()) return;
-  if(!app.modal.routeId||app.modal.selectedOptionIndex===null) return;
-  const routeId=app.modal.routeId, pay=app.modal.options[app.modal.selectedOptionIndex];
-  const pn=app.state.currentPlayer, player=app.state.players[pn];
-  const play=getRoutePlayability(routeId);
-  if(!play.playable){closeRouteModal();renderAll();return;}
-  const {nextHand,spent}=removeSpecificCardsFromHand(player.hand,pay.colourChoice,pay.useColourCount,pay.useRainbowCount);
-  player.hand=nextHand; app.state.discardPile.push(...spent);
-  const from=player.currentNode, to=getConnectedNode(routeId,from);
-  app.state.routes[routeId].claimedBy=pn; player.previousNode=from; player.currentNode=to;
-  player.journeyRouteIds.push(routeId);
-  app.state.selectedRouteId=null; closeRouteModal(); renderAll();
-  updateStatus(`${pn} → ${formatNodeName(to)}`,TOAST_NOTABLE);
-  await animateTokenAlongRoute(pn,routeId,from,to);
-  completeDestinationIfNeeded(pn); renderAll();
-  endTurn();
-}
-
-// ─── Start toast / identity card ──────────────────────────────────────────────
-function showStartToast(playerName){
-  let card=document.getElementById("identity-card");
-  if(!card){card=document.createElement("div");card.id="identity-card";card.className="identity-card";document.getElementById("game-shell").appendChild(card);}
-  const cfg=PLAYER_CONFIG[playerName];
-  card.innerHTML=`<div class="identity-wipe"></div><div class="identity-inner"><div class="identity-kicker">YOU ARE</div><div class="identity-portrait-wrap"><img class="identity-portrait" src="${cfg.image}" alt="${playerName}"></div><div class="identity-name">${playerName.toUpperCase()}</div></div>`;
-  card.classList.remove("identity-out"); card.classList.add("identity-in");
-  setTimeout(()=>{card.classList.remove("identity-in");card.classList.add("identity-out");},1800);
-}
-
-function openDestinationReveal(title,body,num=null){
-  const pfx=num?`Destination #${num}`:"Destination";
-  document.getElementById("destination-reveal-title").textContent=`${pfx} — ${title}`;
-  document.getElementById("destination-reveal-body").textContent=body;
-  document.getElementById("destination-reveal-overlay").classList.add("open");
-}
-function closeDestinationReveal(){document.getElementById("destination-reveal-overlay").classList.remove("open");}
-function showCurrentDestinationReveal(playerName){
-  const player=app.state.players[playerName], t=getCurrentTargetForPlayer(player);
-  if(!t||player.completedCount>=5) return;
-  const dest=app.destinationData.destinations[t];
-  openDestinationReveal(dest?.title||formatNodeName(t),dest?.description||"",player.completedCount+1);
-}
-
-function completeDestinationIfNeeded(playerName){
-  const player=app.state.players[playerName], t=getCurrentTargetForPlayer(player);
-  if(!t||player.currentNode!==t){app.state.justCompleted=null;return false;}
-  app.state.justCompleted={playerName,destinationId:t};
-  if(player.completedCount<5){player.completedDestinations.push(t);player.completedCount++;}
-  else player.completedCount++;
-  [...player.journeyRouteIds].forEach(id=>{app.state.routes[id].claimedBy=null;});
-  rerollSpecificRouteColours([...player.journeyRouteIds]);
-  player.journeyRouteIds=[]; player.previousNode=null;
-  if(player.completedCount>5){
-    updateStatus(`${playerName} wins!`,TOAST_NOTABLE);
-    setTimeout(()=>showEndScreen(playerName),800);
-  } else {
-    const nt=getCurrentTargetForPlayer(player), nd=app.destinationData.destinations[nt];
-    if(player.completedCount>=5) updateStatus(`Five done! Head to ${formatNodeName(nt)}`,TOAST_NOTABLE);
-    else{updateStatus(`✓ ${formatNodeName(t)}! Next: ${formatNodeName(nt)}`,TOAST_NOTABLE);openDestinationReveal(nd?.title||formatNodeName(nt),nd?.description||"",player.completedCount+1);}
+  .route-modal-overlay,
+  .destination-reveal-overlay {
+    position: fixed;
+    top: var(--mobile-hud-height);
+    bottom: var(--mobile-bar-height);
+    left: 0; right: 0;
+    padding: 12px;
+    align-items: center;
+    background: rgba(9, 12, 17, 0.72);
   }
-  return true;
-}
 
-// ─── End screen ───────────────────────────────────────────────────────────────
-function buildEndScreenOverlay(){
-  if(document.getElementById("end-screen-overlay")) return;
-  const o=document.createElement("div");o.id="end-screen-overlay";o.className="end-screen-overlay";
-  o.innerHTML=`<div class="end-screen-loop"><div class="end-screen-wipe end-screen-wipe-a"></div><div class="end-screen-wipe end-screen-wipe-b"></div><div class="end-screen-wipe end-screen-wipe-c"></div><div class="end-screen-noise"></div></div><div class="end-screen-inner"><div class="end-screen-kicker">Didcot Dogs</div><div id="end-screen-headline" class="end-screen-headline">YOU WIN!</div><div id="end-screen-sub" class="end-screen-sub"></div><div id="end-screen-portrait" class="end-screen-portrait-wrap"></div><button id="end-screen-play-again" class="action-btn primary end-screen-btn" type="button">Play again</button></div>`;
-  document.getElementById("game-shell").appendChild(o);
-  document.getElementById("end-screen-play-again").addEventListener("click",()=>{
-    hideEndScreen(); sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
-    app.roomCode=null; app.localHero=null;
-    app.state=createInitialLocalState(app.rulesData);
-    closeRouteModal(); closeDestinationReveal(); closeMobileSheet(); resetBoardView(); renderAll();
-    document.getElementById("hero-overlay").classList.add("active");
-    ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
-    const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
-    showScreen("room-screen"); wireRoomButtons();
-  });
-}
-function showEndScreen(winnerName){
-  buildEndScreenOverlay();
-  const o=document.getElementById("end-screen-overlay"), mine=winnerName===app.localHero;
-  document.getElementById("end-screen-headline").textContent=mine?"YOU WIN!":"YOU LOSE!";
-  document.getElementById("end-screen-sub").textContent=mine?`${winnerName} completed all five. Legendary.`:`${winnerName} beat you to it.`;
-  document.getElementById("end-screen-portrait").innerHTML=`<img src="${PLAYER_CONFIG[winnerName].image}" alt="${winnerName}" class="end-screen-portrait">`;
-  o.className=`end-screen-overlay active ${mine?"end-win":"end-lose"}`;
-}
-function hideEndScreen(){const o=document.getElementById("end-screen-overlay");if(o)o.className="end-screen-overlay";}
-
-// ─── Auto-sim ─────────────────────────────────────────────────────────────────
-let __autoSimTimer=null;
-function cancelAutoSim(){if(__autoSimTimer){clearTimeout(__autoSimTimer);__autoSimTimer=null;}}
-function scheduleAutoSim(){
-  if(!DEV_AUTO_SIM||!app.state.controlledHero||app.state.currentPlayer===app.state.controlledHero) return;
-  cancelAutoSim();
-  __autoSimTimer=setTimeout(()=>{__autoSimTimer=null;runAutoSimTurn();},8000+Math.random()*4000);
-}
-function runAutoSimTurn(){
-  if(!app.state.controlledHero||app.state.currentPlayer===app.state.controlledHero) return;
-  const bot=app.state.currentPlayer, player=app.state.players[bot];
-  const card=drawCard();if(card){player.hand.push(card);player.lastDrawColor=card;}
-  app.state.currentPlayer=app.state.controlledHero; renderAll();
-}
-
-// ─── Card draw animation ──────────────────────────────────────────────────────
-function getDrawPileRect(){
-  const mob=window.innerWidth<=767||(window.innerHeight<=500&&window.innerWidth>window.innerHeight);
-  const id=mob?"mobile-hud-draw":"desktop-draw-pile";
-  const e=document.getElementById(id); if(!e)return null;
-  return(e.querySelector(".pile-wrap")||e).getBoundingClientRect();
-}
-function getHandTargetRect(colour){
-  const mob=window.innerWidth<=767||(window.innerHeight<=500&&window.innerWidth>window.innerHeight);
-  if(mob){
-    const peek=document.getElementById("mobile-hand-peek");if(!peek)return null;
-    for(const c of peek.querySelectorAll(".mobile-hand-peek-card"))if(c.classList.contains(colour))return c.getBoundingClientRect();
-    return{left:window.innerWidth/2-27,top:window.innerHeight-90,width:54,height:86};
+  .route-modal,
+  .destination-reveal-card {
+    width: 100%;
+    max-width: 480px;
+    max-height: 100%;
+    border-radius: 20px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 18px;
   }
-  const hand=document.getElementById("active-hand");if(!hand)return null;
-  for(const c of hand.querySelectorAll(".hand-card"))if(c.classList.contains(colour))return c.getBoundingClientRect();
-  return hand.getBoundingClientRect();
-}
-function animateCardDraw(colour){
-  return new Promise(resolve=>{
-    const fr=getDrawPileRect();if(!fr){resolve();return;}
-    const fly=document.createElement("div");fly.className="flying-card flying-card-back";
-    fly.style.cssText=`position:fixed;width:34px;height:48px;border-radius:8px;z-index:9999;pointer-events:none;transform-style:preserve-3d;left:${fr.left+fr.width/2-17}px;top:${fr.top+fr.height/2-24}px;`;
-    document.body.appendChild(fly);
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      const tr=getHandTargetRect(colour);
-      const tl=tr?tr.left+tr.width/2-17:window.innerWidth/2-17, tt=tr?tr.top+tr.height/2-24:window.innerHeight-80;
-      const cols=CARD_COLOUR_HEX_MAP[colour]||["#5b5b5b","#1d1d1d"];
-      const fb=colour==="rainbow"?"linear-gradient(135deg,#f3a3a3,#f0dd67,#72c78e,#8ab5ff,#ef9cc3)":`linear-gradient(180deg,${cols[0]},${cols[1]})`;
-      const dur=480, start=performance.now();
-      function step(now){
-        const t=Math.min(1,(now-start)/dur), e=t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
-        const x=fr.left+fr.width/2-17+(tl-(fr.left+fr.width/2-17))*e;
-        const y=fr.top+fr.height/2-24+(tt-(fr.top+fr.height/2-24))*e+Math.sin(t*Math.PI)*-40;
-        let ry=0;
-        if(t>=0.45&&t<0.55){ry=((t-0.45)/0.1)*90;if(ry>=90){fly.classList.remove("flying-card-back");fly.classList.add("flying-card-face");fly.style.background=fb;}}
-        else if(t>=0.55){ry=90-((t-0.55)/0.45)*90;}
-        fly.style.left=`${x}px`;fly.style.top=`${y}px`;fly.style.transform=`rotateY(${ry}deg) scale(${0.9+e*0.1})`;
-        if(t<1)requestAnimationFrame(step);
-        else{fly.style.transition="opacity 180ms ease";fly.style.opacity="0";setTimeout(()=>{fly.remove();resolve();},200);}
-      }
-      requestAnimationFrame(step);
-    }));
-  });
-}
-function triggerCardGlow(colour){
-  const peek=document.getElementById("mobile-hand-peek");if(!peek)return;
-  peek.querySelectorAll(".mobile-hand-peek-card").forEach(c=>{c.classList.remove("card-glow-steady");});
-  peek.querySelectorAll(`.mobile-hand-peek-card.${colour}`).forEach(c=>{c.style.setProperty("--glow-colour",GLOW_COLOURS[colour]||"rgba(255,255,255,0.7)");c.classList.add("card-glow-steady");});
-}
 
-// ─── Draw card action ─────────────────────────────────────────────────────────
-async function drawCardForCurrentPlayer(){
-  if(!isMyTurn()) return;
-  const pn=app.state.currentPlayer, card=drawCard();
-  if(!card){updateStatus("No cards available.");renderAll();return;}
-  const player=app.state.players[pn];
-  await animateCardDraw(card);
-  player.hand.push(card); player.lastDrawColor=card;
-  closeMobileSheet(); renderAll();
-  requestAnimationFrame(()=>triggerCardGlow(card));
-  endTurn();
-}
-
-// ─── Route interactions ───────────────────────────────────────────────────────
-function handleRouteHover(routeId){
-  const play=getRoutePlayability(routeId), rc=getDisplayRouteColor(app.state.routes[routeId].colour), cost=app.rulesData.routes[routeId].length;
-  updateStatus(play.playable?`${formatRouteName(routeId)} · ${rc} · cost ${cost} · eligible`:`${formatRouteName(routeId)} · ${rc} · cost ${cost} · ${play.reason}`);
-}
-function wireRouteInteractions(){
-  Object.keys(app.rulesData.routes||{}).forEach(routeId=>{
-    const el=app.svg.querySelector(`#${CSS.escape(routeId)}`);if(!el) return;
-    el.addEventListener("mouseenter",()=>handleRouteHover(routeId));
-    el.addEventListener("mouseleave",()=>updateStatus("Choose one action: draw a card or click a route to play it."));
-    el.addEventListener("click",()=>handleRouteSelection(routeId));
-  });
-}
-
-// ─── Mobile HUD ───────────────────────────────────────────────────────────────
-function injectMobileBottomBar(){
-  if(document.getElementById("mobile-bottom-bar")) return;
-  const gs=document.getElementById("game-shell"), sc=document.getElementById("status-chip");
-  if(!gs||!sc) return;
-  const w=document.createElement("div");w.id="mobile-bottom-bar";w.innerHTML=`<div id="mobile-hand-peek"></div>`;
-  gs.insertBefore(w,sc);
-}
-function showMobileHud(){
-  const mob=window.innerWidth<=767||(window.innerHeight<=500&&window.innerWidth>window.innerHeight);
-  if(!mob) return;
-  const hud=document.getElementById("mobile-hud");if(hud)hud.classList.add("visible");
-  const bar=document.getElementById("mobile-bottom-bar");if(bar)bar.classList.add("visible");
-  const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.add("visible-shell");
-}
-
-// ─── Control buttons ──────────────────────────────────────────────────────────
-function wireControlButtons(){
-  document.getElementById("draw-card-btn")?.addEventListener("click",drawCardForCurrentPlayer);
-  document.getElementById("menu-btn")?.addEventListener("click",returnToMenu);
-  document.getElementById("mobile-menu-btn")?.addEventListener("click",returnToMenu);
-  document.getElementById("reset-local-btn")?.addEventListener("click",()=>{
-    cancelAutoSim();
-    sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
-    app.roomCode=null; app.localHero=null;
-    app.state=createInitialLocalState(app.rulesData);
-    closeRouteModal(); closeDestinationReveal(); closeMobileSheet(); resetBoardView(); renderAll();
-    updateStatus("Game reset.");
-    showScreen("room-screen"); wireRoomButtons();
-  });
-
-  function soloPickHero(hero) {
-    app.state=createInitialLocalState(app.rulesData); app.state.controlledHero=hero;
-    document.getElementById("hero-overlay").classList.remove("active");
-    showMobileHud(); resetBoardView(); showStartToast(hero); renderAll(); showCurrentDestinationReveal(hero);
+  #mobile-hud {
+    grid-template-columns: auto auto auto 1fr auto auto;
+    grid-template-rows: auto;
+    gap: 4px;
   }
-  document.getElementById("pick-eric-btn")?.addEventListener("click",()=>{
-    if(!document.getElementById("pick-eric-btn").onclick) soloPickHero("Eric");
-  });
-  document.getElementById("pick-tango-btn")?.addEventListener("click",()=>{
-    if(!document.getElementById("pick-tango-btn").onclick) soloPickHero("Tango");
-  });
-  document.getElementById("mobile-open-sheet-btn")?.addEventListener("click",drawCardForCurrentPlayer);
-  document.getElementById("mobile-reset-view-btn")?.addEventListener("click",toggleMobileSheet);
-  document.getElementById("mobile-sheet-handle")?.addEventListener("click",closeMobileSheet);
-  document.getElementById("route-modal-close")?.addEventListener("click",closeRouteModal);
-  document.getElementById("route-modal-cancel")?.addEventListener("click",closeRouteModal);
-  document.getElementById("route-modal-confirm")?.addEventListener("click",async()=>await confirmRouteModalPlay());
-  document.getElementById("route-modal-overlay")?.addEventListener("click",evt=>{if(evt.target.id==="route-modal-overlay")closeRouteModal();});
-  document.getElementById("destination-reveal-close")?.addEventListener("click",closeDestinationReveal);
-  document.getElementById("destination-reveal-overlay")?.addEventListener("click",evt=>{if(evt.target.id==="destination-reveal-overlay")closeDestinationReveal();});
+  #mobile-hud-turn        { grid-column: 1; grid-row: 1; }
+  #mobile-hud-draw        { grid-column: 2; grid-row: 1; }
+  #mobile-hud-discard     { grid-column: 3; grid-row: 1; }
+  #mobile-hud-destination { grid-column: 4; grid-row: 1; }
+  #mobile-open-sheet-btn  { grid-column: 5; grid-row: 1; }
+  #mobile-reset-view-btn  { grid-column: 6; grid-row: 1; }
 
-  document.getElementById("debug-toggle-btn")?.addEventListener("click",()=>{
-    const dbg=document.getElementById("left-debug");
-    const btn=document.getElementById("debug-toggle-btn");
-    if(!dbg) return;
-    const hidden=dbg.classList.toggle("left-debug-hidden");
-    if(btn) btn.textContent=hidden?"Version info ▾":"Version info ▴";
-  });
+  .pile-wrap      { width: 30px; height: 42px; }
+  .pile-card      { width: 26px; height: 38px; }
+  .pile-card-empty{ width: 26px; height: 38px; }
+  .pile-label     { display: none; }
+
+  :root { --mobile-hud-height: 52px; }
+
+  .hero-choice-wrap   { gap: 16px; }
+  .hero-pick-card     { min-height: 160px; width: min(44vw, 280px); flex-direction: row; padding: 16px; }
+  .hero-token-frame   { width: 100px; height: 100px; flex-shrink: 0; }
+  .hero-portrait      { width: 80px; height: 80px; }
+  .hero-title         { font-size: 42px; }
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
-async function init(){
-  injectMobileBottomBar();
-  setupFullscreenButton();
-  applyDesktopScale();
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.4.0  MOBILE TOAST  +  STATUS CHIP HIDDEN ON MOBILE
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-  try { await initFirebase(); }
-  catch(err){ console.error("[DD] Firebase failed:",err); }
-
-  document.getElementById("hero-overlay").classList.remove("active");
-  showScreen("room-screen");
-  wireRoomButtons();
-
-  try {
-    const rulesData = {"version":"v1.1","game":"didcot-dogs","startNode":"Didcot","characters":["Eric","Tango"],"routeColours":["red","orange","blue","green","black","pink","yellow","grey"],"drawColours":["red","orange","blue","green","black","pink","yellow"],"deck":{"copiesPerColour":8,"rainbowCount":4},"winCondition":{"targetJourneysBeforeReturn":5,"finalDestinationAfterFive":"Didcot"},"svgNodeIdAliases":{"Clifton_Hampden1":"Clifton_Hampden"},"destinationPool":["Chilton","Abingdon","Clifton_Hampden","Dorchester","Blewbury","Wittenham_Clumps","Wallingford","East_Hagbourne","Brightwell-cum-Sotwell","Milton_Interchange"],"nodes":["Steventon","Drayton","Abingdon","Culham","Sutton_Courtenay","Clifton_Hampden","Didcot","Milton_Interchange","Appleford","Berinsfield","Dorchester","Wittenham_Clumps","Brightwell-cum-Sotwell","Wallingford","Benson","Cholsey","South_Moreton","Aston_Upthorpe","Blewbury","Upton","Chilton","Harwell","West_Hagbourne","East_Hagbourne","North_Moreton","Fulscot","Long_Wittenham","Shillingford"],"routes":{"Didcot_to_Fulscot":{"length":2},"Abingdon_to_Culham":{"length":3},"Harwell_to_Chilton":{"length":4},"South_Moreton_to_Wallingford":{"length":5},"North_Moreton_to_South_Moreton":{"length":1},"Fulscot_to_South_Moreton":{"length":2},"Didcot_to_North_Moreton":{"length":3},"Didcot_to_Milton_Interchange":{"length":6},"South_Moreton_to_Cholsey":{"length":3},"Aston_Upthorpe_to_South_Moreton":{"length":3},"East_Hagbourne_to_Blewbury":{"length":3},"Abingdon_to_Clifton_Hampden":{"length":6},"Aston_Upthorpe_to_Cholsey":{"length":4},"Didcot_to_Appleford":{"length":4},"Sutton_Courtenay_to_Culham":{"length":1},"Drayton_to_Milton_Interchange":{"length":3},"Drayton_to_Abingdon":{"length":4},"Appleford_to_Sutton_Courtenay":{"length":2},"Culham_to_Clifton_Hampden":{"length":5},"Clifton_Hampden_to_Berinsfield":{"length":3},"Milton_Interchange_to_Harwell":{"length":3},"Didcot_to_Long_Wittenham":{"length":4},"Wittenham_Clumps_to_Brightwell-cum-Sotwell":{"length":4},"Clifton_Hampden_to_Wittenham_Clumps":{"length":4},"Drayton_to_Sutton_Courtenay":{"length":3},"Sutton_Courtenay_to_Milton_Interchange":{"length":4},"Didcot_to_Brightwell-cum-Sotwell":{"length":6},"Berinsfield_to_Dorchester":{"length":3},"Dorchester_to_Shillingford":{"length":3},"Benson_to_Wallingford":{"length":3},"Drayton_to_Steventon":{"length":3},"Steventon_to_Milton_Interchange":{"length":1},"Didcot_to_Harwell":{"length":5},"Milton_Interchange_to_Chilton":{"length":6},"Chilton_to_Upton":{"length":3},"Blewbury_to_Aston_Upthorpe":{"length":3},"Upton_to_West_Hagbourne":{"length":1},"Didcot_to_East_Hagbourne":{"length":2},"Long_Wittenham_to_Clifton_Hampden":{"length":3},"West_Hagbourne_to_East_Hagbourne":{"length":2},"Brightwell-cum-Sotwell_to_Wallingford":{"length":3},"Long_Wittenham_to_Wittenham_Clumps":{"length":2},"Upton_to_Blewbury":{"length":3},"Steventon_to_Chilton":{"length":6},"Shillingford_to_Benson":{"length":2},"Cholsey_to_Wallingford":{"length":4},"Shillingford_to_Wallingford":{"length":4}}};
-    const destinationData = await loadJson("./data/didcot-dogs-destinations.v1.json?v=4");
-    const svg=await injectBoardSvg();
-    ensureSvgDefs(svg); startClaimGradientAnimation(svg);
-    normalizeSvgNodeAliases(svg,rulesData); tightenSvgViewBox(svg);
-
-    app.rulesData=rulesData; app.destinationData=destinationData; app.svg=svg;
-    app.audit=getSvgAudit(svg,rulesData);
-    app.state=createInitialLocalState(rulesData);
-
-    wireRouteInteractions(); wireControlButtons(); setupMobileBoardGestures();
-    resetBoardView();
-
-    const savedCode=sessionStorage.getItem("dd_room_code");
-    const savedHero=sessionStorage.getItem("dd_hero");
-    if(savedCode&&savedHero){
-      hideScreen("room-screen");
-      showScreen("resuming-screen");
-      try {
-        const state=await fbJoinRoom(savedCode);
-        if(!state||!state.players||state.phase==="waiting") throw new Error("Game not ready");
-        app.roomCode=savedCode; app.localHero=savedHero;
-        hideScreen("resuming-screen");
-        launchGame(savedHero, restoreArrays(state));
-      } catch(e){
-        console.warn("[DD] Resume failed:",e.message);
-        sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
-        hideScreen("resuming-screen");
-        showScreen("room-screen");
-      }
-    }
-    console.log("[DD] Game data loaded. Routes:",Object.keys(rulesData.routes||{}).length);
-  } catch(err){
-    console.error("[DD] Data load error:",err);
-    const errEl=document.getElementById("room-error");
-    if(errEl) errEl.textContent=`Failed to load game data: ${err.message}`;
-  }
+@media (max-width: 767px) {
+  #status-chip { display: none; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  #status-chip { display: none; }
 }
 
-window.addEventListener("resize",()=>{
-  if(app.svg&&app.boardView.baseViewBox) applyBoardViewTransform();
-  applyDesktopScale();
-});
-document.addEventListener("DOMContentLoaded",()=>{setupFullscreenButton();init();});
+#mobile-toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%) translateY(-120%);
+  top: calc(var(--mobile-hud-height) + 4px);
+  z-index: 2500;
+  background: rgba(10, 13, 20, 0.96);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  font-weight: 700;
+  color: #f4f1e8;
+  white-space: nowrap;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  opacity: 0;
+  transition: none;
+}
+
+#mobile-toast.mobile-toast-show {
+  animation: toastDrop 220ms cubic-bezier(0.18, 0.88, 0.28, 1.1) forwards;
+}
+
+#mobile-toast.mobile-toast-hide {
+  animation: toastRise 200ms ease forwards;
+}
+
+@keyframes toastDrop {
+  0%   { transform: translateX(-50%) translateY(-120%); opacity: 0; }
+  100% { transform: translateX(-50%) translateY(0);     opacity: 1; }
+}
+
+@keyframes toastRise {
+  0%   { transform: translateX(-50%) translateY(0);     opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-120%); opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.5.0  TARGET NODE PULSE FIX
+   ═══════════════════════════════════════════════════════════════════════════ */
+#board-svg-host text.target-node-pulse {
+  fill: unset !important;
+  animation: targetNodePulse 1.35s linear infinite !important;
+}
+
+/* ── Menu button — desktop top bar ──────────────────────────────────────────── */
+#menu-btn {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.7);
+  border-radius: 12px;
+  height: 42px;
+  padding: 0 16px;
+  font-size: 15px;
+  cursor: pointer;
+  font-family: var(--ui-font);
+  transition: background 150ms ease, color 150ms ease;
+}
+#menu-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+/* ── Menu button — mobile HUD ────────────────────────────────────────────────*/
+#mobile-menu-btn {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.55);
+  font-size: 12px;
+  min-height: 28px;
+  border-radius: 10px;
+}
+#mobile-menu-btn:active { background: rgba(255,255,255,0.10); }
+
+@media (max-width: 767px) {
+  :root { --mobile-hud-height: 138px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.9.4  DESKTOP PANEL IMPROVEMENTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.desktop-piles-row {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 8px 0;
+}
+
+.desktop-pile-wrap {
+  position: relative;
+}
+
+.desktop-pile-wrap .pile-wrap   { width: 56px; height: 76px; }
+.desktop-pile-wrap .pile-card   { width: 48px; height: 68px; border-radius: 9px; }
+.desktop-pile-wrap .pile-card-empty { width: 48px; height: 68px; }
+.desktop-pile-wrap .pile-badge  { width: 22px; height: 22px; font-size: 11px; top: -6px; right: -6px; }
+.desktop-pile-wrap .pile-label  { font-size: 10px; bottom: -18px; }
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.summary-row:last-child { border-bottom: none; }
+
+.summary-lbl {
+  color: rgba(255,255,255,0.5);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.summary-val {
+  color: rgba(255,255,255,0.92);
+  font-weight: 700;
+  text-align: right;
+}
+
+.summary-secret {
+  color: rgba(255,255,255,0.28);
+  font-style: italic;
+  letter-spacing: 0.1em;
+}
+
+.left-debug-hidden {
+  display: none !important;
+}
+
+.debug-toggle-btn {
+  appearance: none;
+  background: none;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  color: rgba(255,255,255,0.35);
+  font-family: var(--ui-font);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  width: 100%;
+  text-align: left;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.debug-toggle-btn:hover { color: rgba(255,255,255,0.6); border-color: rgba(255,255,255,0.2); }
+
+.panel-menu-btn {
+  margin-top: auto;
+  font-size: 14px;
+  min-height: 38px;
+}
+
+#left-panel {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+#left-panel .panel-section { flex-shrink: 0; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.9.6  DESKTOP FOOTER + IDENTITY CARD
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#desktop-footer {
+  display: none;
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 68px;
+  background: rgba(9,12,17,0.97);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  z-index: 1900;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  #desktop-footer { display: flex; }
+  #board-wrap { bottom: 68px !important; }
+  #left-panel, #right-panel { padding-bottom: 68px; }
+}
+
+#desktop-footer-left  { display: flex; align-items: center; flex: 1; }
+#desktop-footer-centre { display: flex; align-items: center; justify-content: center; flex: 1; }
+#desktop-footer-right  { display: flex; align-items: center; gap: 10px; justify-content: flex-end; flex: 1; }
+
+.desktop-identity-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.desktop-identity-portrait {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255,255,255,0.2);
+  flex-shrink: 0;
+  will-change: transform;
+  transform-origin: center center;
+}
+
+.desktop-identity-text { display: flex; flex-direction: column; gap: 1px; }
+
+.desktop-identity-label {
+  font-family: var(--ui-font);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.38);
+  line-height: 1;
+}
+
+.desktop-identity-name {
+  font-family: var(--header-font);
+  font-size: 22px;
+  color: #fff;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.desktop-identity-room {
+  font-family: var(--ui-font);
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  letter-spacing: 0.08em;
+}
+.desktop-identity-room strong { color: rgba(255,255,255,0.7); font-weight: 800; }
+
+.desktop-turn-indicator {
+  font-family: var(--header-font);
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  padding: 6px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  transition: background 300ms ease, color 300ms ease, border-color 300ms ease;
+}
+
+.desktop-turn-mine {
+  background: rgba(141,18,24,0.85);
+  border-color: rgba(229,57,53,0.45);
+  color: #fff;
+  animation: desktopTurnPulse 1.8s ease-in-out infinite;
+}
+
+.desktop-turn-theirs {
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.35);
+}
+
+@keyframes desktopTurnPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(229,57,53,0); }
+  50%      { box-shadow: 0 0 0 6px rgba(229,57,53,0.2); }
+}
+
+.footer-btn {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.6);
+  border-radius: 10px;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-family: var(--ui-font);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms ease, color 150ms ease;
+}
+.footer-btn:hover { background: rgba(255,255,255,0.10); color: #fff; }
+.footer-btn-subtle { color: rgba(255,255,255,0.35); font-size: 12px; }
+
+.desktop-debug-popup {
+  position: absolute;
+  bottom: 76px;
+  right: 20px;
+  background: rgba(9,12,17,0.97);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 12px 16px;
+  min-width: 220px;
+  z-index: 2100;
+  font-size: 12px;
+}
+.desktop-debug-popup.left-debug-hidden { display: none; }
+
+.btn-waiting {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  letter-spacing: 0.04em;
+}
+
+@media (min-width: 768px) {
+  #room-hud { display: none !important; }
+  .panel-menu-btn { display: none !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.9.9  ROOM/WAITING/RESUMING SCREENS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#room-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 4500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #090c11;
+}
+#room-screen.active { display: flex !important; }
+
+#waiting-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 4500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #090c11;
+}
+#waiting-screen.active { display: flex !important; }
+
+#resuming-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 5500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9,12,17,0.97);
+}
+#resuming-screen.active { display: flex !important; }
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.10.3  DRAW BUTTON + WAITING CANCEL + DESKTOP SCALE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Big draw card button ────────────────────────────────────────────────── */
+.draw-card-btn-big {
+  font-family: var(--header-font) !important;
+  font-size: 28px !important;
+  min-height: 72px !important;
+  border-radius: 20px !important;
+  width: 100%;
+  letter-spacing: 0.03em;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 4px 16px rgba(0,0,0,0.3);
+  transition: background 120ms ease, transform 80ms ease, box-shadow 120ms ease;
+}
+.draw-card-btn-big:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 8px 24px rgba(0,0,0,0.4);
+}
+.draw-card-btn-big:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* ── Waiting screen cancel button ───────────────────────────────────────── */
+#waiting-cancel-btn {
+  appearance: none;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.6);
+  border-radius: 14px;
+  min-height: 46px;
+  padding: 0 24px;
+  font-family: var(--ui-font);
+  font-size: 16px;
+  cursor: pointer;
+  margin-top: 24px;
+  transition: background 150ms ease, color 150ms ease;
+}
+#waiting-cancel-btn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+
+/* ── Desktop scale-to-fit ────────────────────────────────────────────────── */
+/* #app shrinks to match scaled shell height so no scroll appears */
+#app {
+  align-items: flex-start;
+}
