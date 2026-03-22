@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Didcot Dogs v1.9</title>
+  <title>Didcot Dogs v2</title>
   <link rel="stylesheet" href="https://use.typekit.net/gff4ipy.css">
-  <link rel="stylesheet" href="./css/didcot-dogs.v1.css" />
   <link rel="stylesheet" href="./css/didcot-dogs.v2.css" />
 </head>
 <body>
   <div id="app">
     <div id="game-shell">
+
       <div id="hero-overlay" class="hero-overlay active">
         <div class="hero-loop">
           <div class="hero-wipe hero-wipe-a"></div>
@@ -19,12 +19,10 @@
           <div class="hero-wipe hero-wipe-d"></div>
           <div class="hero-noise"></div>
         </div>
-
         <div class="hero-inner">
           <div class="hero-kicker">Didcot Dogs</div>
           <div class="hero-title">PICK YOUR HERO!</div>
           <div class="hero-subtitle">Choose your champion to begin the route chase.</div>
-
           <div class="hero-choice-wrap">
             <button id="pick-eric-btn" class="hero-pick-card" type="button">
               <div class="hero-token-frame">
@@ -32,7 +30,6 @@
               </div>
               <div class="hero-name">Eric</div>
             </button>
-
             <button id="pick-tango-btn" class="hero-pick-card" type="button">
               <div class="hero-token-frame">
                 <img class="hero-portrait hero-portrait-tango" src="./assets/tango.png" alt="Tango">
@@ -49,10 +46,8 @@
             <div id="route-modal-title" class="route-modal-title">Didcot — Appleford</div>
             <button id="route-modal-close" class="route-modal-close" type="button" aria-label="Close">×</button>
           </div>
-
           <div id="route-modal-subtitle" class="route-modal-subtitle">Choose how to play this route.</div>
           <div id="route-modal-body" class="route-modal-body"></div>
-
           <div class="route-modal-actions">
             <button id="route-modal-cancel" class="action-btn subtle" type="button">Cancel</button>
             <button id="route-modal-confirm" class="action-btn primary" type="button" disabled>Confirm</button>
@@ -73,20 +68,20 @@
       <div id="top-bar">
         <div id="title-block">
           <div id="game-title">Didcot Dogs</div>
-          <div id="game-subtitle">Private two-player route game prototype v1.9</div>
+          <div id="game-subtitle">Private two-player route game prototype v2</div>
         </div>
         <button id="fullscreen-btn" type="button">Full screen</button>
       </div>
 
-<div id="mobile-hud">
+      <div id="mobile-hud">
         <div id="mobile-hud-turn" class="mobile-hud-pill">Eric to play</div>
         <div id="mobile-hud-draw" class="mobile-hud-pill">Draw: 0</div>
         <div id="mobile-hud-destination" class="mobile-hud-pill">Target: —</div>
-        <button id="mobile-open-sheet-btn" class="mobile-hud-btn" type="button">Cards</button>
-        <button id="mobile-reset-view-btn" class="mobile-hud-btn" type="button">Map</button>
+        <button id="mobile-open-sheet-btn" class="mobile-hud-btn" type="button">Draw card</button>
+        <button id="mobile-reset-view-btn" class="mobile-hud-btn" type="button">Routes</button>
       </div>
 
-      <div id="mobile-sheet" class="collapsed">
+      <div id="mobile-sheet">
         <button id="mobile-sheet-handle" type="button" aria-label="Toggle mobile panel"></button>
         <div id="mobile-sheet-content">
           <div id="mobile-sheet-summary"></div>
@@ -99,19 +94,16 @@
 
       <aside id="left-panel">
         <div class="panel-title">Turn</div>
-
         <div class="panel-section">
           <div id="turn-player-badge" class="player-badge eric">Eric to play</div>
           <div id="turn-instruction" class="panel-copy">
             Choose one action: draw a card or click a route to play it.
           </div>
         </div>
-
         <div class="panel-section controls-grid">
           <button id="draw-card-btn" class="action-btn primary" type="button">Pick random card</button>
           <button id="reset-local-btn" class="action-btn subtle" type="button">Reset local game</button>
         </div>
-
         <div class="panel-section counts-grid">
           <div class="count-card">
             <div class="count-label">Draw pile</div>
@@ -122,19 +114,14 @@
             <div id="discard-pile-count" class="count-value">0</div>
           </div>
         </div>
-
         <div class="panel-section">
           <div class="mini-heading">Selected route</div>
-          <div id="selected-route-card" class="selected-route-card">
-            No route selected.
-          </div>
+          <div id="selected-route-card" class="selected-route-card">No route selected.</div>
         </div>
-
         <div class="panel-section">
           <div class="mini-heading">Active hand</div>
           <div id="active-hand" class="hand-grid"></div>
         </div>
-
         <div id="left-debug"></div>
       </aside>
 
@@ -144,20 +131,18 @@
 
       <aside id="right-panel">
         <div class="panel-title">Journey Cards</div>
-
         <div class="panel-section">
           <div id="player-summary-wrap" class="player-summary-wrap"></div>
         </div>
-
         <div class="panel-section">
           <div id="destination-sequences" class="destination-sequences"></div>
         </div>
       </aside>
 
       <div id="status-chip">Loading board…</div>
+
     </div>
   </div>
-
   <script src="./js/app.v2.js"></script>
 </body>
 </html>
