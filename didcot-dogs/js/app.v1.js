@@ -1,6 +1,6 @@
 console.log("Didcot Dogs app.v1.js loaded");
 
-const APP_VERSION = "v1.9.3";
+const APP_VERSION = "v1.9.4";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -36,6 +36,13 @@ let app = {
   svg: null,
   audit: null,
   state: null,
+  boardView: {
+    scale: 1,
+    x: 0,
+    y: 0,
+    minScale: 1,
+    maxScale: 3
+  },
   modal: {
     routeId: null,
     chosenColor: null,
@@ -62,6 +69,125 @@ function createSvgEl(tag, attrs = {}) {
   return el;
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function applyBoardViewTransform() {
+  if (!app.svg) return;
+
+  const { scale, x, y } = app.boardView;
+  app.svg.style.transformOrigin = "0 0";
+  app.svg.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+}
+
+function resetBoardView() {
+  app.boardView.scale = 1;
+  app.boardView.x = 0;
+  app.boardView.y = 0;
+  applyBoardViewTransform();
+}
+
+function getTouchDistance(t1, t2) {
+  const dx = t2.clientX - t1.clientX;
+  const dy = t2.clientY - t1.clientY;
+  return Math.hypot(dx, dy);
+}
+
+function getTouchMidpoint(t1, t2) {
+  return {
+    x: (t1.clientX + t2.clientX) / 2,
+    y: (t1.clientY + t2.clientY) / 2
+  };
+}
+
+function setupMobileBoardGestures() {
+  const boardWrap = document.getElementById("board-wrap");
+  if (!boardWrap) return;
+
+  let mode = null;
+  let startPan = null;
+  let startPinch = null;
+
+  boardWrap.addEventListener("touchstart", (evt) => {
+    if (window.innerWidth > 767) return;
+
+    if (evt.touches.length === 1) {
+      mode = "pan";
+      startPan = {
+        touchX: evt.touches[0].clientX,
+        touchY: evt.touches[0].clientY,
+        startX: app.boardView.x,
+        startY: app.boardView.y
+      };
+    }
+
+    if (evt.touches.length === 2) {
+      mode = "pinch";
+      const midpoint = getTouchMidpoint(evt.touches[0], evt.touches[1]);
+      startPinch = {
+        distance: getTouchDistance(evt.touches[0], evt.touches[1]),
+        scale: app.boardView.scale,
+        x: app.boardView.x,
+        y: app.boardView.y,
+        midpointX: midpoint.x,
+        midpointY: midpoint.y
+      };
+    }
+  }, { passive: false });
+
+  boardWrap.addEventListener("touchmove", (evt) => {
+    if (window.innerWidth > 767) return;
+
+    if (mode === "pan" && evt.touches.length === 1 && startPan) {
+      evt.preventDefault();
+
+      const dx = evt.touches[0].clientX - startPan.touchX;
+      const dy = evt.touches[0].clientY - startPan.touchY;
+
+      app.boardView.x = startPan.startX + dx;
+      app.boardView.y = startPan.startY + dy;
+      applyBoardViewTransform();
+    }
+
+    if (mode === "pinch" && evt.touches.length === 2 && startPinch) {
+      evt.preventDefault();
+
+      const newDistance = getTouchDistance(evt.touches[0], evt.touches[1]);
+      const midpoint = getTouchMidpoint(evt.touches[0], evt.touches[1]);
+      const rawScale = startPinch.scale * (newDistance / startPinch.distance);
+      const nextScale = clamp(rawScale, app.boardView.minScale, app.boardView.maxScale);
+
+      const scaleRatio = nextScale / startPinch.scale;
+
+      app.boardView.scale = nextScale;
+      app.boardView.x = midpoint.x - ((startPinch.midpointX - startPinch.x) * scaleRatio);
+      app.boardView.y = midpoint.y - ((startPinch.midpointY - startPinch.y) * scaleRatio);
+
+      applyBoardViewTransform();
+    }
+  }, { passive: false });
+
+  boardWrap.addEventListener("touchend", (evt) => {
+    if (window.innerWidth > 767) return;
+
+    if (evt.touches.length === 0) {
+      mode = null;
+      startPan = null;
+      startPinch = null;
+    } else if (evt.touches.length === 1) {
+      mode = "pan";
+      startPan = {
+        touchX: evt.touches[0].clientX,
+        touchY: evt.touches[0].clientY,
+        startX: app.boardView.x,
+        startY: app.boardView.y
+      };
+      startPinch = null;
+    }
+  });
+}
+
 async function injectBoardSvg() {
   const host = document.getElementById("board-svg-host");
   const svgText = await loadText("./assets/didcot-dogs-board.v1.svg");
@@ -74,6 +200,7 @@ async function injectBoardSvg() {
   svg.removeAttribute("height");
   svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   svg.style.background = "transparent";
+  svg.style.willChange = "transform";
   return svg;
 }
 
@@ -619,7 +746,13 @@ function removeSpecificCardsFromHand(hand, colourChoice, useColourCount, useRain
 function endTurn() {
   app.state.selectedRouteId = null;
   closeRouteModal();
-  app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
+
+  if (app.state.controlledHero) {
+    app.state.currentPlayer = app.state.controlledHero;
+  } else {
+    app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
+  }
+
   renderAll();
 }
 
@@ -1306,6 +1439,7 @@ function showCurrentDestinationReveal(playerName) {
 function startGameAs(playerName) {
   app.state = createInitialLocalState(app.rulesData, playerName);
   document.getElementById("hero-overlay").classList.remove("active");
+  resetBoardView();
   showStartToast(playerName);
   renderAll();
   showCurrentDestinationReveal(playerName);
@@ -1374,6 +1508,7 @@ function drawCardForCurrentPlayer() {
   player.lastDrawColor = card;
   updateStatus(`${currentPlayerName} drew ${card}.`);
   closeMobileSheet();
+  renderAll();
   endTurn();
 }
 
@@ -1413,6 +1548,7 @@ function resetLocalGame() {
   closeRouteModal();
   closeDestinationReveal();
   closeMobileSheet();
+  resetBoardView();
   renderAll();
   if (app.state.controlledHero) showCurrentDestinationReveal(app.state.controlledHero);
   updateStatus("Local game reset.");
@@ -1501,6 +1637,13 @@ async function init() {
       svg,
       audit,
       state,
+      boardView: {
+        scale: 1,
+        x: 0,
+        y: 0,
+        minScale: 1,
+        maxScale: 3
+      },
       modal: {
         routeId: null,
         chosenColor: null,
@@ -1511,6 +1654,8 @@ async function init() {
 
     wireRouteInteractions();
     wireControlButtons();
+    setupMobileBoardGestures();
+    resetBoardView();    
     renderAll();
     updateStatus("Pick your hero to begin.");
   } catch (error) {
