@@ -2,13 +2,13 @@
  * room.js — Didcot Dogs
  *
  * CHANGELOG
- * v1.0.0
- *   - Room screen: create or join a game before hero pick.
- *   - Waiting screen: animated holding screen shown to creator while
- *     waiting for the second player.
- *   - On join: game state synced from Firebase, correct hero assigned,
- *     game starts immediately.
- *   - On rejoin: room code restored from sessionStorage, game resumes.
+ * v2.0.0 — complete rewrite for reliability
+ *   - Simplified subscription: no echo-skipping, Firebase is always truth
+ *   - Creator waits on waiting screen; startGame fires when Tango joins
+ *   - Joiner uses Firebase state directly, never re-randomises
+ *   - Refresh: fetches fresh state from Firebase, resumes cleanly
+ *   - Room code + player identity always visible in HUD after game starts
+ *   - Clear sessionStorage on game end / reset
  */
 
 import {
@@ -20,131 +20,86 @@ import {
   pushState
 } from "./firebase.js";
 
-// Exposed so app.v2.js can call pushState after mutations
 export { pushState };
 
-// ── Room screen UI ────────────────────────────────────────────────────────────
+// ─── Screen helpers ───────────────────────────────────────────────────────────
 
-
-export function showResumingScreen() {
-  let el = document.getElementById("resuming-screen");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "resuming-screen";
-    el.className = "resuming-screen active";
-    el.innerHTML = `
-      <div class="resuming-inner">
-        <div class="resuming-title">Resuming game…</div>
-        <div class="waiting-dots">
-          <div class="waiting-dot"></div>
-          <div class="waiting-dot"></div>
-          <div class="waiting-dot"></div>
-        </div>
-      </div>
-    `;
-    document.getElementById("game-shell").appendChild(el);
-  }
-  el.classList.add("active");
+function showScreen(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.add("active");
 }
 
-export function hideResumingScreen() {
-  const el = document.getElementById("resuming-screen");
+function hideScreen(id) {
+  const el = document.getElementById(id);
   if (el) el.classList.remove("active");
 }
 
-export function showRoomScreen() {
-  const screen = document.getElementById("room-screen");
-  if (screen) screen.classList.add("active");
-}
-
-export function hideRoomScreen() {
-  const screen = document.getElementById("room-screen");
-  if (screen) screen.classList.remove("active");
-}
-
+export function showRoomScreen()    { showScreen("room-screen"); }
+export function hideRoomScreen()    { hideScreen("room-screen"); }
 export function showWaitingScreen(code) {
-  hideRoomScreen();
-  const waiting = document.getElementById("waiting-screen");
-  if (!waiting) return;
-  const codeEl = document.getElementById("waiting-code");
-  if (codeEl) codeEl.textContent = code;
-  waiting.classList.add("active");
+  const el = document.getElementById("waiting-code");
+  if (el) el.textContent = code;
+  hideScreen("room-screen");
+  showScreen("waiting-screen");
 }
+export function hideWaitingScreen() { hideScreen("waiting-screen"); }
+export function showResumingScreen() { showScreen("resuming-screen"); }
+export function hideResumingScreen() { hideScreen("resuming-screen"); }
 
-export function hideWaitingScreen() {
-  const waiting = document.getElementById("waiting-screen");
-  if (waiting) waiting.classList.remove("active");
-}
-
-// ── Initialise room flow ──────────────────────────────────────────────────────
-// Called from app.v2.js init() instead of going straight to hero pick.
+// ─── Main entry point — called from app.v2.js init() ─────────────────────────
 
 export async function initRoomFlow(appRef) {
-  // Check sessionStorage for an existing room (resume support)
   const savedCode = sessionStorage.getItem("dd_room_code");
   const savedHero = sessionStorage.getItem("dd_hero");
 
   if (savedCode && savedHero) {
+    // Attempt to resume
+    showResumingScreen();
     try {
-      // Show a brief "Resuming…" state while we fetch
-      showResumingScreen();
+      const snapshot = await joinRoom(savedCode);
+      if (!snapshot.state || !snapshot.state.players) throw new Error("No state");
 
-      const { state } = await joinRoom(savedCode);
-
-      if (!state || !state.players) {
-        throw new Error("State missing from Firebase");
-      }
-
-      appRef.roomCode = savedCode;
+      appRef.roomCode  = savedCode;
       appRef.localHero = savedHero;
-      appRef.state = state;
-      appRef.state.controlledHero = savedHero;
-      registerDisconnect(savedCode, savedHero);
+
       hideResumingScreen();
-      hideRoomScreen();
-      hideWaitingScreen();
-      document.getElementById("hero-overlay").classList.remove("active");
-      appRef.startAs(savedHero);
-      startGameSubscription(appRef, savedCode);
+      launchGame(appRef, savedCode, savedHero, snapshot.state);
       return;
     } catch (e) {
-      console.warn("Failed to resume session:", e.message);
-      // Clear stale session and fall through to room screen
+      console.warn("Resume failed:", e.message);
       sessionStorage.removeItem("dd_room_code");
       sessionStorage.removeItem("dd_hero");
       hideResumingScreen();
     }
   }
 
+  // Fresh start — show room screen
   showRoomScreen();
   wireRoomButtons(appRef);
 }
 
-// ── Wire room screen buttons ──────────────────────────────────────────────────
+// ─── Room screen buttons ──────────────────────────────────────────────────────
 
 function wireRoomButtons(appRef) {
-  const createBtn = document.getElementById("room-create-btn");
-  const joinBtn   = document.getElementById("room-join-btn");
-  const joinInput = document.getElementById("room-join-input");
-  const errorEl   = document.getElementById("room-error");
+  const createBtn  = document.getElementById("room-create-btn");
+  const joinBtn    = document.getElementById("room-join-btn");
+  const joinInput  = document.getElementById("room-join-input");
+  const errorEl    = document.getElementById("room-error");
 
   createBtn.addEventListener("click", async () => {
     createBtn.disabled = true;
     createBtn.textContent = "Creating…";
     errorEl.textContent = "";
-
     try {
-      // Build initial state using app's rulesData
-      // Build canonical state — route colours live here, must match on both devices
-      const initialState = appRef.buildInitialState("Eric");
+      // Build canonical state — route colours set once here, synced to both
+      const state = appRef.buildInitialState("Eric");
+      state.controlledHero = null; // device-specific, not stored in Firebase
+      state.currentPlayer  = "Eric";
 
-      // Remove controlledHero from Firebase state — it's device-specific
-      const stateForFirebase = { ...initialState, controlledHero: null };
-      const code = await createRoom(stateForFirebase);
+      const code = await createRoom(state);
 
-      appRef.roomCode = code;
+      appRef.roomCode  = code;
       appRef.localHero = "Eric";
-      appRef.state = stateForFirebase;
 
       sessionStorage.setItem("dd_room_code", code);
       sessionStorage.setItem("dd_hero", "Eric");
@@ -152,19 +107,19 @@ function wireRoomButtons(appRef) {
       registerDisconnect(code, "Eric");
       showWaitingScreen(code);
 
-      let gameStarted = false;
-      // Wait for Tango to join
+      // Watch for Tango joining
+      let started = false;
       subscribeToPresence(code, presence => {
-        if (presence?.Tango?.connected && !gameStarted) {
-          gameStarted = true;
+        if (presence?.Tango?.connected && !started) {
+          started = true;
           hideWaitingScreen();
-          startGame(appRef, code, "Eric", stateForFirebase);
+          launchGame(appRef, code, "Eric", state);
         }
       });
 
     } catch (err) {
       errorEl.textContent = err.message;
-      createBtn.disabled = false;
+      createBtn.disabled  = false;
       createBtn.textContent = "Create game";
     }
   });
@@ -172,79 +127,85 @@ function wireRoomButtons(appRef) {
   joinBtn.addEventListener("click", async () => {
     const code = (joinInput.value || "").toUpperCase().trim();
     if (code.length !== 4) {
-      errorEl.textContent = "Enter a 4-character room code.";
+      errorEl.textContent = "Enter the 4-character code.";
       return;
     }
-
     joinBtn.disabled = true;
     joinBtn.textContent = "Joining…";
     errorEl.textContent = "";
-
     try {
-      const { state, hero } = await joinRoom(code);
+      const { state } = await joinRoom(code);
 
-      appRef.roomCode = code;
-      appRef.localHero = hero;
-      appRef.state = state;
-      // Don't set controlledHero here — startMultiplayer sets it
+      appRef.roomCode  = code;
+      appRef.localHero = "Tango";
 
       sessionStorage.setItem("dd_room_code", code);
-      sessionStorage.setItem("dd_hero", hero);
+      sessionStorage.setItem("dd_hero", "Tango");
 
-      registerDisconnect(code, hero);
+      registerDisconnect(code, "Tango");
       hideRoomScreen();
-      startGame(appRef, code, hero, state);
+      launchGame(appRef, code, "Tango", state);
 
     } catch (err) {
       errorEl.textContent = err.message;
-      joinBtn.disabled = false;
-      joinBtn.textContent = "Join game";
+      joinBtn.disabled  = false;
+      joinBtn.textContent = "Join";
     }
   });
 
-  // Allow Enter key in code input
-  joinInput.addEventListener("keydown", e => {
-    if (e.key === "Enter") joinBtn.click();
-  });
-
-  // Auto-uppercase input
-  joinInput.addEventListener("input", () => {
-    joinInput.value = joinInput.value.toUpperCase();
-  });
+  joinInput.addEventListener("keydown", e => { if (e.key === "Enter") joinBtn.click(); });
+  joinInput.addEventListener("input",   () => { joinInput.value = joinInput.value.toUpperCase(); });
 }
 
-// ── Start game after both players present ─────────────────────────────────────
+// ─── Launch game — used by create, join, and resume ──────────────────────────
 
-function startGame(appRef, code, hero, state) {
-  // Use startMultiplayer — does NOT re-randomise state, uses Firebase state.
-  // startAs() would call createInitialLocalState() which re-randomises
-  // route colours, breaking sync between devices.
+function launchGame(appRef, code, hero, state) {
+  // Set app state from Firebase — never re-randomise
+  appRef.state = state;
+  appRef.state.controlledHero = hero; // device-local only
+
+  // Show identity card + board
   appRef.startMultiplayer(hero);
-  startGameSubscription(appRef, code);
-}
 
-// ── Subscribe to Firebase state changes ───────────────────────────────────────
-
-function startGameSubscription(appRef, code) {
-  let localVersion = 0;  // incremented on every local push to detect echo
-
-  // Expose increment so app.v2.js can call it before pushState
-  appRef.__incrementLocalVersion = () => { localVersion++; };
-
+  // Subscribe to all future remote changes
   subscribeToRoom(code, remoteState => {
-    if (!remoteState) return;
+    if (!remoteState || !remoteState.players) return;
 
-    // If this update was triggered by our own push, localVersion > 0 — skip it
-    if (localVersion > 0) {
-      localVersion--;
-      return;
-    }
+    // Only apply if it's genuinely the remote player's state push
+    // i.e. the currentPlayer changed to our opponent, meaning they acted
+    const remoteIsOpponent = remoteState.currentPlayer === hero
+      ? false  // it's now our turn — apply it
+      : true;  // opponent is still playing — apply it
 
-    // Apply remote state — always trust Firebase as source of truth
-    // Preserve localHero since it is device-specific
-    const hero = appRef.localHero;
+    // Always apply — Firebase is source of truth
+    // Restore device-local field
     appRef.state = remoteState;
     appRef.state.controlledHero = hero;
     appRef.renderAll();
+    updateRoomHud(appRef);
   });
+}
+
+// ─── Room HUD — persistent code + player identity strip ──────────────────────
+
+export function updateRoomHud(appRef) {
+  const hud = document.getElementById("room-hud");
+  if (!hud || !appRef.roomCode) return;
+
+  const isMine = appRef.state.currentPlayer === appRef.localHero;
+  hud.innerHTML = `
+    <span class="room-hud-code">Room: <strong>${appRef.roomCode}</strong></span>
+    <span class="room-hud-player">You: <strong>${appRef.localHero}</strong></span>
+    <span class="room-hud-turn ${isMine ? "room-hud-turn-mine" : "room-hud-turn-theirs"}">
+      ${isMine ? "YOUR TURN" : `${appRef.state.currentPlayer}'s turn`}
+    </span>
+  `;
+  hud.style.display = "flex";
+}
+
+// ─── Clear session on game reset ─────────────────────────────────────────────
+
+export function clearRoomSession() {
+  sessionStorage.removeItem("dd_room_code");
+  sessionStorage.removeItem("dd_hero");
 }
