@@ -1881,9 +1881,19 @@ html, body {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    v2.5.0  TARGET NODE PULSE FIX
+   v2.10.4 EXTENDED: also unset fill/stroke !important on circles inside
+   #Nodes so the pulse animation isn't blocked by the base node styling rule.
    ═══════════════════════════════════════════════════════════════════════════ */
 #board-svg-host text.target-node-pulse {
   fill: unset !important;
+  animation: targetNodePulse 1.35s linear infinite !important;
+}
+
+#board-svg-host #Nodes circle.target-node-pulse,
+#board-svg-host #Nodes g.target-node-pulse circle,
+#board-svg-host #Nodes .target-node-pulse {
+  fill: unset !important;
+  stroke: unset !important;
   animation: targetNodePulse 1.35s linear infinite !important;
 }
 
