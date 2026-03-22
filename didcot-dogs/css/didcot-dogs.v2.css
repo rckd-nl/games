@@ -1034,12 +1034,12 @@ html, body {
   50%      { stroke-opacity: 0.88; }
 }
 @keyframes targetNodePulse {
-  0%   { stroke: #ff4d4d; filter: drop-shadow(0 0 2px rgba(255,77,77,0.45)); }
-  20%  { stroke: #ff9f1c; filter: drop-shadow(0 0 8px rgba(255,159,28,0.8)); }
-  40%  { stroke: #ffe600; filter: drop-shadow(0 0 8px rgba(255,230,0,0.8)); }
-  60%  { stroke: #2ec27e; filter: drop-shadow(0 0 8px rgba(46,194,126,0.8)); }
-  80%  { stroke: #2f6edb; filter: drop-shadow(0 0 8px rgba(47,110,219,0.8)); }
-  100% { stroke: #c64f8e; filter: drop-shadow(0 0 8px rgba(198,79,142,0.8)); }
+  0%   { stroke: #ff4d4d; fill: #ff4d4d; filter: drop-shadow(0 0 2px rgba(255,77,77,0.45)); }
+  20%  { stroke: #ff9f1c; fill: #ff9f1c; filter: drop-shadow(0 0 8px rgba(255,159,28,0.8)); }
+  40%  { stroke: #ffe600; fill: #ffe600; filter: drop-shadow(0 0 8px rgba(255,230,0,0.8)); }
+  60%  { stroke: #2ec27e; fill: #2ec27e; filter: drop-shadow(0 0 8px rgba(46,194,126,0.8)); }
+  80%  { stroke: #2f6edb; fill: #2f6edb; filter: drop-shadow(0 0 8px rgba(47,110,219,0.8)); }
+  100% { stroke: #c64f8e; fill: #c64f8e; filter: drop-shadow(0 0 8px rgba(198,79,142,0.8)); }
 }
 @keyframes targetCardPulse {
   0%, 100% { box-shadow: 0 0 14px rgba(229,57,53,0.18); }
