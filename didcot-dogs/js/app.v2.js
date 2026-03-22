@@ -15,15 +15,14 @@
  *   - IMPROVED: Pinch-to-zoom focal point is correct — zooms around the midpoint
  *     of the two fingers in SVG coordinate space.
  *   - IMPROVED: Pan is clamped so the board cannot be dragged entirely off screen.
- *   - FIXED: showMobileHud() moved to startGameAs() — HUD, bottom bar and sheet
- *     are all hidden during hero-pick. Shown via .visible/.visible-shell classes.
- *   - FIXED: hero-overlay z-index raised to 4000 (was 80, behind mobile chrome).
+ *   - FIXED: showMobileHud() moved to startGameAs() — HUD is now hidden during
+ *     hero-pick screen and only appears once a player is chosen.
  *   - NOTE: All other game logic is unchanged from v1.9.5.
  */
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.0.1";
+const APP_VERSION = "v2.0.0";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -1284,9 +1283,7 @@ function renderDebug(audit) {
 
 function openMobileSheet() {
   const sheet = document.getElementById("mobile-sheet");
-  if (sheet && sheet.classList.contains("visible-shell")) {
-    sheet.classList.add("expanded");
-  }
+  if (sheet) sheet.classList.add("expanded");
 }
 
 function closeMobileSheet() {
@@ -1296,7 +1293,7 @@ function closeMobileSheet() {
 
 function toggleMobileSheet() {
   const sheet = document.getElementById("mobile-sheet");
-  if (!sheet || !sheet.classList.contains("visible-shell")) return;
+  if (!sheet) return;
   sheet.classList.toggle("expanded");
 }
 
@@ -1715,17 +1712,8 @@ function injectMobileBottomBar() {
 // display:none / display:grid in CSS
 // ---------------------------------------------------------------------------
 function showMobileHud() {
-  // Reveal HUD, bottom bar, and sheet shell — all hidden during hero-pick screen.
-  // CSS uses .visible / .visible-shell classes instead of display rules
-  // so z-index fights with the hero overlay can't occur.
   const hud = document.getElementById("mobile-hud");
   if (hud) hud.classList.add("visible");
-
-  const bar = document.getElementById("mobile-bottom-bar");
-  if (bar) bar.classList.add("visible");
-
-  const sheet = document.getElementById("mobile-sheet");
-  if (sheet) sheet.classList.add("visible-shell");
 }
 
 function wireControlButtons() {
