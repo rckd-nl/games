@@ -15,6 +15,8 @@
  *   - IMPROVED: Pinch-to-zoom focal point is correct — zooms around the midpoint
  *     of the two fingers in SVG coordinate space.
  *   - IMPROVED: Pan is clamped so the board cannot be dragged entirely off screen.
+ *   - FIXED: showMobileHud() moved to startGameAs() — HUD is now hidden during
+ *     hero-pick screen and only appears once a player is chosen.
  *   - NOTE: All other game logic is unchanged from v1.9.5.
  */
 
@@ -1572,6 +1574,7 @@ function showCurrentDestinationReveal(playerName) {
 function startGameAs(playerName) {
   app.state = createInitialLocalState(app.rulesData, playerName);
   document.getElementById("hero-overlay").classList.remove("active");
+  showMobileHud();   // only show after hero chosen — hides during pick screen
   resetBoardView();
   showStartToast(playerName);
   renderAll();
@@ -1801,7 +1804,8 @@ async function init() {
     wireRouteInteractions();
     wireControlButtons();
     setupMobileBoardGestures();
-    showMobileHud();
+    // showMobileHud() is called inside startGameAs() so the HUD stays
+    // hidden during the hero-pick screen.
     resetBoardView();
     renderAll();
     updateStatus("Pick your hero to begin.");
