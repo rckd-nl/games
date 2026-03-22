@@ -135,13 +135,16 @@ function wireRoomButtons(appRef) {
 
     try {
       // Build initial state using app's rulesData
+      // Build canonical state — route colours live here, must match on both devices
       const initialState = appRef.buildInitialState("Eric");
-      const code = await createRoom(initialState);
+
+      // Remove controlledHero from Firebase state — it's device-specific
+      const stateForFirebase = { ...initialState, controlledHero: null };
+      const code = await createRoom(stateForFirebase);
 
       appRef.roomCode = code;
       appRef.localHero = "Eric";
-      appRef.state = initialState;
-      appRef.state.controlledHero = "Eric";
+      appRef.state = stateForFirebase;
 
       sessionStorage.setItem("dd_room_code", code);
       sessionStorage.setItem("dd_hero", "Eric");
@@ -149,11 +152,13 @@ function wireRoomButtons(appRef) {
       registerDisconnect(code, "Eric");
       showWaitingScreen(code);
 
+      let gameStarted = false;
       // Wait for Tango to join
       subscribeToPresence(code, presence => {
-        if (presence?.Tango?.connected) {
+        if (presence?.Tango?.connected && !gameStarted) {
+          gameStarted = true;
           hideWaitingScreen();
-          startGame(appRef, code, "Eric", initialState);
+          startGame(appRef, code, "Eric", stateForFirebase);
         }
       });
 
@@ -181,7 +186,7 @@ function wireRoomButtons(appRef) {
       appRef.roomCode = code;
       appRef.localHero = hero;
       appRef.state = state;
-      appRef.state.controlledHero = hero;
+      // Don't set controlledHero here — startMultiplayer sets it
 
       sessionStorage.setItem("dd_room_code", code);
       sessionStorage.setItem("dd_hero", hero);
@@ -211,9 +216,10 @@ function wireRoomButtons(appRef) {
 // ── Start game after both players present ─────────────────────────────────────
 
 function startGame(appRef, code, hero, state) {
-  // startAs() handles: hiding hero overlay, identity card, renderAll,
-  // destination reveal, showMobileHud. It's the full game start sequence.
-  appRef.startAs(hero);
+  // Use startMultiplayer — does NOT re-randomise state, uses Firebase state.
+  // startAs() would call createInitialLocalState() which re-randomises
+  // route colours, breaking sync between devices.
+  appRef.startMultiplayer(hero);
   startGameSubscription(appRef, code);
 }
 
