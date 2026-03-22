@@ -2,6 +2,21 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
+ * v2.1.0
+ *   - IMPROVED: HUD destination pill shows ▸ prefix and completion progress
+ *     badge; JS sets data-complete attribute for CSS accent colouring.
+ *   - IMPROVED: HUD action buttons are rounded-square (not pill), with inner
+ *     shadow for tactile feel; Draw card is accent-coloured, Routes is neutral.
+ *   - IMPROVED: Bottom hand peek cards taller (+12px), chevron hint rendered
+ *     above strip to signal interactivity.
+ *   - IMPROVED: Destination reveal has scale-in + flip animation on open.
+ *   - IMPROVED: Route pay modal shows route name/cost prominently at top;
+ *     spend cards restored to full hand-card size (64×88px) on mobile.
+ *   - IMPROVED: Start toast replaced with full-width identity card — portrait,
+ *     name, wipe background — holds for 1.8s then slides out.
+ *   - ADDED: End screen overlay (win/lose). Fires after fifth destination.
+ *   - FIXED: showMobileHud() also reveals bottom bar + visible-shell on sheet.
+ *   - FIXED: openMobileSheet / toggleMobileSheet guard on .visible-shell.
  * v2.0.0
  *   - FIXED: Pan/zoom now manipulates SVG viewBox directly instead of CSS
  *     transform. SVG re-renders as vector at every zoom level — no more
@@ -17,18 +32,12 @@
  *   - IMPROVED: Pan is clamped so the board cannot be dragged entirely off screen.
  *   - FIXED: showMobileHud() moved to startGameAs() — HUD is now hidden during
  *     hero-pick screen and only appears once a player is chosen.
- *   - FIXED: showMobileHud() now also adds .visible to #mobile-bottom-bar
- *     and .visible-shell to #mobile-sheet — cards were invisible because the
- *     uploaded file was missing those two lines.
- *   - FIXED: openMobileSheet / toggleMobileSheet guard on .visible-shell.
- *   - ADDED: End screen overlay — YOU WIN / YOU LOSE — fires when a player
- *     completes their fifth destination. Styled after the hero pick sting.
- *     "Play again" resets and returns to hero pick.
+ *   - NOTE: All other game logic is unchanged from v1.9.5.
  */
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.0.1";
+const APP_VERSION = "v2.1.0";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -1327,12 +1336,28 @@ function renderMobileRoutesPanel() {
     ? (app.destinationData.destinations[currentTargetId]?.title || formatNodeName(currentTargetId))
     : "—";
 
-  hudTurn.textContent = `${currentPlayerName} to play`;
-  hudDraw.textContent = `Draw: ${app.state.drawPile.length}`;
-  hudDestination.textContent = `Target: ${currentTargetTitle}`;
+  hudTurn.textContent = `${currentPlayerName}`;
+  hudDraw.textContent = `${app.state.drawPile.length} left`;
+
+  // Destination pill — show progress badge + target name
+  const completedCount = Math.min(currentPlayer.completedCount, 5);
+  hudDestination.innerHTML = `
+    <span class="hud-dest-progress">${completedCount}/5</span>
+    <span class="hud-dest-label">▸ ${currentTargetTitle}</span>
+  `;
+  hudDestination.dataset.complete = completedCount >= 5 ? "true" : "false";
 
   drawBtn.textContent = "Draw card";
   routesBtn.textContent = "Routes";
+
+  // Chevron hint above hand strip
+  const bar = document.getElementById("mobile-bottom-bar");
+  if (bar && !bar.querySelector(".hand-chevron")) {
+    const chev = document.createElement("div");
+    chev.className = "hand-chevron";
+    chev.innerHTML = "&#8964;";
+    bar.insertBefore(chev, bar.firstChild);
+  }
 
   sheetSummary.innerHTML = `
     <div class="player-summary-card active">
@@ -1460,7 +1485,18 @@ function openRouteModal(routeId) {
   body.innerHTML = "";
   confirmBtn.disabled = true;
 
+  // Cost banner — route name + cost prominently at top of body
   const routeColor = app.state.routes[routeId].colour;
+  const routeCost = app.rulesData.routes[routeId].length;
+  const bannerColour = routeColor === "grey" ? "wild" : routeColor;
+  const banner = document.createElement("div");
+  banner.className = "route-modal-cost-banner";
+  banner.innerHTML = `
+    <span><strong>${formatRouteName(routeId)}</strong><br>
+    <span style="font-size:13px;opacity:0.7">${bannerColour} route</span></span>
+    <span class="route-modal-cost-pip">${routeCost}</span>
+  `;
+  body.appendChild(banner);
 
   if (routeColor === "grey") {
     const payment = getPaymentOptionsForColor(routeId, app.state.currentPlayer);
@@ -1547,12 +1583,34 @@ async function confirmRouteModalPlay() {
 }
 
 function showStartToast(playerName) {
-  const toast = document.getElementById("start-toast");
-  toast.textContent = `YOU ARE ${playerName.toUpperCase()}!`;
-  toast.classList.add("show");
+  // Build or reuse the identity card overlay
+  let card = document.getElementById("identity-card");
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "identity-card";
+    card.className = "identity-card";
+    document.getElementById("game-shell").appendChild(card);
+  }
+
+  const cfg = PLAYER_CONFIG[playerName];
+  card.innerHTML = `
+    <div class="identity-wipe"></div>
+    <div class="identity-inner">
+      <div class="identity-kicker">YOU ARE</div>
+      <div class="identity-portrait-wrap">
+        <img class="identity-portrait" src="${cfg.image}" alt="${playerName}">
+      </div>
+      <div class="identity-name">${playerName.toUpperCase()}</div>
+    </div>
+  `;
+
+  card.classList.remove("identity-out");
+  card.classList.add("identity-in");
+
   window.setTimeout(() => {
-    toast.classList.remove("show");
-  }, 2200);
+    card.classList.remove("identity-in");
+    card.classList.add("identity-out");
+  }, 1800);
 }
 
 function openDestinationReveal(title, body, destinationNumber = null) {
@@ -1719,29 +1777,22 @@ function injectMobileBottomBar() {
 // display:none / display:grid in CSS
 // ---------------------------------------------------------------------------
 function showMobileHud() {
-  // Reveal HUD, bottom bar, and sheet shell — all hidden during hero-pick.
   const hud = document.getElementById("mobile-hud");
   if (hud) hud.classList.add("visible");
-
   const bar = document.getElementById("mobile-bottom-bar");
   if (bar) bar.classList.add("visible");
-
   const sheet = document.getElementById("mobile-sheet");
   if (sheet) sheet.classList.add("visible-shell");
 }
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// END SCREEN  (win / lose celebration)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── END SCREEN ──────────────────────────────────────────────────────────────
 
 function buildEndScreenOverlay() {
   if (document.getElementById("end-screen-overlay")) return;
-
   const overlay = document.createElement("div");
   overlay.id = "end-screen-overlay";
   overlay.className = "end-screen-overlay";
-
   overlay.innerHTML = `
     <div class="end-screen-loop">
       <div class="end-screen-wipe end-screen-wipe-a"></div>
@@ -1752,20 +1803,17 @@ function buildEndScreenOverlay() {
     <div class="end-screen-inner">
       <div id="end-screen-kicker" class="end-screen-kicker">Didcot Dogs</div>
       <div id="end-screen-headline" class="end-screen-headline">YOU WIN!</div>
-      <div id="end-screen-sub" class="end-screen-sub">Five destinations complete.</div>
+      <div id="end-screen-sub" class="end-screen-sub"></div>
       <div id="end-screen-portrait" class="end-screen-portrait-wrap"></div>
       <button id="end-screen-play-again" class="action-btn primary end-screen-btn" type="button">Play again</button>
     </div>
   `;
-
   document.getElementById("game-shell").appendChild(overlay);
 
   document.getElementById("end-screen-play-again").addEventListener("click", () => {
     hideEndScreen();
     resetLocalGame();
-    // Show hero pick again
     document.getElementById("hero-overlay").classList.add("active");
-    // Hide mobile chrome until hero re-chosen
     const hud = document.getElementById("mobile-hud");
     const bar = document.getElementById("mobile-bottom-bar");
     const sheet = document.getElementById("mobile-sheet");
@@ -1777,31 +1825,15 @@ function buildEndScreenOverlay() {
 
 function showEndScreen(winnerName) {
   buildEndScreenOverlay();
-
   const overlay = document.getElementById("end-screen-overlay");
-  const headline = document.getElementById("end-screen-headline");
-  const sub = document.getElementById("end-screen-sub");
-  const portraitWrap = document.getElementById("end-screen-portrait");
-  const kicker = document.getElementById("end-screen-kicker");
-
-  const controlledHero = app.state.controlledHero;
-  const isWin = winnerName === controlledHero;
-
-  kicker.textContent = "Didcot Dogs";
-  headline.textContent = isWin ? "YOU WIN!" : "YOU LOSE!";
-  sub.textContent = isWin
+  const isWin = winnerName === app.state.controlledHero;
+  document.getElementById("end-screen-headline").textContent = isWin ? "YOU WIN!" : "YOU LOSE!";
+  document.getElementById("end-screen-sub").textContent = isWin
     ? `${winnerName} completed all five destinations. Legendary.`
     : `${winnerName} beat you to it. Better luck next time.`;
-
-  // Portrait
-  portraitWrap.innerHTML = "";
-  const img = document.createElement("img");
-  img.src = PLAYER_CONFIG[winnerName].image;
-  img.alt = winnerName;
-  img.className = "end-screen-portrait";
-  portraitWrap.appendChild(img);
-
-  overlay.className = "end-screen-overlay active" + (isWin ? " end-win" : " end-lose");
+  const pw = document.getElementById("end-screen-portrait");
+  pw.innerHTML = `<img src="${PLAYER_CONFIG[winnerName].image}" alt="${winnerName}" class="end-screen-portrait">`;
+  overlay.className = "end-screen-overlay active " + (isWin ? "end-win" : "end-lose");
 }
 
 function hideEndScreen() {
