@@ -957,10 +957,10 @@ html, body {
   left: 8px;
   right: 8px;
   z-index: 2000;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
   pointer-events: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
 
 .mobile-hud-pill,
@@ -975,6 +975,7 @@ html, body {
   font-size: 14px;
   font-weight: 700;
   pointer-events: auto;
+  width: 100%;
 }
 
 .mobile-hud-pill {
@@ -990,6 +991,18 @@ html, body {
   background: rgba(141,18,24,0.94);
   color: #ffffff;
   cursor: pointer;
+}
+
+#mobile-hud-turn,
+#mobile-hud-draw,
+#mobile-hud-destination,
+#mobile-open-sheet-btn,
+#mobile-reset-view-btn {
+  grid-column: span 1;
+}
+
+#mobile-hud-destination {
+  grid-column: 1 / -1;
 }
 
 #mobile-sheet {
@@ -1063,12 +1076,12 @@ html, body {
   bottom: 0;
   z-index: 2001;
   padding:
-    4px 10px
-    calc(4px + env(safe-area-inset-bottom, 0px))
-    10px;
-  background: linear-gradient(180deg, rgba(10,13,19,0.1) 0%, rgba(10,13,19,0.9) 24%, rgba(10,13,19,0.98) 100%);
-  border-top: 1px solid rgba(255,255,255,0.10);
-  box-shadow: 0 -12px 30px rgba(0,0,0,0.24);
+    4px 8px
+    calc(2px + env(safe-area-inset-bottom, 0px))
+    8px;
+  background: linear-gradient(180deg, rgba(10,13,19,0) 0%, rgba(10,13,19,0.72) 20%, rgba(10,13,19,0.96) 52%, rgba(10,13,19,0.99) 100%);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 -10px 24px rgba(0,0,0,0.18);
   overflow: visible;
 }
 
@@ -1079,7 +1092,7 @@ html, body {
   overflow-y: visible;
   padding: 0 2px 0;
   scrollbar-width: none;
-  min-height: 54px;
+  min-height: 82px;
   align-items: flex-end;
 }
 
@@ -1094,7 +1107,8 @@ html, body {
   padding: 6px;
   position: relative;
   flex: 0 0 auto;
-  margin-top: -18px;
+  margin-top: -30px;
+  margin-bottom: 0;
   box-shadow: 0 6px 14px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.35);
   border: 2px solid rgba(0,0,0,0.16);
   display: flex;
@@ -1260,8 +1274,8 @@ html, body {
   #board-wrap {
     left: 0;
     right: 0;
-    top: 52px;
-    bottom: 86px;
+    top: 92px;
+    bottom: 88px;
     border-radius: 0;
     border: none;
   }
@@ -1269,9 +1283,9 @@ html, body {
   #status-chip {
     left: 50%;
     transform: translateX(-50%);
-    bottom: calc(126px + env(safe-area-inset-bottom, 0px));
-    max-width: calc(100vw - 24px);
-    font-size: 14px;
+    bottom: calc(102px + env(safe-area-inset-bottom, 0px));
+    max-width: calc(100vw - 40px);
+    font-size: 13px;
     padding: 8px 12px;
     z-index: 2002;
   }
