@@ -51,7 +51,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.3.0";
+const APP_VERSION = "v2.4.0";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -983,9 +983,47 @@ function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
   });
 }
 
-function updateStatus(text) {
+// Toast priority levels — only NOTABLE events show the mobile toast
+const TOAST_NOTABLE = Symbol("notable");
+const TOAST_SILENT  = Symbol("silent");
+
+let __toastTimer = null;
+
+function updateStatus(text, priority = TOAST_SILENT) {
+  // Always update desktop chip
   const chip = document.getElementById("status-chip");
   if (chip) chip.textContent = text;
+
+  // Mobile toast — only show notable events
+  if (priority === TOAST_NOTABLE) {
+    showMobileToast(text);
+  }
+}
+
+function showMobileToast(text) {
+  let toast = document.getElementById("mobile-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "mobile-toast";
+    toast.className = "mobile-toast";
+    // Insert after mobile-hud in game-shell
+    const hud = document.getElementById("mobile-hud");
+    if (hud && hud.parentNode) {
+      hud.parentNode.insertBefore(toast, hud.nextSibling);
+    } else {
+      document.getElementById("game-shell").appendChild(toast);
+    }
+  }
+
+  toast.textContent = text;
+  toast.classList.remove("mobile-toast-hide");
+  toast.classList.add("mobile-toast-show");
+
+  if (__toastTimer) clearTimeout(__toastTimer);
+  __toastTimer = setTimeout(() => {
+    toast.classList.remove("mobile-toast-show");
+    toast.classList.add("mobile-toast-hide");
+  }, 2000);
 }
 
 function ensureRouteCostLayer() {
@@ -1179,7 +1217,7 @@ function renderHandInto(container, player, cls = "hand-card") {
     }
     if (player.lastDrawColor === stack.color && cls === "mobile-hand-peek-card") {
       el.style.setProperty("--glow-colour", GLOW_COLOURS[stack.color] || "rgba(255,255,255,0.7)");
-      el.classList.add("card-glow");
+      el.classList.add("card-glow-steady");
     }
     el.innerHTML = `
       <div class="card-name">${stack.color}</div>
@@ -1426,13 +1464,7 @@ function renderDiscardPile(container, discardPile) {
       } else {
         card.style.background = `linear-gradient(180deg, ${colours[0]} 0%, ${colours[1]} 100%)`;
       }
-      // Only show colour name on top card
-      if (i === topCards.length - 1) {
-        const label = document.createElement("span");
-        label.className = "pile-card-label";
-        label.textContent = colour;
-        card.appendChild(label);
-      }
+      // No label on discard cards — colour is visible from the gradient
       wrapper.appendChild(card);
     });
   }
@@ -1615,7 +1647,9 @@ function renderRouteModalOptionStage() {
 function openRouteModal(routeId) {
   const playability = getRoutePlayability(routeId);
   if (!playability.playable) {
-    updateStatus(playability.reason);
+    // Only toast affordability / connectivity errors, not hover noise
+    const isBlocker = playability.reason.includes("enough") || playability.reason.includes("connect");
+    updateStatus(playability.reason, isBlocker ? TOAST_NOTABLE : TOAST_SILENT);
     return;
   }
 
@@ -1719,7 +1753,7 @@ async function confirmRouteModalPlay() {
   app.state.selectedRouteId = null;
   closeRouteModal();
   renderAll();
-  updateStatus(`${currentPlayerName} claimed ${formatRouteName(routeId)} and moved to ${formatNodeName(toNode)}.`);
+  updateStatus(`${currentPlayerName} → ${formatNodeName(toNode)}`, TOAST_NOTABLE);
 
   await animateTokenAlongRoute(currentPlayerName, routeId, fromNode, toNode);
   completeDestinationIfNeeded(currentPlayerName);
@@ -1822,15 +1856,15 @@ function completeDestinationIfNeeded(playerName) {
   player.previousNode = null;
 
   if (player.completedCount > 5) {
-    updateStatus(`${playerName} returned to Didcot and wins the local prototype.`);
+    updateStatus(`${playerName} wins!`, TOAST_NOTABLE);
     setTimeout(() => showEndScreen(playerName), 800);
   } else {
     const nextTarget = getCurrentTargetForPlayer(player);
     if (player.completedCount >= 5) {
-      updateStatus(`${playerName} completed five destinations. Final target: ${formatNodeName(nextTarget)}.`);
+      updateStatus(`Five done! Head to ${formatNodeName(nextTarget)}`, TOAST_NOTABLE);
     } else {
       const nextDestination = app.destinationData.destinations[nextTarget];
-      updateStatus(`${playerName} reached ${formatNodeName(target)}. Next target revealed: ${formatNodeName(nextTarget)}.`);
+      updateStatus(`✓ ${formatNodeName(target)}! Next: ${formatNodeName(nextTarget)}`, TOAST_NOTABLE);
       openDestinationReveal(
         nextDestination?.title || formatNodeName(nextTarget),
         nextDestination?.description || "",
@@ -1968,17 +2002,17 @@ function animateCardDraw(colour) {
 }
 
 function triggerCardGlow(colour) {
-  // Find the card in the peek strip and add a glow class
   const peek = document.getElementById("mobile-hand-peek");
   if (!peek) return;
-  const cards = peek.querySelectorAll(".mobile-hand-peek-card");
-  cards.forEach(card => {
+  // Remove steady glow from all cards first
+  peek.querySelectorAll(".mobile-hand-peek-card").forEach(card => {
+    card.classList.remove("card-glow-steady");
+  });
+  // Add steady glow only to the latest drawn colour
+  peek.querySelectorAll(".mobile-hand-peek-card").forEach(card => {
     if (card.classList.contains(colour)) {
-      card.classList.remove("card-glow");
-      // Force reflow
-      void card.offsetWidth;
       card.style.setProperty("--glow-colour", GLOW_COLOURS[colour] || "rgba(255,255,255,0.7)");
-      card.classList.add("card-glow");
+      card.classList.add("card-glow-steady");
     }
   });
 }
@@ -2004,7 +2038,7 @@ async function drawCardForCurrentPlayer() {
 
   player.hand.push(card);
   player.lastDrawColor = card;
-  updateStatus(`${currentPlayerName} drew ${card}.`);
+  updateStatus(`${currentPlayerName} drew ${card}.`); // silent on mobile
   closeMobileSheet();
   renderAll();
 
