@@ -921,8 +921,7 @@ function endTurn() {
     // Multiplayer — always alternate, push to Firebase
     app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
     renderAll();
-    if (app.__incrementLocalVersion) app.__incrementLocalVersion();
-    import("./room.js").then(m => m.pushState(app.roomCode, app.state));
+    import("./room.js").then(m => { m.pushState(app.roomCode, app.state); m.updateRoomHud(app); });
   } else if (app.state.controlledHero) {
     // Solo dev mode — stay on controlled hero
     app.state.currentPlayer = app.state.controlledHero;
@@ -1787,7 +1786,8 @@ async function confirmRouteModalPlay() {
   completeDestinationIfNeeded(currentPlayerName);
   renderAll();
 
-  if (!app.state.controlledHero) {
+  // In multiplayer always end turn after claiming; in solo only if no controlledHero
+  if (app.roomCode || !app.state.controlledHero) {
     endTurn();
   }
 }
@@ -2093,7 +2093,8 @@ async function drawCardForCurrentPlayer() {
     requestAnimationFrame(() => triggerCardGlow(card));
   }
 
-  if (!app.state.controlledHero) {
+  // In multiplayer always end turn after drawing; in solo only if no controlledHero
+  if (app.roomCode || !app.state.controlledHero) {
     endTurn();
   }
 }
