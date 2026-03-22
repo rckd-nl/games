@@ -18,9 +18,9 @@
  * v2.9.0 — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.10.3");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.10.4");
 
-const APP_VERSION = "v2.10.3";
+const APP_VERSION = "v2.10.4";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -209,31 +209,48 @@ function clientToSvgPoint(cx,cy) {
 }
 
 // ─── Desktop scale-to-fit ─────────────────────────────────────────────────────
-// Scales #game-shell down on sub-1920 screens so nothing is cut off.
+// Scales #game-shell down on sub-1920 DESKTOP screens so nothing is cut off.
+// IMPORTANT: never apply a CSS transform on mobile — it breaks position:fixed
+// children (HUD, sheet, bottom bar all use fixed positioning).
 function applyDesktopScale() {
   const shell = document.getElementById("game-shell");
   if (!shell) return;
-  const isMobile = window.innerWidth <= 767 ||
+
+  // Treat anything that would use mobile layout as mobile — no transform there
+  const isMobile = window.innerWidth <= 900 ||
     (window.innerHeight <= 500 && window.innerWidth > window.innerHeight);
+
   if (isMobile) {
+    // Always clear any lingering transform on mobile
     shell.style.transform = "";
     shell.style.transformOrigin = "";
+    shell.style.width = "";
+    shell.style.height = "";
+    const app_el = document.getElementById("app");
+    if (app_el) { app_el.style.height = ""; app_el.style.alignItems = ""; }
     return;
   }
+
+  // Desktop only — scale down if viewport is smaller than 1920×1080
   const scaleX = window.innerWidth  / 1920;
   const scaleY = window.innerHeight / 1080;
   const scale  = Math.min(scaleX, scaleY, 1); // never upscale
+
   if (scale < 1) {
     shell.style.transform = `scale(${scale})`;
     shell.style.transformOrigin = "top center";
-    // Shrink #app height so scroll doesn't appear
+    shell.style.width = "1920px";
+    shell.style.height = "1080px";
     const app_el = document.getElementById("app");
-    if (app_el) app_el.style.height = `${1080 * scale}px`;
+    if (app_el) {
+      app_el.style.height = `${1080 * scale}px`;
+      app_el.style.alignItems = "flex-start";
+    }
   } else {
     shell.style.transform = "";
     shell.style.transformOrigin = "";
     const app_el = document.getElementById("app");
-    if (app_el) app_el.style.height = "";
+    if (app_el) { app_el.style.height = ""; app_el.style.alignItems = ""; }
   }
 }
 
