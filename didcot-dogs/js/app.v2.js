@@ -51,7 +51,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.6.0";
+const APP_VERSION = "v2.6.1";
 
 // ─── DEV: Auto-sim for player 2 ──────────────────────────────────────────────
 // Set to true to have the non-controlled player auto-act after ~10s.
@@ -917,7 +917,11 @@ function endTurn() {
   app.state.selectedRouteId = null;
   closeRouteModal();
 
-  if (app.state.controlledHero) {
+  if (app.roomCode) {
+    // Multiplayer: hand to the other player
+    app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
+  } else if (app.state.controlledHero) {
+    // Solo dev mode
     app.state.currentPlayer = app.state.controlledHero;
   } else {
     app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
@@ -925,6 +929,11 @@ function endTurn() {
 
   renderAll();
   scheduleAutoSim();
+
+  // Push turn change to Firebase so other player receives it
+  if (app.roomCode) {
+    import("./room.js").then(m => m.pushState(app.roomCode, app.state));
+  }
 }
 
 function easeInOutCubic(t) {
@@ -2059,7 +2068,7 @@ async function drawCardForCurrentPlayer() {
   updateStatus(`${currentPlayerName} drew ${card}.`); // silent on mobile
   closeMobileSheet();
   renderAll();
-  if (app.roomCode) { import("./room.js").then(m => m.pushState(app.roomCode, app.state)); }
+  if (app.roomCode) { if (app.__incrementLocalVersion) app.__incrementLocalVersion(); import("./room.js").then(m => m.pushState(app.roomCode, app.state)); }
 
   // Trigger glow on the landed card
   if (isMobile) {
@@ -2133,6 +2142,11 @@ function injectMobileBottomBar() {
 // display:none / display:grid in CSS
 // ---------------------------------------------------------------------------
 function showMobileHud() {
+  // Only activate mobile chrome on mobile screen sizes
+  const isMobileViewport = window.innerWidth <= 767 ||
+    (window.innerHeight <= 500 && window.innerWidth > window.innerHeight);
+  if (!isMobileViewport) return;
+
   const hud = document.getElementById("mobile-hud");
   if (hud) hud.classList.add("visible");
   const bar = document.getElementById("mobile-bottom-bar");
