@@ -8,7 +8,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded — VERSION v2.9.9 — room screen should show on load");
 
-const APP_VERSION = "v2.9.9";
+const APP_VERSION = "v2.10.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -592,33 +592,7 @@ function updateRoomHud(){
 function showScreen(id){ const e=document.getElementById(id); if(e) e.classList.add("active"); }
 function hideScreen(id){ const e=document.getElementById(id); if(e) e.classList.remove("active"); }
 
-async function initRoomFlow() {
-  // HARD GUARD: ensure board is not visible, room screen will take over
-  console.log("[DD] initRoomFlow called");
-  const savedCode=sessionStorage.getItem("dd_room_code");
-  const savedHero=sessionStorage.getItem("dd_hero");
-
-  if(savedCode&&savedHero){
-    showScreen("resuming-screen");
-    try {
-      const state=await fbJoinRoom(savedCode);
-      // Only restore if the game was actually in a playing state with valid players
-      if(!state||!state.players||state.phase==="waiting") throw new Error("Game not ready");
-      app.roomCode=savedCode; app.localHero=savedHero;
-      hideScreen("resuming-screen");
-      launchGame(savedHero, restoreArrays(state));
-      return;
-    } catch(e){
-      console.warn("[DD] Resume failed:",e.message);
-      sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
-      hideScreen("resuming-screen");
-    }
-  }
-
-  document.getElementById("hero-overlay").classList.remove("active");
-  showScreen("room-screen");
-  wireRoomButtons();
-}
+// initRoomFlow inlined into init()
 
 function wireRoomButtons(){
   const createBtn=document.getElementById("room-create-btn");
@@ -1405,13 +1379,24 @@ function wireControlButtons(){
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init(){
-  try {
-    injectMobileBottomBar();
-    await initFirebase();
+  injectMobileBottomBar();
+  setupFullscreenButton();
 
+  // Step 1: Firebase first (fast, needed for room flow)
+  try { await initFirebase(); }
+  catch(err){ console.error("[DD] Firebase failed:",err); }
+
+  // Step 2: Show room screen immediately — don't wait for data
+  // This means the UI is responsive before the SVG/JSON loads
+  document.getElementById("hero-overlay").classList.remove("active");
+  showScreen("room-screen");
+  wireRoomButtons();
+
+  // Step 3: Load game data in background
+  try {
     const [rulesData,destinationData]=await Promise.all([
-      loadJson("./data/didcot-dogs-rules.v1.json?v=3"),
-      loadJson("./data/didcot-dogs-destinations.v1.json?v=3")
+      loadJson("./data/didcot-dogs-rules.v1.json?v=4"),
+      loadJson("./data/didcot-dogs-destinations.v1.json?v=4")
     ]);
     const svg=await injectBoardSvg();
     ensureSvgDefs(svg); startClaimGradientAnimation(svg);
@@ -1422,13 +1407,33 @@ async function init(){
     app.state=createInitialLocalState(rulesData);
 
     wireRouteInteractions(); wireControlButtons(); setupMobileBoardGestures();
-    setupFullscreenButton(); resetBoardView();
-    // Don't renderAll() here — initRoomFlow decides what to show first
-    await initRoomFlow();
+    resetBoardView();
+
+    // Check if there's a saved session to resume (only after data loaded)
+    const savedCode=sessionStorage.getItem("dd_room_code");
+    const savedHero=sessionStorage.getItem("dd_hero");
+    if(savedCode&&savedHero){
+      hideScreen("room-screen");
+      showScreen("resuming-screen");
+      try {
+        const state=await fbJoinRoom(savedCode);
+        if(!state||!state.players||state.phase==="waiting") throw new Error("Game not ready");
+        app.roomCode=savedCode; app.localHero=savedHero;
+        hideScreen("resuming-screen");
+        launchGame(savedHero, restoreArrays(state));
+      } catch(e){
+        console.warn("[DD] Resume failed:",e.message);
+        sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
+        hideScreen("resuming-screen");
+        showScreen("room-screen");
+      }
+    }
+    console.log("[DD] Game data loaded. Routes:",Object.keys(rulesData.routes||{}).length);
   } catch(err){
-    console.error("[DD] init error:",err);
-    const sc=document.getElementById("status-chip");
-    if(sc) sc.textContent=`Error: ${err.message}`;
+    console.error("[DD] Data load error:",err);
+    // Show error in room screen so user can still see the UI
+    const errEl=document.getElementById("room-error");
+    if(errEl) errEl.textContent=`Failed to load game data: ${err.message}`;
   }
 }
 
