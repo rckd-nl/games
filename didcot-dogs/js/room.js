@@ -25,6 +25,33 @@ export { pushState };
 
 // ── Room screen UI ────────────────────────────────────────────────────────────
 
+
+export function showResumingScreen() {
+  let el = document.getElementById("resuming-screen");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "resuming-screen";
+    el.className = "resuming-screen active";
+    el.innerHTML = `
+      <div class="resuming-inner">
+        <div class="resuming-title">Resuming game…</div>
+        <div class="waiting-dots">
+          <div class="waiting-dot"></div>
+          <div class="waiting-dot"></div>
+          <div class="waiting-dot"></div>
+        </div>
+      </div>
+    `;
+    document.getElementById("game-shell").appendChild(el);
+  }
+  el.classList.add("active");
+}
+
+export function hideResumingScreen() {
+  const el = document.getElementById("resuming-screen");
+  if (el) el.classList.remove("active");
+}
+
 export function showRoomScreen() {
   const screen = document.getElementById("room-screen");
   if (screen) screen.classList.add("active");
@@ -59,23 +86,33 @@ export async function initRoomFlow(appRef) {
 
   if (savedCode && savedHero) {
     try {
+      // Show a brief "Resuming…" state while we fetch
+      showResumingScreen();
+
       const { state } = await joinRoom(savedCode);
+
+      if (!state || !state.players) {
+        throw new Error("State missing from Firebase");
+      }
+
       appRef.roomCode = savedCode;
       appRef.localHero = savedHero;
       appRef.state = state;
       appRef.state.controlledHero = savedHero;
       registerDisconnect(savedCode, savedHero);
+      hideResumingScreen();
       hideRoomScreen();
       hideWaitingScreen();
-      // Resume directly without hero pick
       document.getElementById("hero-overlay").classList.remove("active");
       appRef.startAs(savedHero);
       startGameSubscription(appRef, savedCode);
       return;
     } catch (e) {
-      // Saved room gone — clear and show room screen fresh
+      console.warn("Failed to resume session:", e.message);
+      // Clear stale session and fall through to room screen
       sessionStorage.removeItem("dd_room_code");
       sessionStorage.removeItem("dd_hero");
+      hideResumingScreen();
     }
   }
 
