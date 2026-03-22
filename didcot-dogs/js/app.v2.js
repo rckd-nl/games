@@ -8,7 +8,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.9.7";
+const APP_VERSION = "v2.9.8";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -613,6 +613,7 @@ async function initRoomFlow() {
     }
   }
 
+  document.getElementById("hero-overlay").classList.remove("active");
   showScreen("room-screen");
   wireRoomButtons();
 }
@@ -1364,15 +1365,21 @@ function wireControlButtons(){
     updateStatus("Game reset.");
     showScreen("room-screen"); wireRoomButtons();
   });
-  document.getElementById("pick-eric-btn")?.addEventListener("click",()=>{
-    app.state=createInitialLocalState(app.rulesData); app.state.controlledHero="Eric";
+  // Pick buttons: .onclick is set by multiplayer flow (creatorPickHero).
+  // If no .onclick is set, fall back to solo pick.
+  // We use a wrapper that checks .onclick first to avoid addEventListener stacking.
+  function soloPickHero(hero) {
+    // Only act as solo pick if multiplayer hasn't taken over this button
+    app.state=createInitialLocalState(app.rulesData); app.state.controlledHero=hero;
     document.getElementById("hero-overlay").classList.remove("active");
-    showMobileHud(); resetBoardView(); showStartToast("Eric"); renderAll(); showCurrentDestinationReveal("Eric");
+    showMobileHud(); resetBoardView(); showStartToast(hero); renderAll(); showCurrentDestinationReveal(hero);
+  }
+  document.getElementById("pick-eric-btn")?.addEventListener("click",()=>{
+    // If .onclick is set (multiplayer), it already fired — don't double-act
+    if(!document.getElementById("pick-eric-btn").onclick) soloPickHero("Eric");
   });
   document.getElementById("pick-tango-btn")?.addEventListener("click",()=>{
-    app.state=createInitialLocalState(app.rulesData); app.state.controlledHero="Tango";
-    document.getElementById("hero-overlay").classList.remove("active");
-    showMobileHud(); resetBoardView(); showStartToast("Tango"); renderAll(); showCurrentDestinationReveal("Tango");
+    if(!document.getElementById("pick-tango-btn").onclick) soloPickHero("Tango");
   });
   document.getElementById("mobile-open-sheet-btn")?.addEventListener("click",drawCardForCurrentPlayer);
   document.getElementById("mobile-reset-view-btn")?.addEventListener("click",toggleMobileSheet);
