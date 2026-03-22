@@ -1,2468 +1,1205 @@
 /*
  * app.v2.js — Didcot Dogs
- *
- * CHANGELOG
- * v2.3.0
- *   - ADDED: Flying card animation on draw — card drops from draw pile
- *     position to hand strip, flips face-up mid-flight, lands then fades.
- *     Uses a fixed-position overlay div with getBoundingClientRect coords.
- *   - ADDED: Colour-matched glow on newly drawn card in hand strip.
- *     Glow uses the card's own colour, pulses for 1.5s then fades.
- *   - ADDED: Landscape mobile forces mobile layout (orientation: landscape
- *     and max-height: 500px) regardless of pixel width.
- * v2.2.0
- *   - ADDED: Visual draw and discard pile stacks in mobile HUD.
- *     Draw pile: 3 stacked face-down dark cards with paw SVG, count badge.
- *     Discard pile: top 3 cards shown face-up with rotations, messy feel.
- *     HUD grid updated to 4-col row 1 (turn + piles), destination row 2,
- *     action buttons row 3.
- * v2.1.0
- *   - IMPROVED: HUD destination pill shows ▸ prefix and completion progress
- *     badge; JS sets data-complete attribute for CSS accent colouring.
- *   - IMPROVED: HUD action buttons are rounded-square (not pill), with inner
- *     shadow for tactile feel; Draw card is accent-coloured, Routes is neutral.
- *   - IMPROVED: Bottom hand peek cards taller (+12px), chevron hint rendered
- *     above strip to signal interactivity.
- *   - IMPROVED: Destination reveal has scale-in + flip animation on open.
- *   - IMPROVED: Route pay modal shows route name/cost prominently at top;
- *     spend cards restored to full hand-card size (64×88px) on mobile.
- *   - IMPROVED: Start toast replaced with full-width identity card — portrait,
- *     name, wipe background — holds for 1.8s then slides out.
- *   - ADDED: End screen overlay (win/lose). Fires after fifth destination.
- *   - FIXED: showMobileHud() also reveals bottom bar + visible-shell on sheet.
- *   - FIXED: openMobileSheet / toggleMobileSheet guard on .visible-shell.
- * v2.0.0
- *   - FIXED: Pan/zoom now manipulates SVG viewBox directly instead of CSS
- *     transform. SVG re-renders as vector at every zoom level — no more
- *     pixellation at any zoom or on any device.
- *   - FIXED: Removed willChange:transform and CSS transform from SVG element.
- *   - FIXED: Board stays centred when fully zoomed out (no drift into empty space).
- *   - FIXED: #mobile-hud CSS had conflicting display:none / display:grid rules;
- *     the HUD is now shown via a class toggle so it reliably appears on mobile.
- *   - FIXED: Board viewport (board-wrap) uses CSS variables for HUD/bar heights
- *     so it can never bleed under them.
- *   - IMPROVED: Pinch-to-zoom focal point is correct — zooms around the midpoint
- *     of the two fingers in SVG coordinate space.
- *   - IMPROVED: Pan is clamped so the board cannot be dragged entirely off screen.
- *   - FIXED: showMobileHud() moved to startGameAs() — HUD is now hidden during
- *     hero-pick screen and only appears once a player is chosen.
- *   - NOTE: All other game logic is unchanged from v1.9.5.
+ * v2.9.0 — Complete rewrite of multiplayer integration.
+ *   All Firebase and room logic inlined here. No dynamic imports.
+ *   Single file = no module resolution failures.
  */
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.8.0";
-
-// ─── DEV: Auto-sim for player 2 ──────────────────────────────────────────────
-// Set to true to have the non-controlled player auto-act after ~10s.
-// Useful for observing one player's full flow without manually switching.
-// Set to false for normal pass-and-play or before Firebase multiplayer.
-const DEV_AUTO_SIM = false;  // flip to true for solo testing without Firebase
+const APP_VERSION = "v2.9.0";
+const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
-const PLAYER_CONFIG = {
-  Eric: {
-    routeClass: "route-claimed-eric",
-    badgeClass: "eric",
-    image: "./assets/eric.png",
-    tokenClass: "eric-token"
-  },
-  Tango: {
-    routeClass: "route-claimed-tango",
-    badgeClass: "tango",
-    image: "./assets/tango.png",
-    tokenClass: "tango-token"
+// ─── Firebase ─────────────────────────────────────────────────────────────────
+// Loaded via top-level await-compatible approach using CDN
+let _db = null;
+let _firebaseSet, _firebaseGet, _firebaseRef, _firebaseOnValue, _firebaseOnDisconnect, _firebaseServerTimestamp;
+
+async function initFirebase() {
+  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+  const fb = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js");
+
+  _firebaseSet          = fb.set;
+  _firebaseGet          = fb.get;
+  _firebaseRef          = fb.ref;
+  _firebaseOnValue      = fb.onValue;
+  _firebaseOnDisconnect = fb.onDisconnect;
+  _firebaseServerTimestamp = fb.serverTimestamp;
+
+  const firebaseApp = initializeApp({
+    apiKey:            "AIzaSyADtUD_GrSbfzss3CeO79VbDeAOmIwxGfI",
+    authDomain:        "didcot-dogs.firebaseapp.com",
+    databaseURL:       "https://didcot-dogs-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId:         "didcot-dogs",
+    storageBucket:     "didcot-dogs.firebasestorage.app",
+    messagingSenderId: "1087104000704",
+    appId:             "1:1087104000704:web:13dbe3478e3a0cc9e5c325"
+  });
+
+  _db = fb.getDatabase(firebaseApp);
+  console.log("[DD] Firebase initialised");
+}
+
+function dbRef(path) { return _firebaseRef(_db, path); }
+
+function generateRoomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+async function fbCreateRoom(state) {
+  let code, attempts = 0;
+  while (attempts < 10) {
+    code = generateRoomCode();
+    const existing = await _firebaseGet(dbRef(`rooms/${code}/state`));
+    if (!existing.exists()) break;
+    attempts++;
   }
+  await _firebaseSet(dbRef(`rooms/${code}/state`), { ...state, phase: "waiting", createdAt: Date.now() });
+  await _firebaseSet(dbRef(`rooms/${code}/presence/Eric`), { connected: true, lastSeen: Date.now() });
+  console.log("[DD] Room created:", code);
+  return code;
+}
+
+async function fbJoinRoom(code) {
+  const snap = await _firebaseGet(dbRef(`rooms/${code}/state`));
+  if (!snap.exists()) throw new Error(`Room ${code} not found.`);
+  const state = snap.val();
+  await _firebaseSet(dbRef(`rooms/${code}/presence/Tango`), { connected: true, lastSeen: Date.now() });
+  if (state.phase === "waiting") {
+    await _firebaseSet(dbRef(`rooms/${code}/state/phase`), "playing");
+  }
+  console.log("[DD] Room joined:", code, "state:", state.currentPlayer, "routes:", Object.keys(state.routes||{}).length);
+  return state;
+}
+
+async function fbPushState(code, state) {
+  if (!code || !_db) return;
+  // Strip device-local fields before writing
+  const { controlledHero, ...firebaseState } = state;
+  try {
+    await _firebaseSet(dbRef(`rooms/${code}/state`), firebaseState);
+  } catch(e) { console.error("[DD] pushState failed:", e); }
+}
+
+function fbSubscribeRoom(code, callback) {
+  _firebaseOnValue(dbRef(`rooms/${code}/state`), snap => {
+    if (snap.exists()) callback(snap.val());
+  });
+}
+
+function fbSubscribePresence(code, callback) {
+  _firebaseOnValue(dbRef(`rooms/${code}/presence`), snap => {
+    callback(snap.val() || {});
+  });
+}
+
+// ─── App state ────────────────────────────────────────────────────────────────
+const app = {
+  rulesData: null, destinationData: null, svg: null, audit: null, state: null,
+  roomCode: null, localHero: null,
+  boardView: { scale:1, panX:0, panY:0, minScale:1, maxScale:3, baseViewBox:null },
+  modal: { routeId:null, chosenColor:null, selectedOptionIndex:null, options:[] }
+};
+
+const PLAYER_CONFIG = {
+  Eric:  { routeClass:"route-claimed-eric",  badgeClass:"eric",  image:"./assets/eric.png",  tokenClass:"eric-token" },
+  Tango: { routeClass:"route-claimed-tango", badgeClass:"tango", image:"./assets/tango.png", tokenClass:"tango-token" }
 };
 
 const ROUTE_COLOUR_HEX = {
-  red: "#d74b4b",
-  orange: "#db7f2f",
-  blue: "#2f6edb",
-  green: "#1e8b4c",
-  black: "#1d1d1d",
-  pink: "#c64f8e",
-  yellow: "#d6b300",
-  grey: "#7a7a7a"
+  red:"#d74b4b", orange:"#db7f2f", blue:"#2f6edb", green:"#1e8b4c",
+  black:"#1d1d1d", pink:"#c64f8e", yellow:"#d6b300", grey:"#7a7a7a"
 };
 
-// ---------------------------------------------------------------------------
-// boardView now stores the current viewBox in SVG-user-unit space.
-// baseViewBox is the full-fit viewBox set after tightenSvgViewBox().
-// We derive the current viewBox from baseViewBox + pan/zoom.
-// ---------------------------------------------------------------------------
-let app = {
-  rulesData: null,
-  destinationData: null,
-  svg: null,
-  audit: null,
-  state: null,
-  roomCode: null,      // Firebase room code
-  localHero: null,     // which hero this device controls
-  boardView: {
-    // zoom level: 1 = fully zoomed out (fit), up to maxScale
-    scale: 1,
-    // pan offset in SVG user units (0,0 = centred / no pan)
-    panX: 0,
-    panY: 0,
-    minScale: 1,
-    maxScale: 3,
-    // set after SVG is loaded and tightened
-    baseViewBox: null   // { x, y, w, h }
-  },
-  modal: {
-    routeId: null,
-    chosenColor: null,
-    selectedOptionIndex: null,
-    options: []
-  }
+const CARD_COLOUR_HEX_MAP = {
+  red:["#f3a3a3","#d74b4b"], orange:["#f2bf95","#db7f2f"], blue:["#8ab5ff","#2f6edb"],
+  green:["#72c78e","#1e8b4c"], black:["#5b5b5b","#1d1d1d"], pink:["#ef9cc3","#c64f8e"],
+  yellow:["#f0dd67","#d6b300"], rainbow:["#f3a3a3","#8ab5ff"]
 };
 
-// ---------------------------------------------------------------------------
-// JSON / text loading
-// ---------------------------------------------------------------------------
+const GLOW_COLOURS = {
+  red:"rgba(215,75,75,0.9)", orange:"rgba(219,127,47,0.9)", blue:"rgba(47,110,219,0.9)",
+  green:"rgba(30,139,76,0.9)", black:"rgba(120,120,120,0.8)", pink:"rgba(198,79,142,0.9)",
+  yellow:"rgba(214,179,0,0.9)", rainbow:"rgba(255,255,255,0.7)"
+};
+
+const TOAST_NOTABLE = Symbol("notable");
+const TOAST_SILENT  = Symbol("silent");
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 async function loadJson(url) {
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Failed to load ${url} (${response.status})`);
-  return response.json();
+  const r = await fetch(url, { cache:"no-store" });
+  if (!r.ok) throw new Error(`Failed to load ${url} (${r.status})`);
+  return r.json();
 }
-
 async function loadText(url) {
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Failed to load ${url} (${response.status})`);
-  return response.text();
+  const r = await fetch(url, { cache:"no-store" });
+  if (!r.ok) throw new Error(`Failed to load ${url} (${r.status})`);
+  return r.text();
 }
-
-// ---------------------------------------------------------------------------
-// SVG element helpers
-// ---------------------------------------------------------------------------
-function createSvgEl(tag, attrs = {}) {
+function createSvgEl(tag, attrs={}) {
   const el = document.createElementNS(SVG_NS, tag);
-  Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+  Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k,v));
   return el;
 }
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+function clamp(v,mn,mx) { return Math.max(mn, Math.min(mx, v)); }
+function shuffle(arr) {
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
 }
-
-// ---------------------------------------------------------------------------
-// ViewBox-based pan/zoom
-//
-// The SVG always fills #board-wrap 100%×100%.  We control what the user sees
-// by changing the viewBox attribute.  At scale=1 the viewBox equals
-// baseViewBox (full board visible, centred).  Zooming in shrinks the viewBox
-// rectangle; panning shifts it.
-// ---------------------------------------------------------------------------
-
-function getBaseViewBox() {
-  return app.boardView.baseViewBox;
+function parseRouteId(id) {
+  const p=id.split("_to_");
+  if(p.length!==2) throw new Error(`Bad route ID: ${id}`);
+  return {a:p[0],b:p[1]};
 }
+function formatNodeName(id) { return String(id).replaceAll("_"," "); }
+function formatRouteName(id) { const {a,b}=parseRouteId(id); return `${formatNodeName(a)} — ${formatNodeName(b)}`; }
+function routesShareNode(a,b) {
+  const pa=parseRouteId(a), pb=parseRouteId(b);
+  return pa.a===pb.a||pa.a===pb.b||pa.b===pb.a||pa.b===pb.b;
+}
+function countCards(hand) {
+  return hand.reduce((acc,c)=>{ acc[c]=(acc[c]||0)+1; return acc; },{});
+}
+function getDisplayRouteColor(c) { return c==="grey"?"wild":c; }
 
-/**
- * Compute the current viewBox from scale + pan and apply it to the SVG.
- * Pan is clamped so the viewport can never wander beyond the board content.
- */
+// ─── Board view ───────────────────────────────────────────────────────────────
 function applyBoardViewTransform() {
-  const svg = app.svg;
-  if (!svg || !app.boardView.baseViewBox) return;
-
-  const base = app.boardView.baseViewBox;
-  const scale = app.boardView.scale;
-
-  // Zoomed viewBox size (smaller = more zoomed in)
-  const vw = base.w / scale;
-  const vh = base.h / scale;
-
-  // Centre of baseViewBox
-  const cx = base.x + base.w / 2;
-  const cy = base.y + base.h / 2;
-
-  // Pan offsets are in SVG units.  Clamp so we can't pan outside the board.
-  const maxPanX = (base.w - vw) / 2;
-  const maxPanY = (base.h - vh) / 2;
-  app.boardView.panX = clamp(app.boardView.panX, -maxPanX, maxPanX);
-  app.boardView.panY = clamp(app.boardView.panY, -maxPanY, maxPanY);
-
-  const vx = cx - vw / 2 + app.boardView.panX;
-  const vy = cy - vh / 2 + app.boardView.panY;
-
-  svg.setAttribute("viewBox", `${vx} ${vy} ${vw} ${vh}`);
+  const svg=app.svg; if(!svg||!app.boardView.baseViewBox) return;
+  const base=app.boardView.baseViewBox, scale=app.boardView.scale;
+  const vw=base.w/scale, vh=base.h/scale;
+  const cx=base.x+base.w/2, cy=base.y+base.h/2;
+  const mX=(base.w-vw)/2, mY=(base.h-vh)/2;
+  app.boardView.panX=clamp(app.boardView.panX,-mX,mX);
+  app.boardView.panY=clamp(app.boardView.panY,-mY,mY);
+  svg.setAttribute("viewBox",`${cx-vw/2+app.boardView.panX} ${cy-vh/2+app.boardView.panY} ${vw} ${vh}`);
 }
-
 function resetBoardView() {
-  app.boardView.scale = 1;
-  app.boardView.panX = 0;
-  app.boardView.panY = 0;
+  app.boardView.scale=1; app.boardView.panX=0; app.boardView.panY=0;
   applyBoardViewTransform();
 }
-
-// ---------------------------------------------------------------------------
-// Convert a point in screen/client pixels (relative to board-wrap) into
-// SVG user units, using the current viewBox.
-// ---------------------------------------------------------------------------
-function clientToSvgPoint(clientX, clientY) {
-  const boardWrap = document.getElementById("board-wrap");
-  const svg = app.svg;
-  if (!boardWrap || !svg) return { x: 0, y: 0 };
-
-  const rect = boardWrap.getBoundingClientRect();
-  const relX = clientX - rect.left;
-  const relY = clientY - rect.top;
-
-  const vb = svg.viewBox.baseVal;
-  const scaleX = vb.width / rect.width;
-  const scaleY = vb.height / rect.height;
-
-  return {
-    x: vb.x + relX * scaleX,
-    y: vb.y + relY * scaleY
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Touch gesture handling — pan (1 finger) and pinch-zoom (2 fingers)
-// ---------------------------------------------------------------------------
-function getTouchDistance(t1, t2) {
-  const dx = t2.clientX - t1.clientX;
-  const dy = t2.clientY - t1.clientY;
-  return Math.hypot(dx, dy);
-}
-
-function getTouchMidpoint(t1, t2) {
-  return {
-    x: (t1.clientX + t2.clientX) / 2,
-    y: (t1.clientY + t2.clientY) / 2
-  };
+function clientToSvgPoint(cx,cy) {
+  const bw=document.getElementById("board-wrap"), svg=app.svg;
+  if(!bw||!svg) return {x:0,y:0};
+  const r=bw.getBoundingClientRect(), vb=svg.viewBox.baseVal;
+  return { x:vb.x+(cx-r.left)*vb.width/r.width, y:vb.y+(cy-r.top)*vb.height/r.height };
 }
 
 function setupMobileBoardGestures() {
-  const boardWrap = document.getElementById("board-wrap");
-  if (!boardWrap) return;
-
-  let mode = null;
-  let startPan = null;   // { svgX, svgY } — SVG point under finger at pan start
-  let startPinch = null;
-
-  function onTouchStart(evt) {
-    if (evt.touches.length === 1) {
-      mode = "pan";
-      const svgPt = clientToSvgPoint(evt.touches[0].clientX, evt.touches[0].clientY);
-      startPan = {
-        fingerClient: { x: evt.touches[0].clientX, y: evt.touches[0].clientY },
-        panXAtStart: app.boardView.panX,
-        panYAtStart: app.boardView.panY
-      };
+  const bw=document.getElementById("board-wrap"); if(!bw) return;
+  let mode=null, startPan=null, startPinch=null;
+  bw.addEventListener("touchstart", evt=>{
+    if(evt.touches.length===1){
+      mode="pan";
+      startPan={fingerClient:{x:evt.touches[0].clientX,y:evt.touches[0].clientY},panXAtStart:app.boardView.panX,panYAtStart:app.boardView.panY};
     }
-
-    if (evt.touches.length === 2) {
-      mode = "pinch";
-      const mid = getTouchMidpoint(evt.touches[0], evt.touches[1]);
-      startPinch = {
-        distance: getTouchDistance(evt.touches[0], evt.touches[1]),
-        scaleAtStart: app.boardView.scale,
-        panXAtStart: app.boardView.panX,
-        panYAtStart: app.boardView.panY,
-        midSvg: clientToSvgPoint(mid.x, mid.y),
-        midClient: mid
-      };
+    if(evt.touches.length===2){
+      mode="pinch";
+      const midX=(evt.touches[0].clientX+evt.touches[1].clientX)/2, midY=(evt.touches[0].clientY+evt.touches[1].clientY)/2, mid={x:midX,y:midY};
+      const dx=evt.touches[1].clientX-evt.touches[0].clientX, dy=evt.touches[1].clientY-evt.touches[0].clientY;
+      startPinch={distance:Math.hypot(dx,dy),scaleAtStart:app.boardView.scale,panXAtStart:app.boardView.panX,panYAtStart:app.boardView.panY,midSvg:clientToSvgPoint(midX,midY),midClient:{x:midX,y:midY}};
     }
-  }
-
-  function onTouchMove(evt) {
+  },{passive:false});
+  bw.addEventListener("touchmove", evt=>{
     evt.preventDefault();
-
-    if (mode === "pan" && evt.touches.length === 1 && startPan) {
-      const base = app.boardView.baseViewBox;
-      const boardWrap = document.getElementById("board-wrap");
-      const rect = boardWrap.getBoundingClientRect();
-
-      // How many SVG units per screen pixel at current zoom
-      const svgUnitsPerPx = (base.w / app.boardView.scale) / rect.width;
-
-      const dx = evt.touches[0].clientX - startPan.fingerClient.x;
-      const dy = evt.touches[0].clientY - startPan.fingerClient.y;
-
-      // Panning right moves the viewport left in SVG space (negative pan)
-      app.boardView.panX = startPan.panXAtStart - dx * svgUnitsPerPx;
-      app.boardView.panY = startPan.panYAtStart - dy * svgUnitsPerPx;
-
+    if(mode==="pan"&&evt.touches.length===1&&startPan){
+      const base=app.boardView.baseViewBox, r=bw.getBoundingClientRect();
+      const spx=(base.w/app.boardView.scale)/r.width;
+      app.boardView.panX=startPan.panXAtStart-(evt.touches[0].clientX-startPan.fingerClient.x)*spx;
+      app.boardView.panY=startPan.panYAtStart-(evt.touches[0].clientY-startPan.fingerClient.y)*((base.h/app.boardView.scale)/r.height);
       applyBoardViewTransform();
     }
-
-    if (mode === "pinch" && evt.touches.length === 2 && startPinch) {
-      const newDistance = getTouchDistance(evt.touches[0], evt.touches[1]);
-      const rawScale = startPinch.scaleAtStart * (newDistance / startPinch.distance);
-      const nextScale = clamp(rawScale, app.boardView.minScale, app.boardView.maxScale);
-
-      // Current midpoint in client space
-      const mid = getTouchMidpoint(evt.touches[0], evt.touches[1]);
-
-      // The SVG point under the pinch midpoint should stay fixed.
-      // We achieve this by adjusting pan so that midSvg stays under mid.
-      const base = app.boardView.baseViewBox;
-      const boardWrap = document.getElementById("board-wrap");
-      const rect = boardWrap.getBoundingClientRect();
-
-      // What is the SVG unit/px ratio at the NEW scale?
-      const svgUnitsPerPxNew = (base.w / nextScale) / rect.width;
-      const svgUnitsPerPxNewY = (base.h / nextScale) / rect.height;
-
-      // Mid in screen space relative to board-wrap centre
-      const relX = mid.x - rect.left - rect.width / 2;
-      const relY = mid.y - rect.top - rect.height / 2;
-
-      // The SVG point under mid at the new scale and pan
-      // We want: midSvg.x = baseCx + panX + relX * svgUnitsPerPxNew
-      // => panX = midSvg.x - baseCx - relX * svgUnitsPerPxNew
-      const baseCx = base.x + base.w / 2;
-      const baseCy = base.y + base.h / 2;
-
-      app.boardView.scale = nextScale;
-      app.boardView.panX = startPinch.midSvg.x - baseCx - relX * svgUnitsPerPxNew;
-      app.boardView.panY = startPinch.midSvg.y - baseCy - relY * svgUnitsPerPxNewY;
-
+    if(mode==="pinch"&&evt.touches.length===2&&startPinch){
+      const dx=evt.touches[1].clientX-evt.touches[0].clientX, dy=evt.touches[1].clientY-evt.touches[0].clientY;
+      const nd=Math.hypot(dx,dy), ns=clamp(startPinch.scaleAtStart*(nd/startPinch.distance),1,3);
+      const midX=(evt.touches[0].clientX+evt.touches[1].clientX)/2, midY=(evt.touches[0].clientY+evt.touches[1].clientY)/2, mid={x:midX,y:midY};
+      const base=app.boardView.baseViewBox, r=bw.getBoundingClientRect();
+      app.boardView.scale=ns;
+      app.boardView.panX=startPinch.midSvg.x-(base.x+base.w/2)-(mid.x-r.left-r.width/2)*(base.w/ns)/r.width;
+      app.boardView.panY=startPinch.midSvg.y-(base.y+base.h/2)-(mid.y-r.top-r.height/2)*(base.h/ns)/r.height;
       applyBoardViewTransform();
     }
-  }
-
-  function onTouchEnd(evt) {
-    if (evt.touches.length === 0) {
-      mode = null;
-      startPan = null;
-      startPinch = null;
-    } else if (evt.touches.length === 1) {
-      // Finger lifted during pinch — switch to pan
-      mode = "pan";
-      startPan = {
-        fingerClient: { x: evt.touches[0].clientX, y: evt.touches[0].clientY },
-        panXAtStart: app.boardView.panX,
-        panYAtStart: app.boardView.panY
-      };
-      startPinch = null;
+  },{passive:false});
+  bw.addEventListener("touchend", evt=>{
+    if(evt.touches.length===0){mode=null;startPan=null;startPinch=null;}
+    else if(evt.touches.length===1){
+      mode="pan";
+      startPan={fingerClient:{x:evt.touches[0].clientX,y:evt.touches[0].clientY},panXAtStart:app.boardView.panX,panYAtStart:app.boardView.panY};
+      startPinch=null;
     }
-  }
-
-  boardWrap.addEventListener("touchstart", onTouchStart, { passive: false });
-  boardWrap.addEventListener("touchmove", onTouchMove, { passive: false });
-  boardWrap.addEventListener("touchend", onTouchEnd);
+  });
 }
 
-// ---------------------------------------------------------------------------
-// SVG injection and setup
-// ---------------------------------------------------------------------------
+// ─── SVG setup ────────────────────────────────────────────────────────────────
 async function injectBoardSvg() {
-  const host = document.getElementById("board-svg-host");
-  const svgText = await loadText("./assets/didcot-dogs-board.v1.svg");
-  host.innerHTML = svgText;
-
-  const svg = host.querySelector("svg");
-  if (!svg) throw new Error("Injected SVG markup did not contain an <svg> element.");
-
-  svg.removeAttribute("width");
-  svg.removeAttribute("height");
-  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  svg.style.background = "transparent";
-  // No CSS transform or willChange — viewBox controls everything now
-  svg.style.willChange = "auto";
-  svg.style.transform = "";
+  const host=document.getElementById("board-svg-host");
+  host.innerHTML=await loadText("./assets/didcot-dogs-board.v1.svg");
+  const svg=host.querySelector("svg");
+  if(!svg) throw new Error("No SVG element found");
+  svg.removeAttribute("width"); svg.removeAttribute("height");
+  svg.setAttribute("preserveAspectRatio","xMidYMid meet");
+  svg.style.background="transparent"; svg.style.willChange="auto"; svg.style.transform="";
   return svg;
 }
 
 function setupFullscreenButton() {
-  const btn = document.getElementById("fullscreen-btn");
-  if (!btn) return;
-
-  btn.addEventListener("click", async () => {
-    const el = document.documentElement;
-    if (!document.fullscreenElement) await el.requestFullscreen();
+  const btn=document.getElementById("fullscreen-btn"); if(!btn) return;
+  btn.addEventListener("click", async()=>{
+    if(!document.fullscreenElement) await document.documentElement.requestFullscreen();
     else await document.exitFullscreen();
   });
 }
 
-function normalizeSvgNodeAliases(svg, rulesData) {
-  const aliases = rulesData.svgNodeIdAliases || {};
-  Object.entries(aliases).forEach(([fromId, toId]) => {
-    const node = svg.querySelector(`#${CSS.escape(fromId)}`);
-    if (!node) return;
-    node.setAttribute("data-original-id", fromId);
-    node.setAttribute("id", toId);
+function normalizeSvgNodeAliases(svg,rulesData) {
+  Object.entries(rulesData.svgNodeIdAliases||{}).forEach(([from,to])=>{
+    const n=svg.querySelector(`#${CSS.escape(from)}`); if(!n) return;
+    n.setAttribute("data-original-id",from); n.setAttribute("id",to);
   });
 }
 
 function ensureSvgDefs(svg) {
-  let defs = svg.querySelector("defs");
-  if (!defs) {
-    defs = createSvgEl("defs");
-    svg.insertBefore(defs, svg.firstChild);
+  let defs=svg.querySelector("defs");
+  if(!defs){defs=createSvgEl("defs");svg.insertBefore(defs,svg.firstChild);}
+  if(!svg.querySelector("#wild-route-gradient")){
+    const g=createSvgEl("linearGradient",{id:"wild-route-gradient",x1:"0%",y1:"0%",x2:"100%",y2:"0%"});
+    [["0%","#ff4d4d"],["18%","#ff9f1c"],["36%","#ffe600"],["54%","#2ec27e"],["72%","#2f6edb"],["90%","#c64f8e"],["100%","#ff4d4d"]].forEach(([o,c])=>g.appendChild(createSvgEl("stop",{offset:o,"stop-color":c})));
+    defs.appendChild(g);
   }
-
-  if (!svg.querySelector("#wild-route-gradient")) {
-    const gradient = createSvgEl("linearGradient", {
-      id: "wild-route-gradient",
-      x1: "0%",
-      y1: "0%",
-      x2: "100%",
-      y2: "0%"
-    });
-
-    [
-      ["0%", "#ff4d4d"],
-      ["18%", "#ff9f1c"],
-      ["36%", "#ffe600"],
-      ["54%", "#2ec27e"],
-      ["72%", "#2f6edb"],
-      ["90%", "#c64f8e"],
-      ["100%", "#ff4d4d"]
-    ].forEach(([offset, color]) => {
-      const stop = createSvgEl("stop", { offset, "stop-color": color });
-      gradient.appendChild(stop);
-    });
-
-    defs.appendChild(gradient);
-  }
-
-  if (!svg.querySelector("#claim-gradient-eric")) {
-    const claimEric = createSvgEl("linearGradient", {
-      id: "claim-gradient-eric",
-      gradientUnits: "userSpaceOnUse",
-      spreadMethod: "repeat",
-      x1: "0",
-      y1: "0",
-      x2: "40",
-      y2: "0"
-    });
-
-    [
-      ["0%", "#19a7ff"],
-      ["90%", "#19a7ff"],
-      ["90%", "#ffffff"],
-      ["100%", "#ffffff"]
-    ].forEach(([offset, color]) => {
-      const stop = createSvgEl("stop", { offset, "stop-color": color });
-      claimEric.appendChild(stop);
-    });
-
-    defs.appendChild(claimEric);
-  }
-
-  if (!svg.querySelector("#claim-gradient-tango")) {
-    const claimTango = createSvgEl("linearGradient", {
-      id: "claim-gradient-tango",
-      gradientUnits: "userSpaceOnUse",
-      spreadMethod: "repeat",
-      x1: "0",
-      y1: "0",
-      x2: "40",
-      y2: "0"
-    });
-
-    [
-      ["0%", "#ffe600"],
-      ["90%", "#ffe600"],
-      ["90%", "#ffffff"],
-      ["100%", "#ffffff"]
-    ].forEach(([offset, color]) => {
-      const stop = createSvgEl("stop", { offset, "stop-color": color });
-      claimTango.appendChild(stop);
-    });
-
-    defs.appendChild(claimTango);
-  }
+  ["eric","tango"].forEach(n=>{
+    const id=`claim-gradient-${n}`;
+    if(!svg.querySelector(`#${id}`)){
+      const g=createSvgEl("linearGradient",{id,gradientUnits:"userSpaceOnUse",spreadMethod:"repeat",x1:"0",y1:"0",x2:"40",y2:"0"});
+      const col=n==="eric"?"#19a7ff":"#ffe600";
+      [["0%",col],["90%",col],["90%","#ffffff"],["100%","#ffffff"]].forEach(([o,c])=>g.appendChild(createSvgEl("stop",{offset:o,"stop-color":c})));
+      defs.appendChild(g);
+    }
+  });
 }
 
-let __claimGradientAnimationHandle = null;
-
+let __claimAnim=null;
 function startClaimGradientAnimation(svg) {
-  if (__claimGradientAnimationHandle) return;
-
-  const ericGradient = svg.querySelector("#claim-gradient-eric");
-  const tangoGradient = svg.querySelector("#claim-gradient-tango");
-  if (!ericGradient || !tangoGradient) return;
-
-  const tick = (now) => {
-    const shift = -((now / 18) % 40);
-    ericGradient.setAttribute("gradientTransform", `translate(${shift} 0)`);
-    tangoGradient.setAttribute("gradientTransform", `translate(${shift} 0)`);
-    __claimGradientAnimationHandle = requestAnimationFrame(tick);
+  if(__claimAnim) return;
+  const eg=svg.querySelector("#claim-gradient-eric"), tg=svg.querySelector("#claim-gradient-tango");
+  if(!eg||!tg) return;
+  const tick=now=>{
+    const s=-((now/18)%40);
+    eg.setAttribute("gradientTransform",`translate(${s} 0)`);
+    tg.setAttribute("gradientTransform",`translate(${s} 0)`);
+    __claimAnim=requestAnimationFrame(tick);
   };
-
-  __claimGradientAnimationHandle = requestAnimationFrame(tick);
-}
-
-function getGroupBBox(group) {
-  if (!group || typeof group.getBBox !== "function") return null;
-  const bbox = group.getBBox();
-  if (!Number.isFinite(bbox.x) || !Number.isFinite(bbox.y) || !Number.isFinite(bbox.width) || !Number.isFinite(bbox.height)) {
-    return null;
-  }
-  return bbox;
-}
-
-function unionBBoxes(boxes) {
-  const valid = boxes.filter(Boolean);
-  if (!valid.length) return null;
-
-  let minX = valid[0].x;
-  let minY = valid[0].y;
-  let maxX = valid[0].x + valid[0].width;
-  let maxY = valid[0].y + valid[0].height;
-
-  for (let i = 1; i < valid.length; i += 1) {
-    const box = valid[i];
-    minX = Math.min(minX, box.x);
-    minY = Math.min(minY, box.y);
-    maxX = Math.max(maxX, box.x + box.width);
-    maxY = Math.max(maxY, box.y + box.height);
-  }
-
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  __claimAnim=requestAnimationFrame(tick);
 }
 
 function tightenSvgViewBox(svg) {
-  const routesGroup = svg.querySelector("#Routes");
-  const labelsGroup = svg.querySelector("#Labels");
-  const nodesGroup = svg.querySelector("#Nodes");
-
-  const contentBox = unionBBoxes([
-    getGroupBBox(routesGroup),
-    getGroupBBox(labelsGroup),
-    getGroupBBox(nodesGroup)
-  ]);
-
-  if (!contentBox) return;
-
-  const paddingX = 68;
-  const paddingY = 60;
-  const x = contentBox.x - paddingX;
-  const y = contentBox.y - paddingY;
-  const width = contentBox.width + paddingX * 2;
-  const height = contentBox.height + paddingY * 2;
-
-  svg.setAttribute("viewBox", `${x} ${y} ${width} ${height}`);
-
-  // Store the fitted viewBox as base for our pan/zoom system
-  app.boardView.baseViewBox = { x, y, w: width, h: height };
+  const groups=["#Routes","#Labels","#Nodes"].map(s=>svg.querySelector(s));
+  const boxes=groups.map(g=>{if(!g||!g.getBBox)return null;const b=g.getBBox();return isFinite(b.x)?b:null;}).filter(Boolean);
+  if(!boxes.length) return;
+  const x=Math.min(...boxes.map(b=>b.x))-68, y=Math.min(...boxes.map(b=>b.y))-60;
+  const x2=Math.max(...boxes.map(b=>b.x+b.width))+68, y2=Math.max(...boxes.map(b=>b.y+b.height))+60;
+  svg.setAttribute("viewBox",`${x} ${y} ${x2-x} ${y2-y}`);
+  app.boardView.baseViewBox={x,y,w:x2-x,h:y2-y};
 }
 
-function getSvgAudit(svg, rulesData) {
-  const routesGroup = svg.querySelector("#Routes");
-  const nodesGroup = svg.querySelector("#Nodes");
-
-  const routeElements = routesGroup ? Array.from(routesGroup.querySelectorAll("[id]")) : [];
-  const nodeElements = nodesGroup ? Array.from(nodesGroup.querySelectorAll("[id]")) : [];
-
-  const routeIds = routeElements.map(el => el.id).filter(Boolean);
-  const nodeIds = nodeElements.map(el => el.id).filter(Boolean);
-
-  return {
-    routeIds,
-    nodeIds,
-    routeCount: routeIds.length,
-    nodeCount: nodeIds.length,
-    missingRuleRoutes: Object.keys(rulesData.routes || {}).filter(routeId => !routeIds.includes(routeId)),
-    missingRuleNodes: (rulesData.nodes || []).filter(nodeId => !nodeIds.includes(nodeId))
-  };
+function getSvgAudit(svg,rulesData) {
+  const rg=svg.querySelector("#Routes"), ng=svg.querySelector("#Nodes");
+  const rids=(rg?[...rg.querySelectorAll("[id]")]:[]).map(e=>e.id).filter(Boolean);
+  const nids=(ng?[...ng.querySelectorAll("[id]")]:[]).map(e=>e.id).filter(Boolean);
+  return {routeIds:rids,nodeIds:nids,routeCount:rids.length,nodeCount:nids.length,
+    missingRuleRoutes:Object.keys(rulesData.routes||{}).filter(id=>!rids.includes(id)),
+    missingRuleNodes:(rulesData.nodes||[]).filter(id=>!nids.includes(id))};
 }
 
-// ---------------------------------------------------------------------------
-// Game logic helpers (unchanged from v1.9.5)
-// ---------------------------------------------------------------------------
-function shuffle(array) {
-  const arr = [...array];
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-function parseRouteId(routeId) {
-  const parts = routeId.split("_to_");
-  if (parts.length !== 2) throw new Error(`Could not parse route ID: ${routeId}`);
-  return { a: parts[0], b: parts[1] };
-}
-
-function formatNodeName(nodeId) {
-  return String(nodeId).replaceAll("_", " ");
-}
-
-function formatRouteName(routeId) {
-  const { a, b } = parseRouteId(routeId);
-  return `${formatNodeName(a)} — ${formatNodeName(b)}`;
-}
-
-function routesShareNode(routeIdA, routeIdB) {
-  const a = parseRouteId(routeIdA);
-  const b = parseRouteId(routeIdB);
-  return a.a === b.a || a.a === b.b || a.b === b.a || a.b === b.b;
-}
-
-function assignRouteColours(routeIds, palette) {
-  const assigned = {};
-  const shuffledRoutes = shuffle(routeIds);
-
-  shuffledRoutes.forEach(routeId => {
-    const blocked = Object.keys(assigned)
-      .filter(otherId => routesShareNode(routeId, otherId))
-      .map(otherId => assigned[otherId]);
-
-    const options = shuffle(palette.filter(color => !blocked.includes(color)));
-    const fallback = shuffle(palette);
-    assigned[routeId] = options[0] || fallback[0];
+// ─── Game state ───────────────────────────────────────────────────────────────
+function assignRouteColours(routeIds,palette) {
+  const assigned={};
+  shuffle(routeIds).forEach(id=>{
+    const blocked=Object.keys(assigned).filter(o=>routesShareNode(id,o)).map(o=>assigned[o]);
+    const opts=shuffle(palette.filter(c=>!blocked.includes(c)));
+    assigned[id]=opts[0]||shuffle(palette)[0];
   });
-
   return assigned;
 }
 
-function rerollSpecificRouteColours(routeIdsToReroll) {
-  const palette = app.rulesData.routeColours || [];
-  routeIdsToReroll.forEach(routeId => {
-    const blocked = Object.keys(app.state.routes)
-      .filter(otherId => otherId !== routeId && routesShareNode(routeId, otherId))
-      .map(otherId => app.state.routes[otherId].colour);
-
-    const options = shuffle(palette.filter(color => !blocked.includes(color)));
-    const fallback = shuffle(palette);
-    app.state.routes[routeId].colour = options[0] || fallback[0];
+function rerollSpecificRouteColours(ids) {
+  const palette=app.rulesData.routeColours||[];
+  ids.forEach(id=>{
+    const blocked=Object.keys(app.state.routes).filter(o=>o!==id&&routesShareNode(id,o)).map(o=>app.state.routes[o].colour);
+    const opts=shuffle(palette.filter(c=>!blocked.includes(c)));
+    app.state.routes[id].colour=opts[0]||shuffle(palette)[0];
   });
 }
 
 function buildDeck(rulesData) {
-  const drawColours = rulesData.drawColours || [];
-  const copiesPerColour = rulesData.deck?.copiesPerColour ?? 8;
-  const rainbowCount = rulesData.deck?.rainbowCount ?? 4;
-
-  const deck = [];
-  drawColours.forEach(color => {
-    for (let i = 0; i < copiesPerColour; i += 1) deck.push(color);
-  });
-  for (let i = 0; i < rainbowCount; i += 1) deck.push("rainbow");
+  const cols=rulesData.drawColours||[], cpc=rulesData.deck?.copiesPerColour??8, rc=rulesData.deck?.rainbowCount??4;
+  const deck=[];
+  cols.forEach(c=>{for(let i=0;i<cpc;i++)deck.push(c);});
+  for(let i=0;i<rc;i++)deck.push("rainbow");
   return shuffle(deck);
 }
 
 function createPlayerState(startNode) {
-  return {
-    currentNode: startNode,
-    previousNode: null,
-    hand: [],
-    journeyRouteIds: [],
-    destinationQueue: [],
-    completedDestinations: [],
-    completedCount: 0,
-    lastDrawColor: null
-  };
+  return {currentNode:startNode,previousNode:null,hand:[],journeyRouteIds:[],destinationQueue:[],completedDestinations:[],completedCount:0,lastDrawColor:null};
 }
 
-function createInitialLocalState(rulesData, controlledHero = null) {
-  const routeIds = Object.keys(rulesData.routes || {});
-  const routeColours = assignRouteColours(routeIds, rulesData.routeColours || []);
-  const shuffledDestinations = shuffle(rulesData.destinationPool || []);
-  const ericQueue = shuffledDestinations.slice(0, 5);
-  const tangoQueue = shuffledDestinations.slice(5, 10);
-
-  const routes = {};
-  routeIds.forEach(routeId => {
-    routes[routeId] = { colour: routeColours[routeId], claimedBy: null };
-  });
-
+function createInitialLocalState(rulesData) {
+  const routeIds=Object.keys(rulesData.routes||{});
+  const colours=assignRouteColours(routeIds,rulesData.routeColours||[]);
+  const dests=shuffle(rulesData.destinationPool||[]);
+  const routes={};
+  routeIds.forEach(id=>{routes[id]={colour:colours[id],claimedBy:null};});
   return {
-    currentPlayer: controlledHero || "Eric",
-    controlledHero,
-    gameStarted: Boolean(controlledHero),
-    selectedRouteId: null,
-    drawPile: buildDeck(rulesData),
-    discardPile: [],
-    justCompleted: null,
-    routes,
-    players: {
-      Eric: { ...createPlayerState(rulesData.startNode), destinationQueue: ericQueue },
-      Tango: { ...createPlayerState(rulesData.startNode), destinationQueue: tangoQueue }
+    currentPlayer:"Eric", gameStarted:false, selectedRouteId:null,
+    drawPile:buildDeck(rulesData), discardPile:[], justCompleted:null, routes,
+    players:{
+      Eric:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(0,5)},
+      Tango:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(5,10)}
     }
   };
 }
 
 function getCurrentTargetForPlayer(player) {
-  if (player.completedCount < 5) return player.destinationQueue[player.completedCount] || null;
-  return app.rulesData.winCondition?.finalDestinationAfterFive || "Didcot";
+  if(player.completedCount<5) return player.destinationQueue[player.completedCount]||null;
+  return app.rulesData.winCondition?.finalDestinationAfterFive||"Didcot";
 }
 
-function getNodeElement(svg, nodeId) {
-  return svg.querySelector(`#${CSS.escape(nodeId)}`);
+// ─── Token / node helpers ─────────────────────────────────────────────────────
+function getNodeElement(svg,nodeId) { return svg.querySelector(`#${CSS.escape(nodeId)}`); }
+function getNodeCenter(svg,nodeId) {
+  const el=getNodeElement(svg,nodeId);
+  if(!el) throw new Error(`Node not found: ${nodeId}`);
+  if(el.tagName.toLowerCase()==="circle") return {x:+el.getAttribute("cx"),y:+el.getAttribute("cy")};
+  const b=el.getBBox(); return {x:b.x+b.width/2,y:b.y+b.height/2};
 }
-
-function getNodeCenter(svg, nodeId) {
-  const el = getNodeElement(svg, nodeId);
-  if (!el) throw new Error(`Node not found in SVG: ${nodeId}`);
-
-  if (el.tagName.toLowerCase() === "circle") {
-    return { x: Number(el.getAttribute("cx")), y: Number(el.getAttribute("cy")) };
-  }
-
-  const box = el.getBBox();
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+function ensureLayer(svg,id) {
+  let l=svg.querySelector(`#${CSS.escape(id)}`);
+  if(!l){l=createSvgEl("g",{id});svg.appendChild(l);}
+  return l;
 }
-
-function ensureLayer(svg, layerId) {
-  let layer = svg.querySelector(`#${CSS.escape(layerId)}`);
-  if (layer) return layer;
-  layer = createSvgEl("g", { id: layerId });
-  svg.appendChild(layer);
-  return layer;
-}
-
 function ensureTokenDefs(svg) {
-  let defs = svg.querySelector("defs");
-  if (!defs) {
-    defs = createSvgEl("defs");
-    svg.insertBefore(defs, svg.firstChild);
-  }
-
-  ["Eric", "Tango"].forEach(playerName => {
-    const clipId = `token-clip-${playerName}`;
-    if (!svg.querySelector(`#${CSS.escape(clipId)}`)) {
-      const clipPath = createSvgEl("clipPath", { id: clipId });
-      const clipCircle = createSvgEl("circle", { cx: "0", cy: "0", r: "20" });
-      clipPath.appendChild(clipCircle);
-      defs.appendChild(clipPath);
+  let defs=svg.querySelector("defs");
+  if(!defs){defs=createSvgEl("defs");svg.insertBefore(defs,svg.firstChild);}
+  ["Eric","Tango"].forEach(n=>{
+    const id=`token-clip-${n}`;
+    if(!svg.querySelector(`#${CSS.escape(id)}`)){
+      const cp=createSvgEl("clipPath",{id});
+      cp.appendChild(createSvgEl("circle",{cx:"0",cy:"0",r:"20"}));
+      defs.appendChild(cp);
     }
   });
 }
-
-function ensurePlayerToken(svg, playerName) {
+function ensurePlayerToken(svg,playerName) {
   ensureTokenDefs(svg);
-  const layer = ensureLayer(svg, "token-layer");
-  let group = svg.querySelector(`#token-${CSS.escape(playerName)}`);
-  if (group) return group;
-
-  group = createSvgEl("g", {
-    id: `token-${playerName}`,
-    class: `token-group ${PLAYER_CONFIG[playerName].tokenClass}`
-  });
-
-  const wobble = createSvgEl("g", { class: "token-wobble" });
-
-  const circle = createSvgEl("circle", {
-    class: "token-circle",
-    r: "24",
-    fill: "#ffffff"
-  });
-
-  const image = createSvgEl("image", {
-    x: "-20",
-    y: "-20",
-    width: "40",
-    height: "40",
-    preserveAspectRatio: "xMidYMid meet",
-    "clip-path": `url(#token-clip-${playerName})`
-  });
-  image.setAttributeNS(XLINK_NS, "xlink:href", PLAYER_CONFIG[playerName].image);
-  image.setAttribute("href", PLAYER_CONFIG[playerName].image);
-
-  wobble.appendChild(circle);
-  wobble.appendChild(image);
-  group.appendChild(wobble);
-  layer.appendChild(group);
-  return group;
+  const layer=ensureLayer(svg,"token-layer");
+  let g=svg.querySelector(`#token-${CSS.escape(playerName)}`);
+  if(g) return g;
+  g=createSvgEl("g",{id:`token-${playerName}`,class:`token-group ${PLAYER_CONFIG[playerName].tokenClass}`});
+  const w=createSvgEl("g",{class:"token-wobble"});
+  w.appendChild(createSvgEl("circle",{class:"token-circle",r:"24",fill:"#ffffff"}));
+  const img=createSvgEl("image",{x:"-20",y:"-20",width:"40",height:"40",preserveAspectRatio:"xMidYMid meet","clip-path":`url(#token-clip-${playerName})`});
+  img.setAttributeNS(XLINK_NS,"xlink:href",PLAYER_CONFIG[playerName].image);
+  img.setAttribute("href",PLAYER_CONFIG[playerName].image);
+  w.appendChild(img); g.appendChild(w); layer.appendChild(g);
+  return g;
 }
-
-function setTokenPosition(svg, playerName, x, y) {
-  const token = ensurePlayerToken(svg, playerName);
-  token.setAttribute("transform", `translate(${x}, ${y})`);
+function setTokenPosition(svg,name,x,y) { ensurePlayerToken(svg,name).setAttribute("transform",`translate(${x},${y})`); }
+function getPlayerTokenAnchor(name,nodeId) {
+  const c=getNodeCenter(app.svg,nodeId);
+  const en=app.state.players.Eric.currentNode, tn=app.state.players.Tango.currentNode;
+  if(en===tn&&nodeId===en) return name==="Eric"?{x:c.x-18,y:c.y}:{x:c.x+18,y:c.y};
+  return {x:c.x,y:c.y};
 }
-
-function getPlayerTokenAnchor(playerName, nodeId) {
-  const center = getNodeCenter(app.svg, nodeId);
-  const ericNode = app.state.players.Eric.currentNode;
-  const tangoNode = app.state.players.Tango.currentNode;
-
-  if (ericNode === tangoNode && nodeId === ericNode) {
-    const sideGap = 18;
-    return playerName === "Eric"
-      ? { x: center.x - sideGap, y: center.y }
-      : { x: center.x + sideGap, y: center.y };
-  }
-
-  return { x: center.x, y: center.y };
-}
-
 function renderTokens() {
-  Object.keys(app.state.players).forEach(playerName => {
-    const player = app.state.players[playerName];
-    const anchor = getPlayerTokenAnchor(playerName, player.currentNode);
-    setTokenPosition(app.svg, playerName, anchor.x, anchor.y);
+  Object.keys(app.state.players).forEach(n=>{
+    const a=getPlayerTokenAnchor(n,app.state.players[n].currentNode);
+    setTokenPosition(app.svg,n,a.x,a.y);
   });
 }
 
-function getConnectedNode(routeId, fromNode) {
-  const { a, b } = parseRouteId(routeId);
-  if (a === fromNode) return b;
-  if (b === fromNode) return a;
-  return null;
+function getConnectedNode(routeId,fromNode) {
+  const {a,b}=parseRouteId(routeId);
+  return a===fromNode?b:b===fromNode?a:null;
 }
 
-function countCards(hand) {
-  return hand.reduce((acc, card) => {
-    acc[card] = (acc[card] || 0) + 1;
-    return acc;
-  }, {});
-}
-
-function getDisplayRouteColor(routeColor) {
-  return routeColor === "grey" ? "wild" : routeColor;
-}
-
-function getPaymentOptionsForColor(routeId, playerName, chosenColor = null) {
-  const player = app.state.players[playerName];
-  const handCounts = countCards(player.hand);
-  const rainbowCount = handCounts.rainbow || 0;
-  const routeColour = app.state.routes[routeId].colour;
-  const cost = app.rulesData.routes[routeId].length;
-
-  const effectiveColor = chosenColor || routeColour;
-  const owned = handCounts[effectiveColor] || 0;
-  const minRainbow = Math.max(0, cost - owned);
-  const maxRainbow = Math.min(rainbowCount, cost);
-
-  const options = [];
-  for (let rainbowUse = minRainbow; rainbowUse <= maxRainbow; rainbowUse += 1) {
-    const useColourCount = cost - rainbowUse;
-    if (useColourCount <= owned) {
-      options.push({
-        colourChoice: effectiveColor,
-        useColourCount,
-        useRainbowCount: rainbowUse
-      });
-    }
+// ─── Payment / playability ────────────────────────────────────────────────────
+function getPaymentOptionsForColor(routeId,playerName,chosenColor=null) {
+  const player=app.state.players[playerName], hc=countCards(player.hand);
+  const rc=hc.rainbow||0, routeColour=app.state.routes[routeId].colour, cost=app.rulesData.routes[routeId].length;
+  const ec=chosenColor||routeColour, owned=hc[ec]||0;
+  const minR=Math.max(0,cost-owned), maxR=Math.min(rc,cost);
+  const options=[];
+  for(let r=minR;r<=maxR;r++){const uc=cost-r;if(uc<=owned)options.push({colourChoice:ec,useColourCount:uc,useRainbowCount:r});}
+  if(routeColour==="grey"){
+    const av=(app.rulesData.drawColours||[]).filter(c=>(hc[c]||0)+rc>=cost);
+    return {affordable:av.length>0,isWild:true,availableColors:av,options};
   }
-
-  if (routeColour === "grey") {
-    const availableColors = (app.rulesData.drawColours || []).filter(color => {
-      const count = handCounts[color] || 0;
-      return count + rainbowCount >= cost;
-    });
-
-    return {
-      affordable: availableColors.length > 0,
-      isWild: true,
-      availableColors,
-      options
-    };
-  }
-
-  return {
-    affordable: options.length > 0,
-    isWild: false,
-    availableColors: [routeColour],
-    options
-  };
+  return {affordable:options.length>0,isWild:false,availableColors:[routeColour],options};
 }
 
 function getRoutePlayability(routeId) {
-  const currentPlayerName = app.state.currentPlayer;
-  const currentPlayer = app.state.players[currentPlayerName];
-  const routeState = app.state.routes[routeId];
-  const connectedNode = getConnectedNode(routeId, currentPlayer.currentNode);
-
-  if (!connectedNode) return { playable: false, reason: "Route does not connect to current node." };
-  if (routeState.claimedBy) return { playable: false, reason: `Already claimed by ${routeState.claimedBy}.` };
-  if (currentPlayer.previousNode && connectedNode === currentPlayer.previousNode) {
-    return { playable: false, reason: "Cannot move straight back to previous node." };
-  }
-
-  const payment = getPaymentOptionsForColor(routeId, currentPlayerName);
-  if (!payment.affordable) {
-    return { playable: false, reason: "Not enough matching cards.", targetNode: connectedNode };
-  }
-
-  return { playable: true, targetNode: connectedNode, payment };
+  const pn=app.state.currentPlayer, player=app.state.players[pn], rs=app.state.routes[routeId];
+  const cn=getConnectedNode(routeId,player.currentNode);
+  if(!cn) return {playable:false,reason:"Route does not connect to current node."};
+  if(rs.claimedBy) return {playable:false,reason:`Already claimed by ${rs.claimedBy}.`};
+  if(player.previousNode&&cn===player.previousNode) return {playable:false,reason:"Cannot move straight back to previous node."};
+  const pay=getPaymentOptionsForColor(routeId,pn);
+  if(!pay.affordable) return {playable:false,reason:"Not enough matching cards.",targetNode:cn};
+  return {playable:true,targetNode:cn,payment:pay};
 }
 
 function drawCard() {
-  if (!app.state.drawPile.length) {
-    if (!app.state.discardPile.length) return null;
-    app.state.drawPile = shuffle(app.state.discardPile);
-    app.state.discardPile = [];
+  if(!app.state.drawPile.length){
+    if(!app.state.discardPile.length) return null;
+    app.state.drawPile=shuffle(app.state.discardPile); app.state.discardPile=[];
   }
   return app.state.drawPile.pop();
 }
 
-function removeSpecificCardsFromHand(hand, colourChoice, useColourCount, useRainbowCount) {
-  const nextHand = [...hand];
-  let colourLeft = useColourCount;
-  let rainbowLeft = useRainbowCount;
-  const spent = [];
+function removeSpecificCardsFromHand(hand,colour,useCol,useRain) {
+  const h=[...hand]; let cl=useCol,rl=useRain; const spent=[];
+  for(let i=h.length-1;i>=0&&cl>0;i--){if(h[i]===colour){spent.push(h[i]);h.splice(i,1);cl--;}}
+  for(let i=h.length-1;i>=0&&rl>0;i--){if(h[i]==="rainbow"){spent.push(h[i]);h.splice(i,1);rl--;}}
+  return {nextHand:h,spent};
+}
 
-  for (let i = nextHand.length - 1; i >= 0 && colourLeft > 0; i -= 1) {
-    if (nextHand[i] === colourChoice) {
-      spent.push(nextHand[i]);
-      nextHand.splice(i, 1);
-      colourLeft -= 1;
-    }
-  }
-
-  for (let i = nextHand.length - 1; i >= 0 && rainbowLeft > 0; i -= 1) {
-    if (nextHand[i] === "rainbow") {
-      spent.push(nextHand[i]);
-      nextHand.splice(i, 1);
-      rainbowLeft -= 1;
-    }
-  }
-
-  return { nextHand, spent };
+// ─── Turn management ──────────────────────────────────────────────────────────
+function isMyTurn() {
+  if(!app.roomCode) return true;
+  if(!app.localHero) return true;
+  return app.state.currentPlayer===app.localHero;
 }
 
 function endTurn() {
-  app.state.selectedRouteId = null;
+  app.state.selectedRouteId=null;
   closeRouteModal();
-
-  if (app.roomCode) {
-    // Multiplayer — always alternate, push to Firebase
-    const prev = app.state.currentPlayer;
-    app.state.currentPlayer = prev === "Eric" ? "Tango" : "Eric";
-    console.log("[Didcot Dogs] endTurn: switched from", prev, "to", app.state.currentPlayer, "pushing to Firebase");
-    renderAll();
-    import("./room.js").then(m => { m.pushState(app.roomCode, app.state); m.updateRoomHud(app); });
-  } else if (app.state.controlledHero) {
-    // Solo dev mode — stay on controlled hero
-    app.state.currentPlayer = app.state.controlledHero;
-    renderAll();
-    scheduleAutoSim();
-  } else {
-    // Pass and play
-    app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
-    renderAll();
+  app.state.currentPlayer=app.state.currentPlayer==="Eric"?"Tango":"Eric";
+  console.log("[DD] endTurn → now",app.state.currentPlayer);
+  renderAll();
+  if(app.roomCode) {
+    fbPushState(app.roomCode, app.state).then(()=>updateRoomHud());
   }
 }
 
-function easeInOutCubic(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+// ─── Animation ────────────────────────────────────────────────────────────────
+function easeInOutCubic(t){return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;}
+
+function getRouteTravelDirection(el,from,to,routeId){
+  const tot=el.getTotalLength(),sp=el.getPointAtLength(0),ep=el.getPointAtLength(tot);
+  const fc=getNodeCenter(app.svg,from),tc=getNodeCenter(app.svg,to);
+  const sf=Math.hypot(sp.x-fc.x,sp.y-fc.y),ef=Math.hypot(ep.x-fc.x,ep.y-fc.y);
+  const st=Math.hypot(sp.x-tc.x,sp.y-tc.y),et=Math.hypot(ep.x-tc.x,ep.y-tc.y);
+  if(sf<=ef&&et<=st) return true;
+  if(ef<sf&&st<et) return false;
+  return parseRouteId(routeId).a===from;
 }
 
-function getRouteTravelDirection(routeEl, fromNode, toNode, routeId) {
-  const total = routeEl.getTotalLength();
-  const startPoint = routeEl.getPointAtLength(0);
-  const endPoint = routeEl.getPointAtLength(total);
-
-  const fromCenter = getNodeCenter(app.svg, fromNode);
-  const toCenter = getNodeCenter(app.svg, toNode);
-
-  const startToFrom = Math.hypot(startPoint.x - fromCenter.x, startPoint.y - fromCenter.y);
-  const endToFrom = Math.hypot(endPoint.x - fromCenter.x, endPoint.y - fromCenter.y);
-  const startToTo = Math.hypot(startPoint.x - toCenter.x, startPoint.y - toCenter.y);
-  const endToTo = Math.hypot(endPoint.x - toCenter.x, endPoint.y - toCenter.y);
-
-  if (startToFrom <= endToFrom && endToTo <= startToTo) return true;
-  if (endToFrom < startToFrom && startToTo < endToTo) return false;
-
-  const parsed = parseRouteId(routeId);
-  return parsed.a === fromNode && parsed.b === toNode;
-}
-
-function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
-  return new Promise(resolve => {
-    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
-    if (!routeEl || typeof routeEl.getTotalLength !== "function") {
-      renderTokens();
-      resolve();
-      return;
+function animateTokenAlongRoute(playerName,routeId,fromNode,toNode){
+  return new Promise(resolve=>{
+    const el=app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if(!el||!el.getTotalLength){renderTokens();resolve();return;}
+    const token=ensurePlayerToken(app.svg,playerName),tot=el.getTotalLength();
+    const fwd=getRouteTravelDirection(el,fromNode,toNode,routeId),start=performance.now();
+    function step(now){
+      const t=Math.min(1,(now-start)/900),e=easeInOutCubic(t),p=fwd?e:1-e;
+      const pt=el.getPointAtLength(tot*p);
+      let x=pt.x,y=pt.y;
+      const op=playerName==="Eric"?"Tango":"Eric";
+      if(app.state.players[op].currentNode===toNode){x+=playerName==="Eric"?-18:18;}
+      token.setAttribute("transform",`translate(${x},${y})`);
+      if(t<1) requestAnimationFrame(step); else resolve();
     }
-
-    const token = ensurePlayerToken(app.svg, playerName);
-    const total = routeEl.getTotalLength();
-    const duration = 900;
-    const forward = getRouteTravelDirection(routeEl, fromNode, toNode, routeId);
-    const start = performance.now();
-
-    function step(now) {
-      const elapsed = now - start;
-      const progress = Math.min(1, elapsed / duration);
-      const eased = easeInOutCubic(progress);
-      const routeProgress = forward ? eased : 1 - eased;
-      const point = routeEl.getPointAtLength(total * routeProgress);
-
-      let x = point.x;
-      let y = point.y;
-
-      const otherPlayer = playerName === "Eric" ? "Tango" : "Eric";
-      if (app.state.players[otherPlayer].currentNode === toNode) {
-        if (playerName === "Eric") x -= 18;
-        if (playerName === "Tango") x += 18;
-      }
-
-      token.setAttribute("transform", `translate(${x}, ${y})`);
-
-      if (progress < 1) requestAnimationFrame(step);
-      else resolve();
-    }
-
     requestAnimationFrame(step);
   });
 }
 
-// Toast priority levels — only NOTABLE events show the mobile toast
-const TOAST_NOTABLE = Symbol("notable");
-const TOAST_SILENT  = Symbol("silent");
-
-let __toastTimer = null;
-
-function updateStatus(text, priority = TOAST_SILENT) {
-  // Always update desktop chip
-  const chip = document.getElementById("status-chip");
-  if (chip) chip.textContent = text;
-
-  // Mobile toast — only show notable events
-  if (priority === TOAST_NOTABLE) {
-    showMobileToast(text);
+// ─── Status / toast ───────────────────────────────────────────────────────────
+let __toastTimer=null;
+function updateStatus(text,priority=TOAST_SILENT){
+  const chip=document.getElementById("status-chip"); if(chip) chip.textContent=text;
+  if(priority===TOAST_NOTABLE) showMobileToast(text);
+}
+function showMobileToast(text){
+  let t=document.getElementById("mobile-toast");
+  if(!t){
+    t=document.createElement("div"); t.id="mobile-toast"; t.className="mobile-toast";
+    const hud=document.getElementById("mobile-hud");
+    if(hud&&hud.parentNode) hud.parentNode.insertBefore(t,hud.nextSibling);
+    else document.getElementById("game-shell").appendChild(t);
   }
+  t.textContent=text; t.classList.remove("mobile-toast-hide"); t.classList.add("mobile-toast-show");
+  if(__toastTimer) clearTimeout(__toastTimer);
+  __toastTimer=setTimeout(()=>{t.classList.remove("mobile-toast-show");t.classList.add("mobile-toast-hide");},2000);
 }
 
-function showMobileToast(text) {
-  let toast = document.getElementById("mobile-toast");
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.id = "mobile-toast";
-    toast.className = "mobile-toast";
-    // Insert after mobile-hud in game-shell
-    const hud = document.getElementById("mobile-hud");
-    if (hud && hud.parentNode) {
-      hud.parentNode.insertBefore(toast, hud.nextSibling);
-    } else {
-      document.getElementById("game-shell").appendChild(toast);
-    }
-  }
-
-  toast.textContent = text;
-  toast.classList.remove("mobile-toast-hide");
-  toast.classList.add("mobile-toast-show");
-
-  if (__toastTimer) clearTimeout(__toastTimer);
-  __toastTimer = setTimeout(() => {
-    toast.classList.remove("mobile-toast-show");
-    toast.classList.add("mobile-toast-hide");
-  }, 2000);
+// ─── Room HUD ─────────────────────────────────────────────────────────────────
+function updateRoomHud(){
+  const hud=document.getElementById("room-hud");
+  if(!hud||!app.roomCode) return;
+  const mine=app.state.currentPlayer===app.localHero;
+  hud.style.display="flex";
+  hud.innerHTML=`
+    <span class="room-hud-code">Room: <strong>${app.roomCode}</strong></span>
+    <span class="room-hud-player">You: <strong>${app.localHero||"?"}</strong></span>
+    <span class="room-hud-turn ${mine?"room-hud-turn-mine":"room-hud-turn-theirs"}">
+      ${mine?"YOUR TURN":`${app.state.currentPlayer}'s turn…`}
+    </span>`;
 }
 
-function ensureRouteCostLayer() {
-  return ensureLayer(app.svg, "route-cost-layer");
-}
+// ─── Room screen ──────────────────────────────────────────────────────────────
+function showScreen(id){ const e=document.getElementById(id); if(e) e.classList.add("active"); }
+function hideScreen(id){ const e=document.getElementById(id); if(e) e.classList.remove("active"); }
 
-function handleRouteSelection(routeId) {
-  app.state.selectedRouteId = routeId;
-  renderAll();
-  handleRouteHover(routeId);
-  openRouteModal(routeId);
-}
+async function initRoomFlow() {
+  const savedCode=sessionStorage.getItem("dd_room_code");
+  const savedHero=sessionStorage.getItem("dd_hero");
 
-function renderRouteCostBadges() {
-  const layer = ensureRouteCostLayer();
-  layer.innerHTML = "";
-
-  Object.keys(app.rulesData.routes || {}).forEach(routeId => {
-    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
-    if (!routeEl || app.state.routes[routeId].claimedBy) return;
-    if (typeof routeEl.getTotalLength !== "function") return;
-
-    const len = routeEl.getTotalLength();
-    const mid = routeEl.getPointAtLength(len / 2);
-    const routeColour = app.state.routes[routeId].colour;
-    const isWild = routeColour === "grey";
-    const hex = ROUTE_COLOUR_HEX[routeColour] || "#7a7a7a";
-    const cost = app.rulesData.routes[routeId].length;
-
-    const group = createSvgEl("g", {
-      class: "route-cost-badge",
-      transform: `translate(${mid.x}, ${mid.y})`,
-      "data-route-id": routeId
-    });
-    group.style.cursor = "pointer";
-
-    const circle = createSvgEl("circle", {
-      r: "12",
-      fill: "#ffffff",
-      stroke: isWild ? "#c64f8e" : hex
-    });
-
-    const text = createSvgEl("text", {
-      x: "0",
-      y: "0",
-      fill: isWild ? "#c64f8e" : hex,
-      "text-anchor": "middle",
-      "dominant-baseline": "middle",
-      "alignment-baseline": "middle"
-    });
-    text.textContent = String(cost);
-    text.setAttribute("dy", "0.02em");
-
-    group.appendChild(circle);
-    group.appendChild(text);
-
-    group.addEventListener("click", evt => {
-      evt.stopPropagation();
-      handleRouteSelection(routeId);
-    });
-
-    group.addEventListener("mouseenter", evt => {
-      evt.stopPropagation();
-      handleRouteHover(routeId);
-    });
-
-    group.addEventListener("mouseleave", () => {
-      updateStatus("Choose one action: draw a card or click a route to play it.");
-    });
-
-    layer.appendChild(group);
-  });
-}
-
-function renderRoutes() {
-  const routeIds = Object.keys(app.rulesData.routes || {});
-  const selectedRouteId = app.state.selectedRouteId;
-
-  routeIds.forEach(routeId => {
-    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
-    if (!routeEl) return;
-
-    routeEl.classList.remove("route-claimed-eric", "route-claimed-tango", "route-eligible", "route-selected", "route-blocked");
-
-    const routeState = app.state.routes[routeId];
-    const routeColor = routeState.colour;
-    const baseColour = ROUTE_COLOUR_HEX[routeColor] || "#7a7a7a";
-
-    routeEl.style.strokeWidth = "8";
-    routeEl.style.cursor = "pointer";
-    routeEl.style.stroke = routeColor === "grey" ? "url(#wild-route-gradient)" : baseColour;
-
-    if (routeState.claimedBy) {
-      routeEl.classList.add(PLAYER_CONFIG[routeState.claimedBy].routeClass);
+  if(savedCode&&savedHero){
+    showScreen("resuming-screen");
+    try {
+      const state=await fbJoinRoom(savedCode);
+      if(!state||!state.players) throw new Error("No state");
+      app.roomCode=savedCode; app.localHero=savedHero;
+      hideScreen("resuming-screen");
+      launchGame(savedHero, state);
       return;
+    } catch(e){
+      console.warn("[DD] Resume failed:",e.message);
+      sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
+      hideScreen("resuming-screen");
     }
+  }
 
-    const playability = getRoutePlayability(routeId);
+  showScreen("room-screen");
+  wireRoomButtons();
+}
 
-    if (playability.playable) {
-      routeEl.classList.add("route-eligible");
-    } else if (
-      playability.reason !== "Route does not connect to current node." &&
-      !getConnectedNode(routeId, app.state.players[app.state.currentPlayer].currentNode)
-    ) {
-      routeEl.classList.add("route-blocked");
-    }
+function wireRoomButtons(){
+  const createBtn=document.getElementById("room-create-btn");
+  const joinBtn=document.getElementById("room-join-btn");
+  const joinInput=document.getElementById("room-join-input");
+  const errorEl=document.getElementById("room-error");
 
-    if (selectedRouteId === routeId) {
-      routeEl.classList.add("route-selected");
+  createBtn.addEventListener("click", async()=>{
+    createBtn.disabled=true; createBtn.textContent="Creating…"; errorEl.textContent="";
+    try {
+      // Build canonical state — route colours randomised ONCE here
+      const state=createInitialLocalState(app.rulesData);
+      state.currentPlayer="Eric";
+      const code=await fbCreateRoom(state);
+      app.roomCode=code; app.localHero="Eric";
+      sessionStorage.setItem("dd_room_code",code); sessionStorage.setItem("dd_hero","Eric");
+
+      // Show waiting screen with code
+      const codeEl=document.getElementById("waiting-code");
+      if(codeEl) codeEl.textContent=code;
+      hideScreen("room-screen"); showScreen("waiting-screen");
+
+      // Watch for Tango joining
+      let started=false;
+      fbSubscribePresence(code, presence=>{
+        if(presence?.Tango?.connected&&!started){
+          started=true;
+          hideScreen("waiting-screen");
+          launchGame("Eric", state);
+        }
+      });
+    } catch(err){
+      errorEl.textContent=err.message;
+      createBtn.disabled=false; createBtn.textContent="Create game";
     }
   });
 
+  joinBtn.addEventListener("click", async()=>{
+    const code=(joinInput.value||"").toUpperCase().trim();
+    if(code.length!==4){ errorEl.textContent="Enter a 4-character code."; return; }
+    joinBtn.disabled=true; joinBtn.textContent="Joining…"; errorEl.textContent="";
+    try {
+      const state=await fbJoinRoom(code);
+      app.roomCode=code; app.localHero="Tango";
+      sessionStorage.setItem("dd_room_code",code); sessionStorage.setItem("dd_hero","Tango");
+      hideScreen("room-screen");
+      launchGame("Tango", state);
+    } catch(err){
+      errorEl.textContent=err.message;
+      joinBtn.disabled=false; joinBtn.textContent="Join";
+    }
+  });
+
+  joinInput.addEventListener("keydown",e=>{if(e.key==="Enter")joinBtn.click();});
+  joinInput.addEventListener("input",()=>{joinInput.value=joinInput.value.toUpperCase();});
+}
+
+function launchGame(hero, firebaseState){
+  console.log("[DD] launchGame hero:",hero,"routes:",Object.keys(firebaseState.routes||{}).length,"deck:",firebaseState.drawPile?.length,"currentPlayer:",firebaseState.currentPlayer);
+
+  // Apply canonical Firebase state
+  app.state={...firebaseState, controlledHero:hero};
+  app.localHero=hero;
+
+  // Hide hero overlay, show identity card, start board
+  document.getElementById("hero-overlay").classList.remove("active");
+  showMobileHud();
+  resetBoardView();
+  showStartToast(hero);
+  renderAll();
+  showCurrentDestinationReveal(hero);
+  updateRoomHud();
+
+  // Subscribe to remote changes — skip first (own state echo)
+  let skipFirst=true;
+  fbSubscribeRoom(app.roomCode, remoteState=>{
+    if(!remoteState||!remoteState.players) return;
+    if(skipFirst){ skipFirst=false; return; }
+    console.log("[DD] Remote state received, currentPlayer:",remoteState.currentPlayer,"localHero:",hero);
+    app.state={...remoteState, controlledHero:hero};
+    renderAll();
+    updateRoomHud();
+  });
+}
+
+// ─── Rendering ────────────────────────────────────────────────────────────────
+function ensureRouteCostLayer(){ return ensureLayer(app.svg,"route-cost-layer"); }
+
+function handleRouteSelection(routeId){
+  app.state.selectedRouteId=routeId; renderAll();
+  handleRouteHover(routeId); openRouteModal(routeId);
+}
+
+function renderRouteCostBadges(){
+  const layer=ensureRouteCostLayer(); layer.innerHTML="";
+  Object.keys(app.rulesData.routes||{}).forEach(routeId=>{
+    const el=app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if(!el||app.state.routes[routeId].claimedBy) return;
+    if(!el.getTotalLength) return;
+    const len=el.getTotalLength(), mid=el.getPointAtLength(len/2);
+    const rc=app.state.routes[routeId].colour, wild=rc==="grey";
+    const hex=ROUTE_COLOUR_HEX[rc]||"#7a7a7a", cost=app.rulesData.routes[routeId].length;
+    const g=createSvgEl("g",{class:"route-cost-badge",transform:`translate(${mid.x},${mid.y})`,"data-route-id":routeId});
+    g.style.cursor="pointer";
+    g.appendChild(createSvgEl("circle",{r:"12",fill:"#ffffff",stroke:wild?"#c64f8e":hex}));
+    const txt=createSvgEl("text",{x:"0",y:"0",fill:wild?"#c64f8e":hex,"text-anchor":"middle","dominant-baseline":"middle"});
+    txt.textContent=String(cost); txt.setAttribute("dy","0.02em"); g.appendChild(txt);
+    g.addEventListener("click",evt=>{evt.stopPropagation();handleRouteSelection(routeId);});
+    g.addEventListener("mouseenter",evt=>{evt.stopPropagation();handleRouteHover(routeId);});
+    g.addEventListener("mouseleave",()=>updateStatus("Choose one action: draw a card or click a route to play it."));
+    layer.appendChild(g);
+  });
+}
+
+function renderRoutes(){
+  Object.keys(app.rulesData.routes||{}).forEach(routeId=>{
+    const el=app.svg.querySelector(`#${CSS.escape(routeId)}`); if(!el) return;
+    el.classList.remove("route-claimed-eric","route-claimed-tango","route-eligible","route-selected","route-blocked");
+    const rs=app.state.routes[routeId], rc=rs.colour;
+    el.style.strokeWidth="8"; el.style.cursor="pointer";
+    el.style.stroke=rc==="grey"?"url(#wild-route-gradient)":ROUTE_COLOUR_HEX[rc]||"#7a7a7a";
+    if(rs.claimedBy){el.classList.add(PLAYER_CONFIG[rs.claimedBy].routeClass);return;}
+    const play=getRoutePlayability(routeId);
+    if(play.playable) el.classList.add("route-eligible");
+    if(app.state.selectedRouteId===routeId) el.classList.add("route-selected");
+  });
   renderRouteCostBadges();
 }
 
-function renderTurnBadge() {
-  const badge = document.getElementById("turn-player-badge");
-  if (!badge) return;
-  badge.className = `player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
-  badge.textContent = `${app.state.currentPlayer} to play`;
+function renderTurnBadge(){
+  const b=document.getElementById("turn-player-badge"); if(!b) return;
+  b.className=`player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
+  b.textContent=`${app.state.currentPlayer} to play`;
 }
 
-function renderCounts() {
-  const drawEl = document.getElementById("draw-pile-count");
-  const discardEl = document.getElementById("discard-pile-count");
-  if (drawEl) drawEl.textContent = app.state.drawPile.length;
-  if (discardEl) discardEl.textContent = app.state.discardPile.length;
+function renderCounts(){
+  const d=document.getElementById("draw-pile-count"), dc=document.getElementById("discard-pile-count");
+  if(d) d.textContent=app.state.drawPile.length;
+  if(dc) dc.textContent=app.state.discardPile.length;
 }
 
-function renderSelectedRouteCard() {
-  const card = document.getElementById("selected-route-card");
-  if (!card) return;
-
-  const routeId = app.state.selectedRouteId;
-  card.className = "selected-route-card";
-
-  if (!routeId) {
-    card.textContent = "No route selected.";
-    return;
-  }
-
-  const routeColour = getDisplayRouteColor(app.state.routes[routeId].colour);
-  const cost = app.rulesData.routes[routeId].length;
-  const playability = getRoutePlayability(routeId);
-
-  if (playability.playable) {
+function renderSelectedRouteCard(){
+  const card=document.getElementById("selected-route-card"); if(!card) return;
+  const routeId=app.state.selectedRouteId; card.className="selected-route-card";
+  if(!routeId){card.textContent="No route selected.";return;}
+  const rc=getDisplayRouteColor(app.state.routes[routeId].colour), cost=app.rulesData.routes[routeId].length;
+  const play=getRoutePlayability(routeId);
+  if(play.playable){
     card.classList.add("valid");
-    card.innerHTML = `
-      <strong>${formatRouteName(routeId)}</strong><br>
-      Colour: ${routeColour}<br>
-      Cost: ${cost}<br>
-      Destination node if played: ${formatNodeName(playability.targetNode)}
-    `;
+    card.innerHTML=`<strong>${formatRouteName(routeId)}</strong><br>Colour: ${rc}<br>Cost: ${cost}<br>→ ${formatNodeName(play.targetNode)}`;
   } else {
     card.classList.add("invalid");
-    card.innerHTML = `
-      <strong>${formatRouteName(routeId)}</strong><br>
-      Colour: ${routeColour}<br>
-      Cost: ${cost}<br>
-      ${playability.reason}
-    `;
+    card.innerHTML=`<strong>${formatRouteName(routeId)}</strong><br>${play.reason}`;
   }
 }
 
-function getHandStacks(hand) {
-  const counts = countCards(hand);
-  const order = ["red", "orange", "blue", "green", "black", "pink", "yellow", "rainbow"];
-  return order
-    .filter(color => (counts[color] || 0) > 0)
-    .map(color => ({ color, count: counts[color] }));
+function getHandStacks(hand){
+  const counts=countCards(hand);
+  return ["red","orange","blue","green","black","pink","yellow","rainbow"].filter(c=>counts[c]>0).map(c=>({color:c,count:counts[c]}));
 }
 
-function renderHandInto(container, player, cls = "hand-card") {
-  container.innerHTML = "";
-  const stacks = getHandStacks(player.hand);
-
-  if (!stacks.length) {
-    const empty = document.createElement("div");
-    empty.className = "panel-copy";
-    empty.textContent = "No cards yet.";
-    container.appendChild(empty);
-    return;
-  }
-
-  stacks.forEach(stack => {
-    const el = document.createElement("div");
-    el.className = `${cls} ${stack.color}`;
-    if (player.lastDrawColor === stack.color && cls === "hand-card") {
-      el.classList.add("draw-in");
-    }
-    if (player.lastDrawColor === stack.color && cls === "mobile-hand-peek-card") {
-      el.style.setProperty("--glow-colour", GLOW_COLOURS[stack.color] || "rgba(255,255,255,0.7)");
+function renderHandInto(container,player,cls="hand-card"){
+  container.innerHTML="";
+  const stacks=getHandStacks(player.hand);
+  if(!stacks.length){const e=document.createElement("div");e.className="panel-copy";e.textContent="No cards yet.";container.appendChild(e);return;}
+  stacks.forEach(s=>{
+    const el=document.createElement("div"); el.className=`${cls} ${s.color}`;
+    if(player.lastDrawColor===s.color&&cls==="hand-card") el.classList.add("draw-in");
+    if(player.lastDrawColor===s.color&&cls==="mobile-hand-peek-card"){
+      el.style.setProperty("--glow-colour",GLOW_COLOURS[s.color]||"rgba(255,255,255,0.7)");
       el.classList.add("card-glow-steady");
     }
-    el.innerHTML = `
-      <div class="card-name">${stack.color}</div>
-      <div class="card-count">${stack.count}</div>
-    `;
+    el.innerHTML=`<div class="card-name">${s.color}</div><div class="card-count">${s.count}</div>`;
     container.appendChild(el);
   });
 }
 
-function renderActiveHand() {
-  const wrap = document.getElementById("active-hand");
-  if (!wrap) return;
-  const player = app.state.players[app.state.currentPlayer];
-  renderHandInto(wrap, player, "hand-card");
-  player.lastDrawColor = null;
+function renderActiveHand(){
+  const wrap=document.getElementById("active-hand"); if(!wrap) return;
+  const player=app.state.players[app.state.currentPlayer];
+  renderHandInto(wrap,player,"hand-card"); player.lastDrawColor=null;
 }
 
-function renderPlayerSummary() {
-  const wrap = document.getElementById("player-summary-wrap");
-  if (!wrap) return;
-
-  wrap.innerHTML = "";
-
-  ["Eric", "Tango"].forEach(playerName => {
-    const player = app.state.players[playerName];
-    const target = getCurrentTargetForPlayer(player);
-    const card = document.createElement("div");
-    card.className = `player-summary-card${app.state.currentPlayer === playerName ? " active" : ""}`;
-    card.innerHTML = `
-      <div class="player-summary-name">${playerName}</div>
-      <div class="player-summary-meta">
-        Current node: ${formatNodeName(player.currentNode)}<br>
-        Previous node: ${player.previousNode ? formatNodeName(player.previousNode) : "—"}<br>
-        Hand size: ${player.hand.length}<br>
-        Completed: ${Math.min(player.completedCount, 5)}/5<br>
-        Active target: ${target ? formatNodeName(target) : "—"}
-      </div>
-    `;
+function renderPlayerSummary(){
+  const wrap=document.getElementById("player-summary-wrap"); if(!wrap) return;
+  wrap.innerHTML="";
+  ["Eric","Tango"].forEach(n=>{
+    const p=app.state.players[n], t=getCurrentTargetForPlayer(p);
+    const card=document.createElement("div");
+    card.className=`player-summary-card${app.state.currentPlayer===n?" active":""}`;
+    card.innerHTML=`<div class="player-summary-name">${n}</div><div class="player-summary-meta">Node: ${formatNodeName(p.currentNode)}<br>Hand: ${p.hand.length}<br>Done: ${Math.min(p.completedCount,5)}/5<br>Target: ${t?formatNodeName(t):"—"}</div>`;
     wrap.appendChild(card);
   });
 }
 
-function createDestinationActiveCard(title, body, flip = false) {
-  const el = document.createElement("div");
-  el.className = "destination-card active-card";
-  if (flip) el.classList.add("flip-in");
-  el.innerHTML = `
-    <div class="destination-title">${title}</div>
-    <div class="destination-body">${body}</div>
-  `;
-  return el;
-}
-
-function createDestinationQuestionCard() {
-  const el = document.createElement("div");
-  el.className = "destination-card hidden-card";
-  el.textContent = "?";
-  return el;
-}
-
-function createDestinationCompletedCard(title) {
-  const el = document.createElement("div");
-  el.className = "destination-card completed-card";
-  el.innerHTML = `<div class="destination-title">✓ ${title}</div>`;
-  return el;
-}
-
-function buildDestinationSequenceElement(playerName, showFlip = true) {
-  const player = app.state.players[playerName];
-  const sequence = document.createElement("div");
-  sequence.className = "destination-sequence";
-
-  const title = document.createElement("div");
-  title.className = "sequence-title";
-  title.textContent = `${playerName} routes`;
-
-  const grid = document.createElement("div");
-  grid.className = "destination-card-grid";
-
-  for (let i = 0; i < 5; i += 1) {
-    const destinationId = player.destinationQueue[i];
-    const destination = app.destinationData.destinations[destinationId];
-    const label = destination ? destination.title : formatNodeName(destinationId);
-    const body = destination?.description || "";
-
-    if (i < player.completedCount) {
-      grid.appendChild(createDestinationCompletedCard(label));
-    } else if (i === player.completedCount && player.completedCount < 5) {
-      const shouldFlip = showFlip && app.state.justCompleted?.playerName === playerName;
-      grid.appendChild(createDestinationActiveCard(label, body, shouldFlip));
-    } else {
-      grid.appendChild(createDestinationQuestionCard());
-    }
+function buildDestinationSequenceElement(playerName,showFlip=true){
+  const player=app.state.players[playerName];
+  const seq=document.createElement("div"); seq.className="destination-sequence";
+  const title=document.createElement("div"); title.className="sequence-title"; title.textContent=`${playerName} routes`;
+  const grid=document.createElement("div"); grid.className="destination-card-grid";
+  for(let i=0;i<5;i++){
+    const did=player.destinationQueue[i], dest=app.destinationData.destinations[did];
+    const label=dest?dest.title:formatNodeName(did), body=dest?.description||"";
+    let el;
+    if(i<player.completedCount){el=document.createElement("div");el.className="destination-card completed-card";el.innerHTML=`<div class="destination-title">✓ ${label}</div>`;}
+    else if(i===player.completedCount&&player.completedCount<5){
+      el=document.createElement("div");el.className="destination-card active-card";
+      if(showFlip&&app.state.justCompleted?.playerName===playerName)el.classList.add("flip-in");
+      el.innerHTML=`<div class="destination-title">${label}</div><div class="destination-body">${body}</div>`;
+    } else {el=document.createElement("div");el.className="destination-card hidden-card";el.textContent="?";}
+    grid.appendChild(el);
   }
-
-  sequence.appendChild(title);
-  sequence.appendChild(grid);
-  return sequence;
+  seq.appendChild(title); seq.appendChild(grid); return seq;
 }
 
-function renderDestinationSequences() {
-  const wrap = document.getElementById("destination-sequences");
-  if (!wrap) return;
-  wrap.innerHTML = "";
-  wrap.appendChild(buildDestinationSequenceElement(app.state.currentPlayer, true));
+function renderDestinationSequences(){
+  const wrap=document.getElementById("destination-sequences"); if(!wrap) return;
+  wrap.innerHTML=""; wrap.appendChild(buildDestinationSequenceElement(app.state.currentPlayer,true));
 }
 
-function renderTargetPulse() {
-  // Clear from all elements first
-  app.svg.querySelectorAll(".target-node-pulse").forEach(el => el.classList.remove("target-node-pulse"));
+function renderTargetPulse(){
+  app.svg.querySelectorAll(".target-node-pulse").forEach(e=>e.classList.remove("target-node-pulse"));
+  const tid=getCurrentTargetForPlayer(app.state.players[app.state.currentPlayer]); if(!tid) return;
+  app.svg.querySelectorAll(`#${CSS.escape(tid)}`).forEach(e=>e.classList.add("target-node-pulse"));
+}
 
-  const targetNodeId = getCurrentTargetForPlayer(app.state.players[app.state.currentPlayer]);
-  if (!targetNodeId) return;
+function renderDebug(audit){
+  const d=document.getElementById("left-debug"); if(!d) return;
+  d.innerHTML=`<div class="debug-list">
+    <div><strong>Version:</strong> ${APP_VERSION}</div>
+    <div><strong>Room:</strong> ${app.roomCode||"solo"}</div>
+    <div><strong>Hero:</strong> ${app.localHero||app.state.controlledHero||"—"}</div>
+    <div><strong>Turn:</strong> ${app.state.currentPlayer}</div>
+    <div><strong>My turn:</strong> ${isMyTurn()}</div>
+    <div><strong>SVG nodes:</strong> ${audit.nodeCount} routes: ${audit.routeCount}</div>
+  </div>`;
+}
 
-  // Query ALL elements with this ID — covers both the circle in #Nodes
-  // and the text in #Labels (SVG allows duplicate IDs across groups).
-  // Using querySelectorAll so both always pulse together.
-  app.svg.querySelectorAll(`#${CSS.escape(targetNodeId)}`).forEach(el => {
-    el.classList.add("target-node-pulse");
+// Card piles
+const PAW_SVG=`<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" style="width:18px;height:18px;opacity:0.22"><ellipse cx="20" cy="26" rx="9" ry="7" fill="white"/><ellipse cx="11" cy="19" rx="4.5" ry="3.5" fill="white"/><ellipse cx="29" cy="19" rx="4.5" ry="3.5" fill="white"/><ellipse cx="15" cy="13" rx="3.5" ry="2.8" fill="white"/><ellipse cx="25" cy="13" rx="3.5" ry="2.8" fill="white"/></svg>`;
+
+function seededRotation(seed,i){let h=0;for(let j=0;j<seed.length;j++)h=(Math.imul(31,h)+seed.charCodeAt(j))|0;return[-14,-8,-4,4,9,15][Math.abs(h+i)%6];}
+
+function renderDrawPile(container,count){
+  container.innerHTML="";
+  const w=document.createElement("div"); w.className="pile-wrap";
+  const sc=Math.min(count,3);
+  for(let i=0;i<sc;i++){const c=document.createElement("div");c.className="pile-card pile-card-back";c.style.setProperty("--pile-offset",`${i*-2}px`);c.style.setProperty("--pile-rot",`${(i-1)*3}deg`);if(i===sc-1)c.innerHTML=PAW_SVG;w.appendChild(c);}
+  if(!count){const e=document.createElement("div");e.className="pile-card pile-card-empty";w.appendChild(e);}
+  const b=document.createElement("div");b.className="pile-badge";b.textContent=count;w.appendChild(b);
+  const l=document.createElement("div");l.className="pile-label";l.textContent="Draw";w.appendChild(l);
+  container.appendChild(w);
+}
+
+function renderDiscardPile(container,discardPile){
+  container.innerHTML="";
+  const w=document.createElement("div"); w.className="pile-wrap";
+  const count=discardPile.length, top=discardPile.slice(-3);
+  if(!count){const e=document.createElement("div");e.className="pile-card pile-card-empty";w.appendChild(e);}
+  else{top.forEach((col,i)=>{const c=document.createElement("div");c.className="pile-card pile-card-face";c.style.setProperty("--pile-rot",`${seededRotation(col+i,i)}deg`);c.style.setProperty("--pile-offset",`${i*-1}px`);const cols=CARD_COLOUR_HEX_MAP[col]||["#5b5b5b","#1d1d1d"];c.style.background=col==="rainbow"?"linear-gradient(135deg,#f3a3a3,#f0dd67,#72c78e,#8ab5ff,#ef9cc3)":`linear-gradient(180deg,${cols[0]},${cols[1]})`;w.appendChild(c);});}
+  const b=document.createElement("div");b.className="pile-badge pile-badge-discard";b.textContent=count;w.appendChild(b);
+  const l=document.createElement("div");l.className="pile-label";l.textContent="Discard";w.appendChild(l);
+  container.appendChild(w);
+}
+
+function renderMobileRoutesPanel(){
+  const hudTurn=document.getElementById("mobile-hud-turn");
+  const hudDraw=document.getElementById("mobile-hud-draw");
+  const hudDest=document.getElementById("mobile-hud-destination");
+  const drawBtn=document.getElementById("mobile-open-sheet-btn");
+  const routesBtn=document.getElementById("mobile-reset-view-btn");
+  const sheetSum=document.getElementById("mobile-sheet-summary");
+  const sheetHand=document.getElementById("mobile-sheet-hand");
+  const sheetDest=document.getElementById("mobile-sheet-destination");
+  const handPeek=document.getElementById("mobile-hand-peek");
+  if(!hudTurn||!hudDraw||!hudDest||!handPeek) return;
+
+  const pn=app.state.currentPlayer, player=app.state.players[pn];
+  const tid=getCurrentTargetForPlayer(player);
+  const ttitle=tid?(app.destinationData.destinations[tid]?.title||formatNodeName(tid)):"—";
+  const comp=Math.min(player.completedCount,5);
+
+  hudTurn.textContent=pn;
+  renderDrawPile(hudDraw,app.state.drawPile.length);
+  const discEl=document.getElementById("mobile-hud-discard");
+  if(discEl) renderDiscardPile(discEl,app.state.discardPile);
+
+  hudDest.innerHTML=`<span class="hud-dest-progress">${comp}/5</span><span class="hud-dest-label">▸ ${ttitle}</span>`;
+  hudDest.dataset.complete=comp>=5?"true":"false";
+  if(drawBtn) drawBtn.textContent="Draw card";
+  if(routesBtn) routesBtn.textContent="Routes";
+
+  const bar=document.getElementById("mobile-bottom-bar");
+  if(bar&&!bar.querySelector(".hand-chevron")){const ch=document.createElement("div");ch.className="hand-chevron";ch.innerHTML="&#8964;";bar.insertBefore(ch,bar.firstChild);}
+
+  if(sheetSum) sheetSum.innerHTML=`<div class="player-summary-card active"><div class="player-summary-name">${pn}</div><div class="player-summary-meta">Node: ${formatNodeName(player.currentNode)}<br>Done: ${comp}/5<br>Target: ${ttitle}</div></div>`;
+  if(sheetHand){sheetHand.innerHTML="";renderHandInto(sheetHand,player,"mobile-hand-peek-card");}
+  if(sheetDest){sheetDest.innerHTML="";sheetDest.appendChild(buildDestinationSequenceElement(pn,false));}
+  handPeek.innerHTML=""; renderHandInto(handPeek,player,"mobile-hand-peek-card");
+}
+
+function renderButtons(){const b=document.getElementById("draw-card-btn");if(b)b.disabled=false;}
+
+function renderAll(){
+  renderTurnBadge(); renderCounts(); renderSelectedRouteCard(); renderActiveHand();
+  renderPlayerSummary(); renderDestinationSequences(); renderRoutes(); renderTokens();
+  renderTargetPulse(); renderDebug(app.audit); renderButtons(); renderMobileRoutesPanel();
+  if(app.roomCode) updateRoomHud();
+}
+
+// ─── Modals ───────────────────────────────────────────────────────────────────
+function openMobileSheet(){const s=document.getElementById("mobile-sheet");if(s&&s.classList.contains("visible-shell"))s.classList.add("expanded");}
+function closeMobileSheet(){const s=document.getElementById("mobile-sheet");if(s)s.classList.remove("expanded");}
+function toggleMobileSheet(){const s=document.getElementById("mobile-sheet");if(!s||!s.classList.contains("visible-shell"))return;s.classList.toggle("expanded");}
+
+function buildCardChoiceEl(color,active=false){
+  const card=document.createElement("button");card.type="button";
+  card.className=`route-colour-choice-card ${color}${active?" active":""}`;card.textContent=color;return card;
+}
+
+function renderRouteModalOptionStage(){
+  const routeId=app.modal.routeId;
+  const body=document.getElementById("route-modal-body"),confirmBtn=document.getElementById("route-modal-confirm");
+  body.innerHTML=""; confirmBtn.disabled=app.modal.selectedOptionIndex===null;
+  document.getElementById("route-modal-subtitle").textContent=`Choose how to pay for ${formatRouteName(routeId)}.`;
+  const list=document.createElement("div"); list.className="route-option-list";
+  app.modal.options.forEach((opt,idx)=>{
+    const row=document.createElement("button");row.className=`route-option-row${app.modal.selectedOptionIndex===idx?" active":""}`;row.type="button";
+    const lbl=document.createElement("div");lbl.className="route-option-row-label";lbl.textContent=`Option ${idx+1}`;
+    const cards=document.createElement("div");cards.className="route-option-row-cards";
+    [...Array(opt.useColourCount).fill(opt.colourChoice),...Array(opt.useRainbowCount).fill("rainbow")].forEach(c=>{const cd=document.createElement("div");cd.className=`route-spend-card ${c}`;cd.textContent=c;cards.appendChild(cd);});
+    row.appendChild(lbl);row.appendChild(cards);
+    row.addEventListener("click",()=>{app.modal.selectedOptionIndex=idx;renderRouteModalOptionStage();});
+    list.appendChild(row);
   });
+  body.appendChild(list); confirmBtn.disabled=app.modal.selectedOptionIndex===null;
 }
 
-function renderDebug(audit) {
-  const leftDebug = document.getElementById("left-debug");
-  if (!leftDebug) return;
-
-  leftDebug.innerHTML = `
-    <div class="debug-list">
-      <div><strong>Version:</strong> ${APP_VERSION}</div>
-      <div><strong>Local hero:</strong> ${app.state.controlledHero || "not chosen"}</div>
-      <div><strong>Current player:</strong> ${app.state.currentPlayer}</div>
-      <div><strong>Total SVG nodes:</strong> ${audit.nodeCount}</div>
-      <div><strong>Total SVG routes:</strong> ${audit.routeCount}</div>
-      <div><strong>Missing rule nodes:</strong> ${audit.missingRuleNodes.length}</div>
-      <div><strong>Missing rule routes:</strong> ${audit.missingRuleRoutes.length}</div>
-    </div>
-  `;
-}
-
-function openMobileSheet() {
-  const sheet = document.getElementById("mobile-sheet");
-  if (sheet && sheet.classList.contains("visible-shell")) sheet.classList.add("expanded");
-}
-
-function closeMobileSheet() {
-  const sheet = document.getElementById("mobile-sheet");
-  if (sheet) sheet.classList.remove("expanded");
-}
-
-function toggleMobileSheet() {
-  const sheet = document.getElementById("mobile-sheet");
-  if (!sheet || !sheet.classList.contains("visible-shell")) return;
-  sheet.classList.toggle("expanded");
-}
-
-
-// ─── CARD PILE VISUALS ────────────────────────────────────────────────────────
-
-const CARD_COLOUR_HEX_MAP = {
-  red:     ["#f3a3a3", "#d74b4b"],
-  orange:  ["#f2bf95", "#db7f2f"],
-  blue:    ["#8ab5ff", "#2f6edb"],
-  green:   ["#72c78e", "#1e8b4c"],
-  black:   ["#5b5b5b", "#1d1d1d"],
-  pink:    ["#ef9cc3", "#c64f8e"],
-  yellow:  ["#f0dd67", "#d6b300"],
-  rainbow: ["#f3a3a3", "#8ab5ff"]
-};
-
-const PAW_SVG = `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" style="width:18px;height:18px;opacity:0.22">
-  <ellipse cx="20" cy="26" rx="9" ry="7" fill="white"/>
-  <ellipse cx="11" cy="19" rx="4.5" ry="3.5" fill="white"/>
-  <ellipse cx="29" cy="19" rx="4.5" ry="3.5" fill="white"/>
-  <ellipse cx="15" cy="13" rx="3.5" ry="2.8" fill="white"/>
-  <ellipse cx="25" cy="13" rx="3.5" ry="2.8" fill="white"/>
-</svg>`;
-
-// Stable rotation from a string seed (so discard rotations don't jitter on re-render)
-function seededRotation(seed, index) {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
-  const angles = [-14, -8, -4, 4, 9, 15];
-  return angles[Math.abs(h + index) % angles.length];
-}
-
-function renderDrawPile(container, count) {
-  container.innerHTML = "";
-
-  const wrapper = document.createElement("div");
-  wrapper.className = "pile-wrap";
-
-  // Stack of 3 face-down cards (or fewer if pile small)
-  const stackCount = Math.min(count, 3);
-  for (let i = 0; i < stackCount; i++) {
-    const card = document.createElement("div");
-    card.className = "pile-card pile-card-back";
-    card.style.setProperty("--pile-offset", `${i * -2}px`);
-    card.style.setProperty("--pile-rot", `${(i - 1) * 3}deg`);
-    if (i === stackCount - 1) {
-      // Top card gets the paw
-      card.innerHTML = PAW_SVG;
-    }
-    wrapper.appendChild(card);
-  }
-
-  if (count === 0) {
-    const empty = document.createElement("div");
-    empty.className = "pile-card pile-card-empty";
-    wrapper.appendChild(empty);
-  }
-
-  // Count badge
-  const badge = document.createElement("div");
-  badge.className = "pile-badge";
-  badge.textContent = count;
-  wrapper.appendChild(badge);
-
-  const label = document.createElement("div");
-  label.className = "pile-label";
-  label.textContent = "Draw";
-  wrapper.appendChild(label);
-
-  container.appendChild(wrapper);
-}
-
-function renderDiscardPile(container, discardPile) {
-  container.innerHTML = "";
-
-  const wrapper = document.createElement("div");
-  wrapper.className = "pile-wrap";
-
-  const count = discardPile.length;
-  const topCards = discardPile.slice(-3); // newest at end = top of visual stack
-
-  if (count === 0) {
-    const empty = document.createElement("div");
-    empty.className = "pile-card pile-card-empty";
-    wrapper.appendChild(empty);
-  } else {
-    topCards.forEach((colour, i) => {
-      const card = document.createElement("div");
-      card.className = "pile-card pile-card-face";
-      const rot = seededRotation(colour + i, i);
-      card.style.setProperty("--pile-rot", `${rot}deg`);
-      card.style.setProperty("--pile-offset", `${i * -1}px`);
-      const colours = CARD_COLOUR_HEX_MAP[colour] || ["#5b5b5b", "#1d1d1d"];
-      if (colour === "rainbow") {
-        card.style.background = "linear-gradient(135deg, #f3a3a3 0%, #f0dd67 25%, #72c78e 50%, #8ab5ff 75%, #ef9cc3 100%)";
-      } else {
-        card.style.background = `linear-gradient(180deg, ${colours[0]} 0%, ${colours[1]} 100%)`;
-      }
-      // No label on discard cards — colour is visible from the gradient
-      wrapper.appendChild(card);
-    });
-  }
-
-  const badge = document.createElement("div");
-  badge.className = "pile-badge pile-badge-discard";
-  badge.textContent = count;
-  wrapper.appendChild(badge);
-
-  const label = document.createElement("div");
-  label.className = "pile-label";
-  label.textContent = "Discard";
-  wrapper.appendChild(label);
-
-  container.appendChild(wrapper);
-}
-
-function renderMobileRoutesPanel() {
-  const hudTurn = document.getElementById("mobile-hud-turn");
-  const hudDraw = document.getElementById("mobile-hud-draw");
-  const hudDestination = document.getElementById("mobile-hud-destination");
-  const drawBtn = document.getElementById("mobile-open-sheet-btn");
-  const routesBtn = document.getElementById("mobile-reset-view-btn");
-  const sheetSummary = document.getElementById("mobile-sheet-summary");
-  const sheetSelectedRoute = document.getElementById("mobile-sheet-selected-route");
-  const sheetActions = document.getElementById("mobile-sheet-actions");
-  const sheetHand = document.getElementById("mobile-sheet-hand");
-  const sheetDestination = document.getElementById("mobile-sheet-destination");
-  const handPeek = document.getElementById("mobile-hand-peek");
-
-  if (!hudTurn || !hudDraw || !hudDestination || !drawBtn || !routesBtn || !sheetSummary || !sheetSelectedRoute || !sheetActions || !sheetHand || !sheetDestination || !handPeek) {
-    return;
-  }
-
-  const currentPlayerName = app.state.currentPlayer;
-  const currentPlayer = app.state.players[currentPlayerName];
-  const currentTargetId = getCurrentTargetForPlayer(currentPlayer);
-  const currentTargetTitle = currentTargetId
-    ? (app.destinationData.destinations[currentTargetId]?.title || formatNodeName(currentTargetId))
-    : "—";
-
-  hudTurn.textContent = `${currentPlayerName}`;
-
-  // Visual pile stacks replace the text draw counter
-  renderDrawPile(hudDraw, app.state.drawPile.length);
-  renderDiscardPile(
-    document.getElementById("mobile-hud-discard") || hudDraw,
-    app.state.discardPile
-  );
-
-  // Render into dedicated discard container if it exists
-  const discardEl = document.getElementById("mobile-hud-discard");
-  if (discardEl) renderDiscardPile(discardEl, app.state.discardPile);
-
-  // Destination pill — show progress badge + target name
-  const completedCount = Math.min(currentPlayer.completedCount, 5);
-  hudDestination.innerHTML = `
-    <span class="hud-dest-progress">${completedCount}/5</span>
-    <span class="hud-dest-label">▸ ${currentTargetTitle}</span>
-  `;
-  hudDestination.dataset.complete = completedCount >= 5 ? "true" : "false";
-
-  drawBtn.textContent = "Draw card";
-  routesBtn.textContent = "Routes";
-
-  // Chevron hint above hand strip
-  const bar = document.getElementById("mobile-bottom-bar");
-  if (bar && !bar.querySelector(".hand-chevron")) {
-    const chev = document.createElement("div");
-    chev.className = "hand-chevron";
-    chev.innerHTML = "&#8964;";
-    bar.insertBefore(chev, bar.firstChild);
-  }
-
-  sheetSummary.innerHTML = `
-    <div class="player-summary-card active">
-      <div class="player-summary-name">${currentPlayerName}</div>
-      <div class="player-summary-meta">
-        Current: ${formatNodeName(currentPlayer.currentNode)}<br>
-        Previous: ${currentPlayer.previousNode ? formatNodeName(currentPlayer.previousNode) : "—"}<br>
-        Completed: ${Math.min(currentPlayer.completedCount, 5)}/5<br>
-        Target: ${currentTargetTitle}
-      </div>
-    </div>
-  `;
-
-  sheetSelectedRoute.innerHTML = "";
-  sheetActions.innerHTML = "";
-  sheetHand.innerHTML = "";
-  sheetDestination.innerHTML = "";
-  sheetDestination.appendChild(buildDestinationSequenceElement(currentPlayerName, false));
-
-  handPeek.innerHTML = "";
-  renderHandInto(handPeek, currentPlayer, "mobile-hand-peek-card");
-}
-
-function buildSpendPreviewCards(option) {
-  const items = [];
-  for (let i = 0; i < option.useColourCount; i += 1) items.push(option.colourChoice);
-  for (let i = 0; i < option.useRainbowCount; i += 1) items.push("rainbow");
-  return items;
-}
-
-function renderButtons() {
-  const drawBtn = document.getElementById("draw-card-btn");
-  if (drawBtn) drawBtn.disabled = false;
-}
-
-function renderAll() {
-  renderTurnBadge();
-  renderCounts();
-  renderSelectedRouteCard();
-  renderActiveHand();
-  renderPlayerSummary();
-  renderDestinationSequences();
-  renderRoutes();
-  renderTokens();
-  renderTargetPulse();
-  renderDebug(app.audit);
-  renderButtons();
-  renderMobileRoutesPanel();
-  // Update room HUD if in multiplayer
-  if (app.roomCode) {
-    import("./room.js").then(m => m.updateRoomHud(app));
-  }
-}
-
-function buildCardChoiceEl(color, active = false) {
-  const card = document.createElement("button");
-  card.type = "button";
-  card.className = `route-colour-choice-card ${color}${active ? " active" : ""}`;
-  card.textContent = color === "rainbow" ? "rainbow" : color;
-  return card;
-}
-
-function renderRouteModalOptionStage() {
-  const routeId = app.modal.routeId;
-  const body = document.getElementById("route-modal-body");
-  const subtitle = document.getElementById("route-modal-subtitle");
-  const confirmBtn = document.getElementById("route-modal-confirm");
-
-  body.innerHTML = "";
-  confirmBtn.disabled = app.modal.selectedOptionIndex === null;
-
-  subtitle.textContent = `Choose how to pay for ${formatRouteName(routeId)}.`;
-
-  const optionList = document.createElement("div");
-  optionList.className = "route-option-list";
-
-  app.modal.options.forEach((option, index) => {
-    const row = document.createElement("button");
-    row.className = `route-option-row${app.modal.selectedOptionIndex === index ? " active" : ""}`;
-    row.type = "button";
-
-    const rowLabel = document.createElement("div");
-    rowLabel.className = "route-option-row-label";
-    rowLabel.textContent = `Option ${index + 1}`;
-
-    const rowCards = document.createElement("div");
-    rowCards.className = "route-option-row-cards";
-
-    buildSpendPreviewCards(option).forEach(cardColor => {
-      const card = document.createElement("div");
-      card.className = `route-spend-card ${cardColor}`;
-      card.textContent = cardColor;
-      rowCards.appendChild(card);
-    });
-
-    row.appendChild(rowLabel);
-    row.appendChild(rowCards);
-
-    row.addEventListener("click", () => {
-      app.modal.selectedOptionIndex = index;
-      renderRouteModalOptionStage();
-    });
-
-    optionList.appendChild(row);
-  });
-
-  body.appendChild(optionList);
-  confirmBtn.disabled = app.modal.selectedOptionIndex === null;
-}
-
-function openRouteModal(routeId) {
-  const playability = getRoutePlayability(routeId);
-  if (!playability.playable) {
-    // Only toast affordability / connectivity errors, not hover noise
-    const isBlocker = playability.reason.includes("enough") || playability.reason.includes("connect");
-    updateStatus(playability.reason, isBlocker ? TOAST_NOTABLE : TOAST_SILENT);
-    return;
-  }
-
-  app.modal.routeId = routeId;
-  app.modal.selectedOptionIndex = null;
-  app.modal.chosenColor = null;
-
-  const overlay = document.getElementById("route-modal-overlay");
-  const title = document.getElementById("route-modal-title");
-  const subtitle = document.getElementById("route-modal-subtitle");
-  const body = document.getElementById("route-modal-body");
-  const confirmBtn = document.getElementById("route-modal-confirm");
-
-  title.textContent = formatRouteName(routeId);
-  body.innerHTML = "";
-  confirmBtn.disabled = true;
-
-  // Cost banner — route name + cost prominently at top of body
-  const routeColor = app.state.routes[routeId].colour;
-  const routeCost = app.rulesData.routes[routeId].length;
-  const bannerColour = routeColor === "grey" ? "wild" : routeColor;
-  const banner = document.createElement("div");
-  banner.className = "route-modal-cost-banner";
-  banner.innerHTML = `
-    <span><strong>${formatRouteName(routeId)}</strong><br>
-    <span style="font-size:13px;opacity:0.7">${bannerColour} route</span></span>
-    <span class="route-modal-cost-pip">${routeCost}</span>
-  `;
+function openRouteModal(routeId){
+  const play=getRoutePlayability(routeId);
+  if(!play.playable){updateStatus(play.reason,TOAST_NOTABLE);return;}
+  app.modal.routeId=routeId; app.modal.selectedOptionIndex=null; app.modal.chosenColor=null;
+  const overlay=document.getElementById("route-modal-overlay");
+  document.getElementById("route-modal-title").textContent=formatRouteName(routeId);
+  const body=document.getElementById("route-modal-body"); body.innerHTML="";
+  document.getElementById("route-modal-confirm").disabled=true;
+  const rc=app.state.routes[routeId].colour,cost=app.rulesData.routes[routeId].length;
+  const banner=document.createElement("div");banner.className="route-modal-cost-banner";
+  banner.innerHTML=`<span><strong>${formatRouteName(routeId)}</strong><br><span style="font-size:13px;opacity:0.7">${rc==="grey"?"wild":rc} route</span></span><span class="route-modal-cost-pip">${cost}</span>`;
   body.appendChild(banner);
-
-  if (routeColor === "grey") {
-    const payment = getPaymentOptionsForColor(routeId, app.state.currentPlayer);
-    subtitle.textContent = "Wild route. Choose a colour you want to play with.";
-
-    const row = document.createElement("div");
-    row.className = "route-colour-card-row";
-
-    payment.availableColors.forEach(color => {
-      const card = buildCardChoiceEl(color, app.modal.chosenColor === color);
-      card.addEventListener("click", () => {
-        app.modal.chosenColor = color;
-        app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, color).options;
-        app.modal.selectedOptionIndex = null;
-        renderRouteModalOptionStage();
-      });
+  if(rc==="grey"){
+    const pay=getPaymentOptionsForColor(routeId,app.state.currentPlayer);
+    document.getElementById("route-modal-subtitle").textContent="Wild route. Choose a colour.";
+    const row=document.createElement("div");row.className="route-colour-card-row";
+    pay.availableColors.forEach(color=>{
+      const card=buildCardChoiceEl(color,app.modal.chosenColor===color);
+      card.addEventListener("click",()=>{app.modal.chosenColor=color;app.modal.options=getPaymentOptionsForColor(routeId,app.state.currentPlayer,color).options;app.modal.selectedOptionIndex=null;renderRouteModalOptionStage();});
       row.appendChild(card);
     });
-
     body.appendChild(row);
   } else {
-    app.modal.chosenColor = routeColor;
-    app.modal.options = getPaymentOptionsForColor(routeId, app.state.currentPlayer, routeColor).options;
+    app.modal.chosenColor=rc;
+    app.modal.options=getPaymentOptionsForColor(routeId,app.state.currentPlayer,rc).options;
     renderRouteModalOptionStage();
   }
-
   overlay.classList.add("open");
 }
 
-function closeRouteModal() {
+function closeRouteModal(){
   document.getElementById("route-modal-overlay").classList.remove("open");
-  app.modal.routeId = null;
-  app.modal.chosenColor = null;
-  app.modal.selectedOptionIndex = null;
-  app.modal.options = [];
+  app.modal.routeId=null; app.modal.chosenColor=null; app.modal.selectedOptionIndex=null; app.modal.options=[];
 }
 
-async function confirmRouteModalPlay() {
-  if (!isMyTurn()) return;
-  cancelAutoSim();
-  if (!app.modal.routeId || app.modal.selectedOptionIndex === null) return;
-
-  const routeId = app.modal.routeId;
-  const chosenPayment = app.modal.options[app.modal.selectedOptionIndex];
-  const currentPlayerName = app.state.currentPlayer;
-  const currentPlayer = app.state.players[currentPlayerName];
-  const playability = getRoutePlayability(routeId);
-
-  if (!playability.playable) {
-    closeRouteModal();
-    renderAll();
-    updateStatus(playability.reason);
-    return;
-  }
-
-  const handResult = removeSpecificCardsFromHand(
-    currentPlayer.hand,
-    chosenPayment.colourChoice,
-    chosenPayment.useColourCount,
-    chosenPayment.useRainbowCount
-  );
-
-  currentPlayer.hand = handResult.nextHand;
-  app.state.discardPile.push(...handResult.spent);
-
-  const fromNode = currentPlayer.currentNode;
-  const toNode = getConnectedNode(routeId, fromNode);
-
-  app.state.routes[routeId].claimedBy = currentPlayerName;
-  currentPlayer.previousNode = fromNode;
-  currentPlayer.currentNode = toNode;
-  currentPlayer.journeyRouteIds.push(routeId);
-
-  app.state.selectedRouteId = null;
-  closeRouteModal();
-  renderAll();
-  updateStatus(`${currentPlayerName} → ${formatNodeName(toNode)}`, TOAST_NOTABLE);
-
-  await animateTokenAlongRoute(currentPlayerName, routeId, fromNode, toNode);
-  completeDestinationIfNeeded(currentPlayerName);
-  renderAll();
-
-  // In multiplayer always end turn after claiming; in solo only if no controlledHero
-  if (app.roomCode || !app.state.controlledHero) {
-    endTurn();
-  }
+async function confirmRouteModalPlay(){
+  if(!isMyTurn()) return;
+  if(!app.modal.routeId||app.modal.selectedOptionIndex===null) return;
+  const routeId=app.modal.routeId, pay=app.modal.options[app.modal.selectedOptionIndex];
+  const pn=app.state.currentPlayer, player=app.state.players[pn];
+  const play=getRoutePlayability(routeId);
+  if(!play.playable){closeRouteModal();renderAll();return;}
+  const {nextHand,spent}=removeSpecificCardsFromHand(player.hand,pay.colourChoice,pay.useColourCount,pay.useRainbowCount);
+  player.hand=nextHand; app.state.discardPile.push(...spent);
+  const from=player.currentNode, to=getConnectedNode(routeId,from);
+  app.state.routes[routeId].claimedBy=pn; player.previousNode=from; player.currentNode=to;
+  player.journeyRouteIds.push(routeId);
+  app.state.selectedRouteId=null; closeRouteModal(); renderAll();
+  updateStatus(`${pn} → ${formatNodeName(to)}`,TOAST_NOTABLE);
+  await animateTokenAlongRoute(pn,routeId,from,to);
+  completeDestinationIfNeeded(pn); renderAll();
+  endTurn();
 }
 
-function showStartToast(playerName) {
-  // Build or reuse the identity card overlay
-  let card = document.getElementById("identity-card");
-  if (!card) {
-    card = document.createElement("div");
-    card.id = "identity-card";
-    card.className = "identity-card";
-    document.getElementById("game-shell").appendChild(card);
-  }
-
-  const cfg = PLAYER_CONFIG[playerName];
-  card.innerHTML = `
-    <div class="identity-wipe"></div>
-    <div class="identity-inner">
-      <div class="identity-kicker">YOU ARE</div>
-      <div class="identity-portrait-wrap">
-        <img class="identity-portrait" src="${cfg.image}" alt="${playerName}">
-      </div>
-      <div class="identity-name">${playerName.toUpperCase()}</div>
-    </div>
-  `;
-
-  card.classList.remove("identity-out");
-  card.classList.add("identity-in");
-
-  window.setTimeout(() => {
-    card.classList.remove("identity-in");
-    card.classList.add("identity-out");
-  }, 1800);
+// ─── Start toast / identity card ──────────────────────────────────────────────
+function showStartToast(playerName){
+  let card=document.getElementById("identity-card");
+  if(!card){card=document.createElement("div");card.id="identity-card";card.className="identity-card";document.getElementById("game-shell").appendChild(card);}
+  const cfg=PLAYER_CONFIG[playerName];
+  card.innerHTML=`<div class="identity-wipe"></div><div class="identity-inner"><div class="identity-kicker">YOU ARE</div><div class="identity-portrait-wrap"><img class="identity-portrait" src="${cfg.image}" alt="${playerName}"></div><div class="identity-name">${playerName.toUpperCase()}</div></div>`;
+  card.classList.remove("identity-out"); card.classList.add("identity-in");
+  setTimeout(()=>{card.classList.remove("identity-in");card.classList.add("identity-out");},1800);
 }
 
-function openDestinationReveal(title, body, destinationNumber = null) {
-  const prefix = destinationNumber ? `Destination #${destinationNumber}` : "Destination";
-  document.getElementById("destination-reveal-title").textContent = `${prefix} — ${title}`;
-  document.getElementById("destination-reveal-body").textContent = body;
+function openDestinationReveal(title,body,num=null){
+  const pfx=num?`Destination #${num}`:"Destination";
+  document.getElementById("destination-reveal-title").textContent=`${pfx} — ${title}`;
+  document.getElementById("destination-reveal-body").textContent=body;
   document.getElementById("destination-reveal-overlay").classList.add("open");
 }
-
-function closeDestinationReveal() {
-  document.getElementById("destination-reveal-overlay").classList.remove("open");
+function closeDestinationReveal(){document.getElementById("destination-reveal-overlay").classList.remove("open");}
+function showCurrentDestinationReveal(playerName){
+  const player=app.state.players[playerName], t=getCurrentTargetForPlayer(player);
+  if(!t||player.completedCount>=5) return;
+  const dest=app.destinationData.destinations[t];
+  openDestinationReveal(dest?.title||formatNodeName(t),dest?.description||"",player.completedCount+1);
 }
 
-function showCurrentDestinationReveal(playerName) {
-  const player = app.state.players[playerName];
-  const target = getCurrentTargetForPlayer(player);
-  if (!target || player.completedCount >= 5) return;
-
-  const destination = app.destinationData.destinations[target];
-  const title = destination?.title || formatNodeName(target);
-  const body = destination?.description || "";
-  openDestinationReveal(title, body, player.completedCount + 1);
-}
-
-function startGameAs(playerName) {
-  app.state = createInitialLocalState(app.rulesData, playerName);
-  document.getElementById("hero-overlay").classList.remove("active");
-  showMobileHud();   // only show after hero chosen — hides during pick screen
-  resetBoardView();
-  showStartToast(playerName);
-  renderAll();
-  showCurrentDestinationReveal(playerName);
-  updateStatus(`${playerName} begins. Choose one action: draw a card or click a route to play it.`);
-}
-
-
-// Used by room.js for multiplayer — does NOT create new state (that would
-// re-randomise route colours). Instead uses whatever state is already in
-// app.state (fetched from Firebase). Just handles the UI reveal sequence.
-function startGameMultiplayer(playerName) {
-  console.log("[Didcot Dogs] startGameMultiplayer:", playerName,
-    "routes:", Object.keys(app.state?.routes || {}).length,
-    "drawPile:", app.state?.drawPile?.length);
-  // Don't touch app.state — it came from Firebase
-  app.state.controlledHero = playerName;
-  document.getElementById("hero-overlay").classList.remove("active");
-  showMobileHud();
-  resetBoardView();
-  showStartToast(playerName);
-  renderAll();
-  showCurrentDestinationReveal(playerName);
-}
-
-function completeDestinationIfNeeded(playerName) {
-  const player = app.state.players[playerName];
-  const target = getCurrentTargetForPlayer(player);
-
-  if (!target || player.currentNode !== target) {
-    app.state.justCompleted = null;
-    return false;
-  }
-
-  app.state.justCompleted = { playerName, destinationId: target };
-
-  if (player.completedCount < 5) {
-    player.completedDestinations.push(target);
-    player.completedCount += 1;
+function completeDestinationIfNeeded(playerName){
+  const player=app.state.players[playerName], t=getCurrentTargetForPlayer(player);
+  if(!t||player.currentNode!==t){app.state.justCompleted=null;return false;}
+  app.state.justCompleted={playerName,destinationId:t};
+  if(player.completedCount<5){player.completedDestinations.push(t);player.completedCount++;}
+  else player.completedCount++;
+  [...player.journeyRouteIds].forEach(id=>{app.state.routes[id].claimedBy=null;});
+  rerollSpecificRouteColours([...player.journeyRouteIds]);
+  player.journeyRouteIds=[]; player.previousNode=null;
+  if(player.completedCount>5){
+    updateStatus(`${playerName} wins!`,TOAST_NOTABLE);
+    setTimeout(()=>showEndScreen(playerName),800);
   } else {
-    player.completedCount += 1;
+    const nt=getCurrentTargetForPlayer(player), nd=app.destinationData.destinations[nt];
+    if(player.completedCount>=5) updateStatus(`Five done! Head to ${formatNodeName(nt)}`,TOAST_NOTABLE);
+    else{updateStatus(`✓ ${formatNodeName(t)}! Next: ${formatNodeName(nt)}`,TOAST_NOTABLE);openDestinationReveal(nd?.title||formatNodeName(nt),nd?.description||"",player.completedCount+1);}
   }
-
-  const releasedRoutes = [...player.journeyRouteIds];
-  releasedRoutes.forEach(routeId => {
-    app.state.routes[routeId].claimedBy = null;
-  });
-  rerollSpecificRouteColours(releasedRoutes);
-
-  player.journeyRouteIds = [];
-  player.previousNode = null;
-
-  if (player.completedCount > 5) {
-    updateStatus(`${playerName} wins!`, TOAST_NOTABLE);
-    setTimeout(() => showEndScreen(playerName), 800);
-  } else {
-    const nextTarget = getCurrentTargetForPlayer(player);
-    if (player.completedCount >= 5) {
-      updateStatus(`Five done! Head to ${formatNodeName(nextTarget)}`, TOAST_NOTABLE);
-    } else {
-      const nextDestination = app.destinationData.destinations[nextTarget];
-      updateStatus(`✓ ${formatNodeName(target)}! Next: ${formatNodeName(nextTarget)}`, TOAST_NOTABLE);
-      openDestinationReveal(
-        nextDestination?.title || formatNodeName(nextTarget),
-        nextDestination?.description || "",
-        player.completedCount + 1
-      );
-    }
-  }
-
   return true;
 }
 
-
-// ─── FLYING CARD ANIMATION ────────────────────────────────────────────────────
-// Reads pixel positions of draw pile and hand strip, creates a fixed overlay
-// card that animates from pile to hand, flipping face-up mid-flight.
-
-const GLOW_COLOURS = {
-  red:     "rgba(215,75,75,0.9)",
-  orange:  "rgba(219,127,47,0.9)",
-  blue:    "rgba(47,110,219,0.9)",
-  green:   "rgba(30,139,76,0.9)",
-  black:   "rgba(120,120,120,0.8)",
-  pink:    "rgba(198,79,142,0.9)",
-  yellow:  "rgba(214,179,0,0.9)",
-  rainbow: "rgba(255,255,255,0.7)"
-};
-
-function getDrawPileRect() {
-  const el = document.getElementById("mobile-hud-draw");
-  if (!el) return null;
-  const wrap = el.querySelector(".pile-wrap");
-  return (wrap || el).getBoundingClientRect();
-}
-
-function getHandTargetRect(colour) {
-  // Find the card in the peek strip matching this colour
-  const peek = document.getElementById("mobile-hand-peek");
-  if (!peek) return null;
-  const cards = peek.querySelectorAll(".mobile-hand-peek-card");
-  for (const card of cards) {
-    if (card.classList.contains(colour)) return card.getBoundingClientRect();
-  }
-  // Fallback: bottom-centre of screen
-  return { left: window.innerWidth / 2 - 27, top: window.innerHeight - 90, width: 54, height: 86 };
-}
-
-function animateCardDraw(colour) {
-  return new Promise(resolve => {
-    const fromRect = getDrawPileRect();
-    if (!fromRect) { resolve(); return; }
-
-    // Create overlay card — starts face-down at pile, ends face-up at hand
-    const fly = document.createElement("div");
-    fly.className = "flying-card flying-card-back";
-    fly.style.cssText = `
-      position: fixed;
-      width: 34px;
-      height: 48px;
-      border-radius: 8px;
-      z-index: 9999;
-      pointer-events: none;
-      transform-style: preserve-3d;
-      will-change: transform, top, left, opacity;
-      left: ${fromRect.left + fromRect.width / 2 - 17}px;
-      top: ${fromRect.top + fromRect.height / 2 - 24}px;
-      transition: none;
-    `;
-    document.body.appendChild(fly);
-
-    // After a tick, start the flight
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const toRect = getHandTargetRect(colour);
-        const toLeft = toRect ? toRect.left + toRect.width / 2 - 17 : window.innerWidth / 2 - 17;
-        const toTop  = toRect ? toRect.top  + toRect.height / 2 - 24 : window.innerHeight - 80;
-
-        // Phase 1 (0–50%): travel to destination, still face-down
-        // Phase 2 (50%): flip to face-up (rotateY 90deg midpoint)
-        // Phase 3 (50–100%): continue face-up to land position
-
-        const colours = CARD_COLOUR_HEX_MAP[colour] || ["#5b5b5b", "#1d1d1d"];
-        const faceBg = colour === "rainbow"
-          ? "linear-gradient(135deg, #f3a3a3 0%, #f0dd67 25%, #72c78e 50%, #8ab5ff 75%, #ef9cc3 100%)"
-          : `linear-gradient(180deg, ${colours[0]} 0%, ${colours[1]} 100%)`;
-
-        const duration = 480;
-        const start = performance.now();
-
-        function step(now) {
-          const t = Math.min(1, (now - start) / duration);
-          const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
-
-          const x = fromRect.left + fromRect.width/2  - 17 + (toLeft - (fromRect.left + fromRect.width/2  - 17)) * ease;
-          const y = fromRect.top  + fromRect.height/2 - 24 + (toTop  - (fromRect.top  + fromRect.height/2 - 24)) * ease;
-
-          // Arc — card rises slightly in the middle
-          const arc = Math.sin(t * Math.PI) * -40;
-
-          // Flip at midpoint
-          let rotY = 0;
-          if (t < 0.45) {
-            rotY = 0;
-          } else if (t < 0.55) {
-            // Flip through 90deg
-            rotY = ((t - 0.45) / 0.1) * 90;
-            if (rotY >= 90) {
-              // Switch to face-up appearance
-              fly.classList.remove("flying-card-back");
-              fly.classList.add("flying-card-face");
-              fly.style.background = faceBg;
-            }
-          } else {
-            // Already face-up, continue from -90 back to 0
-            rotY = 90 - ((t - 0.55) / 0.45) * 90;
-          }
-
-          fly.style.left = `${x}px`;
-          fly.style.top  = `${y + arc}px`;
-          fly.style.transform = `rotateY(${rotY}deg) scale(${0.9 + ease * 0.1})`;
-
-          if (t < 1) {
-            requestAnimationFrame(step);
-          } else {
-            // Land: fade out
-            fly.style.transition = "opacity 180ms ease";
-            fly.style.opacity = "0";
-            setTimeout(() => { fly.remove(); resolve(); }, 200);
-          }
-        }
-
-        requestAnimationFrame(step);
-      });
-    });
-  });
-}
-
-function triggerCardGlow(colour) {
-  const peek = document.getElementById("mobile-hand-peek");
-  if (!peek) return;
-  // Remove steady glow from all cards first
-  peek.querySelectorAll(".mobile-hand-peek-card").forEach(card => {
-    card.classList.remove("card-glow-steady");
-  });
-  // Add steady glow only to the latest drawn colour
-  peek.querySelectorAll(".mobile-hand-peek-card").forEach(card => {
-    if (card.classList.contains(colour)) {
-      card.style.setProperty("--glow-colour", GLOW_COLOURS[colour] || "rgba(255,255,255,0.7)");
-      card.classList.add("card-glow-steady");
-    }
-  });
-}
-
-async function drawCardForCurrentPlayer() {
-  if (!isMyTurn()) return;
-  cancelAutoSim();
-  const currentPlayerName = app.state.currentPlayer;
-  const card = drawCard();
-
-  if (!card) {
-    updateStatus("No cards available to draw.");
-    renderAll();
-    return;
-  }
-
-  const player = app.state.players[currentPlayerName];
-
-  // Fire fly animation before mutating state so pile position is still visible
-  const isMobile = window.innerWidth <= 767 ||
-    (window.innerHeight <= 500 && window.innerWidth > window.innerHeight);
-  if (isMobile) {
-    await animateCardDraw(card);
-  }
-
-  player.hand.push(card);
-  player.lastDrawColor = card;
-  updateStatus(`${currentPlayerName} drew ${card}.`); // silent on mobile
-  closeMobileSheet();
-  renderAll();
-  if (app.roomCode) { import("./room.js").then(m => { m.pushState(app.roomCode, app.state); m.updateRoomHud(app); }); }
-
-  // Trigger glow on the landed card
-  if (isMobile) {
-    requestAnimationFrame(() => triggerCardGlow(card));
-  }
-
-  // In multiplayer always end turn after drawing; in solo only if no controlledHero
-  if (app.roomCode || !app.state.controlledHero) {
-    endTurn();
-  }
-}
-
-function handleRouteHover(routeId) {
-  const playability = getRoutePlayability(routeId);
-  const routeColour = getDisplayRouteColor(app.state.routes[routeId].colour);
-  const cost = app.rulesData.routes[routeId].length;
-
-  if (playability.playable) {
-    updateStatus(`${formatRouteName(routeId)} · ${routeColour} · cost ${cost} · eligible`);
-  } else {
-    updateStatus(`${formatRouteName(routeId)} · ${routeColour} · cost ${cost} · ${playability.reason}`);
-  }
-}
-
-function wireRouteInteractions() {
-  Object.keys(app.rulesData.routes || {}).forEach(routeId => {
-    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
-    if (!routeEl) return;
-
-    routeEl.addEventListener("mouseenter", () => {
-      handleRouteHover(routeId);
-    });
-
-    routeEl.addEventListener("mouseleave", () => {
-      updateStatus("Choose one action: draw a card or click a route to play it.");
-    });
-
-    routeEl.addEventListener("click", () => {
-      handleRouteSelection(routeId);
-    });
-  });
-}
-
-function resetLocalGame() {
-  cancelAutoSim();
-  if (app.roomCode) {
-    import("./room.js").then(m => m.clearRoomSession());
-    app.roomCode  = null;
-    app.localHero = null;
-  }
-  app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
-  closeRouteModal();
-  closeDestinationReveal();
-  closeMobileSheet();
-  resetBoardView();
-  renderAll();
-  if (app.state.controlledHero) showCurrentDestinationReveal(app.state.controlledHero);
-  updateStatus("Local game reset.");
-}
-
-function injectMobileBottomBar() {
-  if (document.getElementById("mobile-bottom-bar")) return;
-
-  const gameShell = document.getElementById("game-shell");
-  const statusChip = document.getElementById("status-chip");
-  if (!gameShell || !statusChip) return;
-
-  const wrap = document.createElement("div");
-  wrap.id = "mobile-bottom-bar";
-  wrap.innerHTML = `<div id="mobile-hand-peek"></div>`;
-
-  gameShell.insertBefore(wrap, statusChip);
-}
-
-// ---------------------------------------------------------------------------
-// Show the mobile HUD by adding a class rather than relying on conflicting
-// display:none / display:grid in CSS
-// ---------------------------------------------------------------------------
-function showMobileHud() {
-  // Only activate mobile chrome on mobile screen sizes
-  const isMobileViewport = window.innerWidth <= 767 ||
-    (window.innerHeight <= 500 && window.innerWidth > window.innerHeight);
-  if (!isMobileViewport) return;
-
-  const hud = document.getElementById("mobile-hud");
-  if (hud) hud.classList.add("visible");
-  const bar = document.getElementById("mobile-bottom-bar");
-  if (bar) bar.classList.add("visible");
-  const sheet = document.getElementById("mobile-sheet");
-  if (sheet) sheet.classList.add("visible-shell");
-}
-
-
-// ─── END SCREEN ──────────────────────────────────────────────────────────────
-
-function buildEndScreenOverlay() {
-  if (document.getElementById("end-screen-overlay")) return;
-  const overlay = document.createElement("div");
-  overlay.id = "end-screen-overlay";
-  overlay.className = "end-screen-overlay";
-  overlay.innerHTML = `
-    <div class="end-screen-loop">
-      <div class="end-screen-wipe end-screen-wipe-a"></div>
-      <div class="end-screen-wipe end-screen-wipe-b"></div>
-      <div class="end-screen-wipe end-screen-wipe-c"></div>
-      <div class="end-screen-noise"></div>
-    </div>
-    <div class="end-screen-inner">
-      <div id="end-screen-kicker" class="end-screen-kicker">Didcot Dogs</div>
-      <div id="end-screen-headline" class="end-screen-headline">YOU WIN!</div>
-      <div id="end-screen-sub" class="end-screen-sub"></div>
-      <div id="end-screen-portrait" class="end-screen-portrait-wrap"></div>
-      <button id="end-screen-play-again" class="action-btn primary end-screen-btn" type="button">Play again</button>
-    </div>
-  `;
-  document.getElementById("game-shell").appendChild(overlay);
-
-  document.getElementById("end-screen-play-again").addEventListener("click", () => {
-    hideEndScreen();
-    resetLocalGame();
+// ─── End screen ───────────────────────────────────────────────────────────────
+function buildEndScreenOverlay(){
+  if(document.getElementById("end-screen-overlay")) return;
+  const o=document.createElement("div");o.id="end-screen-overlay";o.className="end-screen-overlay";
+  o.innerHTML=`<div class="end-screen-loop"><div class="end-screen-wipe end-screen-wipe-a"></div><div class="end-screen-wipe end-screen-wipe-b"></div><div class="end-screen-wipe end-screen-wipe-c"></div><div class="end-screen-noise"></div></div><div class="end-screen-inner"><div class="end-screen-kicker">Didcot Dogs</div><div id="end-screen-headline" class="end-screen-headline">YOU WIN!</div><div id="end-screen-sub" class="end-screen-sub"></div><div id="end-screen-portrait" class="end-screen-portrait-wrap"></div><button id="end-screen-play-again" class="action-btn primary end-screen-btn" type="button">Play again</button></div>`;
+  document.getElementById("game-shell").appendChild(o);
+  document.getElementById("end-screen-play-again").addEventListener("click",()=>{
+    hideEndScreen(); sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
+    app.roomCode=null; app.localHero=null;
+    app.state=createInitialLocalState(app.rulesData);
+    closeRouteModal(); closeDestinationReveal(); closeMobileSheet(); resetBoardView(); renderAll();
     document.getElementById("hero-overlay").classList.add("active");
-    const hud = document.getElementById("mobile-hud");
-    const bar = document.getElementById("mobile-bottom-bar");
-    const sheet = document.getElementById("mobile-sheet");
-    if (hud) hud.classList.remove("visible");
-    if (bar) bar.classList.remove("visible");
-    if (sheet) sheet.classList.remove("visible-shell", "expanded");
+    ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
+    const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
+    showScreen("room-screen"); wireRoomButtons();
   });
 }
-
-function showEndScreen(winnerName) {
+function showEndScreen(winnerName){
   buildEndScreenOverlay();
-  const overlay = document.getElementById("end-screen-overlay");
-  const isWin = winnerName === app.state.controlledHero;
-  document.getElementById("end-screen-headline").textContent = isWin ? "YOU WIN!" : "YOU LOSE!";
-  document.getElementById("end-screen-sub").textContent = isWin
-    ? `${winnerName} completed all five destinations. Legendary.`
-    : `${winnerName} beat you to it. Better luck next time.`;
-  const pw = document.getElementById("end-screen-portrait");
-  pw.innerHTML = `<img src="${PLAYER_CONFIG[winnerName].image}" alt="${winnerName}" class="end-screen-portrait">`;
-  overlay.className = "end-screen-overlay active " + (isWin ? "end-win" : "end-lose");
+  const o=document.getElementById("end-screen-overlay"), mine=winnerName===app.localHero;
+  document.getElementById("end-screen-headline").textContent=mine?"YOU WIN!":"YOU LOSE!";
+  document.getElementById("end-screen-sub").textContent=mine?`${winnerName} completed all five. Legendary.`:`${winnerName} beat you to it.`;
+  document.getElementById("end-screen-portrait").innerHTML=`<img src="${PLAYER_CONFIG[winnerName].image}" alt="${winnerName}" class="end-screen-portrait">`;
+  o.className=`end-screen-overlay active ${mine?"end-win":"end-lose"}`;
 }
+function hideEndScreen(){const o=document.getElementById("end-screen-overlay");if(o)o.className="end-screen-overlay";}
 
-function hideEndScreen() {
-  const overlay = document.getElementById("end-screen-overlay");
-  if (overlay) overlay.className = "end-screen-overlay";
-}
-
-
-
-// ─── TURN LOCKING ─────────────────────────────────────────────────────────────
-// In multiplayer, actions are only allowed when it is the local hero's turn.
-// In solo / dev mode (no roomCode), always returns true.
-function isMyTurn() {
-  if (!app.roomCode) return true;
-  if (!app.localHero) return true;
-  const result = app.state.currentPlayer === app.localHero;
-  return result;
-}
-
-// ─── AUTO-SIM (player 2 bot) ──────────────────────────────────────────────────
-
-let __autoSimTimer = null;
-
-function cancelAutoSim() {
-  if (__autoSimTimer) {
-    clearTimeout(__autoSimTimer);
-    __autoSimTimer = null;
-  }
-}
-
-function scheduleAutoSim() {
-  if (!DEV_AUTO_SIM) return;
-  if (!app.state.controlledHero) return;
-  if (app.state.currentPlayer === app.state.controlledHero) return;
-
+// ─── Auto-sim ─────────────────────────────────────────────────────────────────
+let __autoSimTimer=null;
+function cancelAutoSim(){if(__autoSimTimer){clearTimeout(__autoSimTimer);__autoSimTimer=null;}}
+function scheduleAutoSim(){
+  if(!DEV_AUTO_SIM||!app.state.controlledHero||app.state.currentPlayer===app.state.controlledHero) return;
   cancelAutoSim();
-
-  // Random delay 8–12s so it feels less robotic
-  const delay = 8000 + Math.random() * 4000;
-
-  __autoSimTimer = setTimeout(() => {
-    __autoSimTimer = null;
-    runAutoSimTurn();
-  }, delay);
+  __autoSimTimer=setTimeout(()=>{__autoSimTimer=null;runAutoSimTurn();},8000+Math.random()*4000);
+}
+function runAutoSimTurn(){
+  if(!app.state.controlledHero||app.state.currentPlayer===app.state.controlledHero) return;
+  const bot=app.state.currentPlayer, player=app.state.players[bot];
+  const card=drawCard();if(card){player.hand.push(card);player.lastDrawColor=card;}
+  app.state.currentPlayer=app.state.controlledHero; renderAll();
 }
 
-function runAutoSimTurn() {
-  if (!app.state.controlledHero) return;
-  if (app.state.currentPlayer === app.state.controlledHero) return;
-
-  const botName = app.state.currentPlayer;
-  const bot = app.state.players[botName];
-
-  // 30% chance to attempt a route claim if one is affordable and connected
-  const tryRoute = Math.random() < 0.30;
-
-  if (tryRoute) {
-    const claimable = Object.keys(app.state.routes).filter(routeId => {
-      const play = getRoutePlayability(routeId);
-      return play.playable;
-    });
-
-    if (claimable.length > 0) {
-      // Pick a random claimable route
-      const routeId = claimable[Math.floor(Math.random() * claimable.length)];
-      const play = getRoutePlayability(routeId);
-      const payment = play.payment;
-
-      // Pick the option that uses fewest rainbow cards
-      const options = getPaymentOptionsForColor(
-        routeId, botName,
-        payment.isWild ? payment.availableColors[0] : null
-      ).options;
-
-      if (options.length > 0) {
-        const chosenOption = options[0];
-        const handResult = removeSpecificCardsFromHand(
-          bot.hand,
-          chosenOption.colourChoice,
-          chosenOption.useColourCount,
-          chosenOption.useRainbowCount
-        );
-
-        bot.hand = handResult.nextHand;
-        app.state.discardPile.push(...handResult.spent);
-
-        const fromNode = bot.currentNode;
-        const toNode = getConnectedNode(routeId, fromNode);
-
-        app.state.routes[routeId].claimedBy = botName;
-        bot.previousNode = fromNode;
-        bot.currentNode = toNode;
-        bot.journeyRouteIds.push(routeId);
-
-        app.state.selectedRouteId = null;
-        renderAll();
-        updateStatus(`${botName} → ${formatNodeName(toNode)}`, TOAST_NOTABLE);
-
-        animateTokenAlongRoute(botName, routeId, fromNode, toNode).then(() => {
-          completeDestinationIfNeeded(botName);
-          renderAll();
-          // Hand back to controlled hero
-          app.state.currentPlayer = app.state.controlledHero;
-          renderAll();
-        });
-        return;
+// ─── Card draw animation ──────────────────────────────────────────────────────
+function getDrawPileRect(){const e=document.getElementById("mobile-hud-draw");if(!e)return null;return(e.querySelector(".pile-wrap")||e).getBoundingClientRect();}
+function getHandTargetRect(colour){
+  const peek=document.getElementById("mobile-hand-peek");if(!peek)return null;
+  for(const c of peek.querySelectorAll(".mobile-hand-peek-card"))if(c.classList.contains(colour))return c.getBoundingClientRect();
+  return{left:window.innerWidth/2-27,top:window.innerHeight-90,width:54,height:86};
+}
+function animateCardDraw(colour){
+  return new Promise(resolve=>{
+    const fr=getDrawPileRect();if(!fr){resolve();return;}
+    const fly=document.createElement("div");fly.className="flying-card flying-card-back";
+    fly.style.cssText=`position:fixed;width:34px;height:48px;border-radius:8px;z-index:9999;pointer-events:none;transform-style:preserve-3d;left:${fr.left+fr.width/2-17}px;top:${fr.top+fr.height/2-24}px;`;
+    document.body.appendChild(fly);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      const tr=getHandTargetRect(colour);
+      const tl=tr?tr.left+tr.width/2-17:window.innerWidth/2-17, tt=tr?tr.top+tr.height/2-24:window.innerHeight-80;
+      const cols=CARD_COLOUR_HEX_MAP[colour]||["#5b5b5b","#1d1d1d"];
+      const fb=colour==="rainbow"?"linear-gradient(135deg,#f3a3a3,#f0dd67,#72c78e,#8ab5ff,#ef9cc3)":`linear-gradient(180deg,${cols[0]},${cols[1]})`;
+      const dur=480, start=performance.now();
+      function step(now){
+        const t=Math.min(1,(now-start)/dur), e=t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+        const x=fr.left+fr.width/2-17+(tl-(fr.left+fr.width/2-17))*e;
+        const y=fr.top+fr.height/2-24+(tt-(fr.top+fr.height/2-24))*e+Math.sin(t*Math.PI)*-40;
+        let ry=0;
+        if(t>=0.45&&t<0.55){ry=((t-0.45)/0.1)*90;if(ry>=90){fly.classList.remove("flying-card-back");fly.classList.add("flying-card-face");fly.style.background=fb;}}
+        else if(t>=0.55){ry=90-((t-0.55)/0.45)*90;}
+        fly.style.left=`${x}px`;fly.style.top=`${y}px`;fly.style.transform=`rotateY(${ry}deg) scale(${0.9+e*0.1})`;
+        if(t<1)requestAnimationFrame(step);
+        else{fly.style.transition="opacity 180ms ease";fly.style.opacity="0";setTimeout(()=>{fly.remove();resolve();},200);}
       }
-    }
-  }
-
-  // Default: draw a card
-  const card = drawCard();
-  if (card) {
-    bot.hand.push(card);
-    bot.lastDrawColor = card;
-  }
-
-  app.state.currentPlayer = app.state.controlledHero;
-  renderAll();
+      requestAnimationFrame(step);
+    }));
+  });
+}
+function triggerCardGlow(colour){
+  const peek=document.getElementById("mobile-hand-peek");if(!peek)return;
+  peek.querySelectorAll(".mobile-hand-peek-card").forEach(c=>{c.classList.remove("card-glow-steady");});
+  peek.querySelectorAll(`.mobile-hand-peek-card.${colour}`).forEach(c=>{c.style.setProperty("--glow-colour",GLOW_COLOURS[colour]||"rgba(255,255,255,0.7)");c.classList.add("card-glow-steady");});
 }
 
-function wireControlButtons() {
-  document.getElementById("draw-card-btn").addEventListener("click", () => {
-    drawCardForCurrentPlayer();
-  });
+// ─── Draw card action ─────────────────────────────────────────────────────────
+async function drawCardForCurrentPlayer(){
+  if(!isMyTurn()) return;
+  const pn=app.state.currentPlayer, card=drawCard();
+  if(!card){updateStatus("No cards available.");renderAll();return;}
+  const player=app.state.players[pn];
+  const mob=window.innerWidth<=767||(window.innerHeight<=500&&window.innerWidth>window.innerHeight);
+  if(mob) await animateCardDraw(card);
+  player.hand.push(card); player.lastDrawColor=card;
+  closeMobileSheet(); renderAll();
+  if(mob) requestAnimationFrame(()=>triggerCardGlow(card));
+  endTurn();
+}
 
-  document.getElementById("reset-local-btn").addEventListener("click", () => {
-    resetLocalGame();
-  });
-
-  document.getElementById("pick-eric-btn").addEventListener("click", () => {
-    startGameAs("Eric");
-  });
-
-  document.getElementById("pick-tango-btn").addEventListener("click", () => {
-    startGameAs("Tango");
-  });
-
-  document.getElementById("mobile-open-sheet-btn").addEventListener("click", () => {
-    drawCardForCurrentPlayer();
-  });
-
-  document.getElementById("mobile-reset-view-btn").addEventListener("click", () => {
-    toggleMobileSheet();
-  });
-
-  document.getElementById("mobile-sheet-handle").addEventListener("click", () => {
-    closeMobileSheet();
-  });
-
-  document.getElementById("route-modal-close").addEventListener("click", closeRouteModal);
-  document.getElementById("route-modal-cancel").addEventListener("click", closeRouteModal);
-  document.getElementById("route-modal-confirm").addEventListener("click", async () => {
-    await confirmRouteModalPlay();
-  });
-
-  document.getElementById("route-modal-overlay").addEventListener("click", evt => {
-    if (evt.target.id === "route-modal-overlay") closeRouteModal();
-  });
-
-  document.getElementById("destination-reveal-close").addEventListener("click", closeDestinationReveal);
-  document.getElementById("destination-reveal-overlay").addEventListener("click", evt => {
-    if (evt.target.id === "destination-reveal-overlay") closeDestinationReveal();
+// ─── Route interactions ───────────────────────────────────────────────────────
+function handleRouteHover(routeId){
+  const play=getRoutePlayability(routeId), rc=getDisplayRouteColor(app.state.routes[routeId].colour), cost=app.rulesData.routes[routeId].length;
+  updateStatus(play.playable?`${formatRouteName(routeId)} · ${rc} · cost ${cost} · eligible`:`${formatRouteName(routeId)} · ${rc} · cost ${cost} · ${play.reason}`);
+}
+function wireRouteInteractions(){
+  Object.keys(app.rulesData.routes||{}).forEach(routeId=>{
+    const el=app.svg.querySelector(`#${CSS.escape(routeId)}`);if(!el) return;
+    el.addEventListener("mouseenter",()=>handleRouteHover(routeId));
+    el.addEventListener("mouseleave",()=>updateStatus("Choose one action: draw a card or click a route to play it."));
+    el.addEventListener("click",()=>handleRouteSelection(routeId));
   });
 }
 
-async function init() {
+// ─── Mobile HUD ───────────────────────────────────────────────────────────────
+function injectMobileBottomBar(){
+  if(document.getElementById("mobile-bottom-bar")) return;
+  const gs=document.getElementById("game-shell"), sc=document.getElementById("status-chip");
+  if(!gs||!sc) return;
+  const w=document.createElement("div");w.id="mobile-bottom-bar";w.innerHTML=`<div id="mobile-hand-peek"></div>`;
+  gs.insertBefore(w,sc);
+}
+function showMobileHud(){
+  const mob=window.innerWidth<=767||(window.innerHeight<=500&&window.innerWidth>window.innerHeight);
+  if(!mob) return;
+  const hud=document.getElementById("mobile-hud");if(hud)hud.classList.add("visible");
+  const bar=document.getElementById("mobile-bottom-bar");if(bar)bar.classList.add("visible");
+  const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.add("visible-shell");
+}
+
+// ─── Control buttons ──────────────────────────────────────────────────────────
+function wireControlButtons(){
+  document.getElementById("draw-card-btn")?.addEventListener("click",drawCardForCurrentPlayer);
+  document.getElementById("reset-local-btn")?.addEventListener("click",()=>{
+    cancelAutoSim();
+    sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
+    app.roomCode=null; app.localHero=null;
+    app.state=createInitialLocalState(app.rulesData);
+    closeRouteModal(); closeDestinationReveal(); closeMobileSheet(); resetBoardView(); renderAll();
+    updateStatus("Game reset.");
+    showScreen("room-screen"); wireRoomButtons();
+  });
+  document.getElementById("pick-eric-btn")?.addEventListener("click",()=>{
+    app.state=createInitialLocalState(app.rulesData); app.state.controlledHero="Eric";
+    document.getElementById("hero-overlay").classList.remove("active");
+    showMobileHud(); resetBoardView(); showStartToast("Eric"); renderAll(); showCurrentDestinationReveal("Eric");
+  });
+  document.getElementById("pick-tango-btn")?.addEventListener("click",()=>{
+    app.state=createInitialLocalState(app.rulesData); app.state.controlledHero="Tango";
+    document.getElementById("hero-overlay").classList.remove("active");
+    showMobileHud(); resetBoardView(); showStartToast("Tango"); renderAll(); showCurrentDestinationReveal("Tango");
+  });
+  document.getElementById("mobile-open-sheet-btn")?.addEventListener("click",drawCardForCurrentPlayer);
+  document.getElementById("mobile-reset-view-btn")?.addEventListener("click",toggleMobileSheet);
+  document.getElementById("mobile-sheet-handle")?.addEventListener("click",closeMobileSheet);
+  document.getElementById("route-modal-close")?.addEventListener("click",closeRouteModal);
+  document.getElementById("route-modal-cancel")?.addEventListener("click",closeRouteModal);
+  document.getElementById("route-modal-confirm")?.addEventListener("click",async()=>await confirmRouteModalPlay());
+  document.getElementById("route-modal-overlay")?.addEventListener("click",evt=>{if(evt.target.id==="route-modal-overlay")closeRouteModal();});
+  document.getElementById("destination-reveal-close")?.addEventListener("click",closeDestinationReveal);
+  document.getElementById("destination-reveal-overlay")?.addEventListener("click",evt=>{if(evt.target.id==="destination-reveal-overlay")closeDestinationReveal();});
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init(){
   try {
     injectMobileBottomBar();
+    await initFirebase();
 
-    const [rulesData, destinationData] = await Promise.all([
+    const [rulesData,destinationData]=await Promise.all([
       loadJson("./data/didcot-dogs-rules.v1.json"),
       loadJson("./data/didcot-dogs-destinations.v1.json")
     ]);
+    const svg=await injectBoardSvg();
+    ensureSvgDefs(svg); startClaimGradientAnimation(svg);
+    normalizeSvgNodeAliases(svg,rulesData); tightenSvgViewBox(svg);
 
-    const svg = await injectBoardSvg();
-    ensureSvgDefs(svg);
-    startClaimGradientAnimation(svg);
-    normalizeSvgNodeAliases(svg, rulesData);
-    tightenSvgViewBox(svg);   // sets app.boardView.baseViewBox
+    app.rulesData=rulesData; app.destinationData=destinationData; app.svg=svg;
+    app.audit=getSvgAudit(svg,rulesData);
+    app.state=createInitialLocalState(rulesData);
 
-    const audit = getSvgAudit(svg, rulesData);
+    wireRouteInteractions(); wireControlButtons(); setupMobileBoardGestures();
+    setupFullscreenButton(); resetBoardView(); renderAll();
 
-    // Mutate app in place — never replace the object reference.
-    // room.js holds appRef = app; replacing app would break that reference.
-    app.rulesData      = rulesData;
-    app.destinationData = destinationData;
-    app.svg            = svg;
-    app.audit          = audit;
-    // Only create initial state if not resuming a multiplayer session
-    // (room.js will set app.state from Firebase if resuming)
-    if (!app.state || !app.state.players) {
-      app.state = createInitialLocalState(rulesData);
-    }
-    // roomCode and localHero preserved if set before init() (unlikely but safe)
-    app.boardView.scale    = 1;
-    app.boardView.panX     = 0;
-    app.boardView.panY     = 0;
-    app.boardView.minScale = 1;
-    app.boardView.maxScale = 3;
-    // baseViewBox already set by tightenSvgViewBox above
-    app.modal = { routeId: null, chosenColor: null, selectedOptionIndex: null, options: [] };
-
-    wireRouteInteractions();
-    wireControlButtons();
-    setupMobileBoardGestures();
-    resetBoardView();
-
-    // Expose methods for room.js Firebase integration
-    app.buildInitialState = (hero) => createInitialLocalState(app.rulesData, hero);
-    app.startAs           = (hero) => startGameAs(hero);
-    app.startMultiplayer  = (hero) => startGameMultiplayer(hero);
-    app.renderAll         = () => renderAll();
-    app.renderAll = () => renderAll();
-
-    // Launch room flow (shows room screen or resumes saved game)
-    const roomModule = await import("./room.js");
-    await roomModule.initRoomFlow(app);
-  } catch (error) {
-    console.error(error);
-    document.getElementById("status-chip").textContent = `Error loading board: ${error.message}`;
+    await initRoomFlow();
+  } catch(err){
+    console.error("[DD] init error:",err);
+    const sc=document.getElementById("status-chip");
+    if(sc) sc.textContent=`Error: ${err.message}`;
   }
 }
 
-window.addEventListener("resize", () => {
-  if (!app.svg || !app.boardView.baseViewBox) return;
-  applyBoardViewTransform();
-});
-
-document.addEventListener("DOMContentLoaded", () => {
-  setupFullscreenButton();
-  init();
-});
+window.addEventListener("resize",()=>{if(app.svg&&app.boardView.baseViewBox)applyBoardViewTransform();});
+document.addEventListener("DOMContentLoaded",()=>{setupFullscreenButton();init();});
