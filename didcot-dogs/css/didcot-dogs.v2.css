@@ -3,54 +3,137 @@
  *
  * CHANGELOG
  * v2.0.0
- *   - FIXED: #mobile-hud had display:none AND display:grid both set; none always
- *     won. HUD is now hidden by default (display:none) and shown by JS adding
- *     .visible class, which sets display:grid.
- *   - FIXED: #board-svg-host svg no longer relies on CSS transform; viewBox
- *     controls pan/zoom so transform:none is enforced here.
- *   - FIXED: #board-wrap top/bottom on mobile now uses CSS custom properties so
- *     HUD height and bottom bar height are a single source of truth.
- *   - FIXED: #status-chip bottom offset on mobile matches bottom bar height.
- *
- * HOW TO USE:
- *   Add a second <link> tag in index.html pointing to this file, AFTER the v1
- *   stylesheet. It only overrides what changed.
+ *   - FIXED: Pan/zoom now uses SVG viewBox — no more pixellation.
+ *   - FIXED: #mobile-hud shown via .visible class (was broken by display:none conflict).
+ *   - FIXED: HUD hidden during hero-pick screen, shown only after hero chosen.
+ *   - FIXED: Desktop panels (#left-panel, #right-panel, #top-bar) properly hidden
+ *     on mobile — were bleeding through due to #game-shell size issue.
+ *   - FIXED: #game-shell on mobile correctly sized to viewport, not 1920×1080.
+ *   - FIXED: Pay modal (route-modal) on mobile is now centred vertically in safe
+ *     zone between HUD and hand strip, scrollable, never hidden behind cards.
+ *   - FIXED: Status chip z-index raised above bottom bar.
+ *   - FIXED: Board viewport top/bottom derived from CSS vars matching HUD/bar heights.
+ *   - FIXED: SVG has no CSS transform — viewBox only.
  */
 
+/* ─── CSS custom properties ──────────────────────────────────────────────── */
 :root {
   --mobile-hud-height: 108px;
   --mobile-bar-height: 88px;
 }
 
-/* ── Mobile HUD visibility ──────────────────────────────────────────────── */
-
-/* Reset the conflicting rules from v1 */
+/* ─── Mobile HUD — hidden until JS adds .visible after hero pick ─────────── */
 #mobile-hud {
   display: none !important;
 }
-
 #mobile-hud.visible {
   display: grid !important;
 }
 
-/* ── Board viewport ─────────────────────────────────────────────────────── */
-
+/* ─── Desktop UI hidden on mobile (belt-and-braces) ─────────────────────── */
 @media (max-width: 767px) {
+
+  /* Game shell must be viewport-sized, not 1920×1080 */
+  #game-shell {
+    width: 100vw !important;
+    height: 100vh !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+  }
+
+  /* Desktop panels — force hidden */
+  #top-bar,
+  #left-panel,
+  #right-panel {
+    display: none !important;
+  }
+
+  /* ─── Board viewport ──────────────────────────────────────────────────── */
   #board-wrap {
-    top: var(--mobile-hud-height);
-    bottom: var(--mobile-bar-height);
+    position: absolute !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: var(--mobile-hud-height) !important;
+    bottom: var(--mobile-bar-height) !important;
+    border-radius: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
   }
 
-  #status-chip {
-    bottom: calc(var(--mobile-bar-height) + 14px);
-  }
-
-  /* Ensure the SVG itself has no transform — viewBox does the work */
+  /* SVG: viewBox controls pan/zoom, no CSS transform */
   #board-svg-host svg {
-    width: 100%;
-    height: 100%;
-    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
     transform: none !important;
     will-change: auto !important;
+  }
+
+  /* ─── Status chip above bottom bar ───────────────────────────────────── */
+  #status-chip {
+    bottom: calc(var(--mobile-bar-height) + 14px) !important;
+    z-index: 2010 !important;
+    max-width: calc(100vw - 40px) !important;
+  }
+
+  /* ─── Route / pay modal — centred in safe zone, scrollable ───────────── */
+  .route-modal-overlay,
+  .destination-reveal-overlay {
+    /* Cover only the board area — between HUD and hand strip */
+    position: fixed !important;
+    top: var(--mobile-hud-height) !important;
+    bottom: var(--mobile-bar-height) !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 3000 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 12px !important;
+    /* Backdrop still covers behind the modal */
+    background: rgba(9, 12, 17, 0.72) !important;
+    backdrop-filter: blur(4px) !important;
+  }
+
+  .route-modal,
+  .destination-reveal-card {
+    width: 100% !important;
+    max-width: 480px !important;
+    max-height: 100% !important;
+    border-radius: 20px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 18px !important;
+    /* Reset the bottom-sheet shape from v1 */
+    border-radius: 20px !important;
+  }
+
+  .route-modal-body {
+    max-height: none !important;       /* let the modal itself scroll */
+    overflow: visible !important;
+  }
+
+  .route-modal-title,
+  .destination-reveal-title {
+    font-size: 26px !important;
+  }
+
+  /* Slightly smaller spend cards so they fit without scrolling */
+  .route-spend-card,
+  .route-colour-choice-card {
+    width: 48px !important;
+    height: 66px !important;
+    font-size: 10px !important;
+  }
+
+  /* ─── Bottom bar ──────────────────────────────────────────────────────── */
+  #mobile-bottom-bar {
+    z-index: 2001 !important;
+  }
+
+  /* ─── Mobile sheet sits between HUD and bottom bar ───────────────────── */
+  #mobile-sheet {
+    top: calc(var(--mobile-hud-height) + 4px) !important;
+    bottom: calc(var(--mobile-bar-height) + 4px) !important;
   }
 }
