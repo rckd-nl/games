@@ -2,6 +2,20 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
+ * v2.3.0
+ *   - ADDED: Flying card animation on draw — card drops from draw pile
+ *     position to hand strip, flips face-up mid-flight, lands then fades.
+ *     Uses a fixed-position overlay div with getBoundingClientRect coords.
+ *   - ADDED: Colour-matched glow on newly drawn card in hand strip.
+ *     Glow uses the card's own colour, pulses for 1.5s then fades.
+ *   - ADDED: Landscape mobile forces mobile layout (orientation: landscape
+ *     and max-height: 500px) regardless of pixel width.
+ * v2.2.0
+ *   - ADDED: Visual draw and discard pile stacks in mobile HUD.
+ *     Draw pile: 3 stacked face-down dark cards with paw SVG, count badge.
+ *     Discard pile: top 3 cards shown face-up with rotations, messy feel.
+ *     HUD grid updated to 4-col row 1 (turn + piles), destination row 2,
+ *     action buttons row 3.
  * v2.1.0
  *   - IMPROVED: HUD destination pill shows ▸ prefix and completion progress
  *     badge; JS sets data-complete attribute for CSS accent colouring.
@@ -37,7 +51,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.1.0";
+const APP_VERSION = "v2.3.0";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -1163,6 +1177,10 @@ function renderHandInto(container, player, cls = "hand-card") {
     if (player.lastDrawColor === stack.color && cls === "hand-card") {
       el.classList.add("draw-in");
     }
+    if (player.lastDrawColor === stack.color && cls === "mobile-hand-peek-card") {
+      el.style.setProperty("--glow-colour", GLOW_COLOURS[stack.color] || "rgba(255,255,255,0.7)");
+      el.classList.add("card-glow");
+    }
     el.innerHTML = `
       <div class="card-name">${stack.color}</div>
       <div class="card-count">${stack.count}</div>
@@ -1312,6 +1330,126 @@ function toggleMobileSheet() {
   sheet.classList.toggle("expanded");
 }
 
+
+// ─── CARD PILE VISUALS ────────────────────────────────────────────────────────
+
+const CARD_COLOUR_HEX_MAP = {
+  red:     ["#f3a3a3", "#d74b4b"],
+  orange:  ["#f2bf95", "#db7f2f"],
+  blue:    ["#8ab5ff", "#2f6edb"],
+  green:   ["#72c78e", "#1e8b4c"],
+  black:   ["#5b5b5b", "#1d1d1d"],
+  pink:    ["#ef9cc3", "#c64f8e"],
+  yellow:  ["#f0dd67", "#d6b300"],
+  rainbow: ["#f3a3a3", "#8ab5ff"]
+};
+
+const PAW_SVG = `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" style="width:18px;height:18px;opacity:0.22">
+  <ellipse cx="20" cy="26" rx="9" ry="7" fill="white"/>
+  <ellipse cx="11" cy="19" rx="4.5" ry="3.5" fill="white"/>
+  <ellipse cx="29" cy="19" rx="4.5" ry="3.5" fill="white"/>
+  <ellipse cx="15" cy="13" rx="3.5" ry="2.8" fill="white"/>
+  <ellipse cx="25" cy="13" rx="3.5" ry="2.8" fill="white"/>
+</svg>`;
+
+// Stable rotation from a string seed (so discard rotations don't jitter on re-render)
+function seededRotation(seed, index) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
+  const angles = [-14, -8, -4, 4, 9, 15];
+  return angles[Math.abs(h + index) % angles.length];
+}
+
+function renderDrawPile(container, count) {
+  container.innerHTML = "";
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "pile-wrap";
+
+  // Stack of 3 face-down cards (or fewer if pile small)
+  const stackCount = Math.min(count, 3);
+  for (let i = 0; i < stackCount; i++) {
+    const card = document.createElement("div");
+    card.className = "pile-card pile-card-back";
+    card.style.setProperty("--pile-offset", `${i * -2}px`);
+    card.style.setProperty("--pile-rot", `${(i - 1) * 3}deg`);
+    if (i === stackCount - 1) {
+      // Top card gets the paw
+      card.innerHTML = PAW_SVG;
+    }
+    wrapper.appendChild(card);
+  }
+
+  if (count === 0) {
+    const empty = document.createElement("div");
+    empty.className = "pile-card pile-card-empty";
+    wrapper.appendChild(empty);
+  }
+
+  // Count badge
+  const badge = document.createElement("div");
+  badge.className = "pile-badge";
+  badge.textContent = count;
+  wrapper.appendChild(badge);
+
+  const label = document.createElement("div");
+  label.className = "pile-label";
+  label.textContent = "Draw";
+  wrapper.appendChild(label);
+
+  container.appendChild(wrapper);
+}
+
+function renderDiscardPile(container, discardPile) {
+  container.innerHTML = "";
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "pile-wrap";
+
+  const count = discardPile.length;
+  const topCards = discardPile.slice(-3); // newest at end = top of visual stack
+
+  if (count === 0) {
+    const empty = document.createElement("div");
+    empty.className = "pile-card pile-card-empty";
+    wrapper.appendChild(empty);
+  } else {
+    topCards.forEach((colour, i) => {
+      const card = document.createElement("div");
+      card.className = "pile-card pile-card-face";
+      const rot = seededRotation(colour + i, i);
+      card.style.setProperty("--pile-rot", `${rot}deg`);
+      card.style.setProperty("--pile-offset", `${i * -1}px`);
+      const colours = CARD_COLOUR_HEX_MAP[colour] || ["#5b5b5b", "#1d1d1d"];
+      if (colour === "rainbow") {
+        card.style.background = "linear-gradient(135deg, #f3a3a3 0%, #f0dd67 25%, #72c78e 50%, #8ab5ff 75%, #ef9cc3 100%)";
+      } else {
+        card.style.background = `linear-gradient(180deg, ${colours[0]} 0%, ${colours[1]} 100%)`;
+      }
+      // Only show colour name on top card
+      if (i === topCards.length - 1) {
+        const label = document.createElement("span");
+        label.className = "pile-card-label";
+        label.textContent = colour;
+        card.appendChild(label);
+      }
+      wrapper.appendChild(card);
+    });
+  }
+
+  const badge = document.createElement("div");
+  badge.className = "pile-badge pile-badge-discard";
+  badge.textContent = count;
+  wrapper.appendChild(badge);
+
+  const label = document.createElement("div");
+  label.className = "pile-label";
+  label.textContent = "Discard";
+  wrapper.appendChild(label);
+
+  container.appendChild(wrapper);
+}
+
 function renderMobileRoutesPanel() {
   const hudTurn = document.getElementById("mobile-hud-turn");
   const hudDraw = document.getElementById("mobile-hud-draw");
@@ -1337,7 +1475,17 @@ function renderMobileRoutesPanel() {
     : "—";
 
   hudTurn.textContent = `${currentPlayerName}`;
-  hudDraw.textContent = `${app.state.drawPile.length} left`;
+
+  // Visual pile stacks replace the text draw counter
+  renderDrawPile(hudDraw, app.state.drawPile.length);
+  renderDiscardPile(
+    document.getElementById("mobile-hud-discard") || hudDraw,
+    app.state.discardPile
+  );
+
+  // Render into dedicated discard container if it exists
+  const discardEl = document.getElementById("mobile-hud-discard");
+  if (discardEl) renderDiscardPile(discardEl, app.state.discardPile);
 
   // Destination pill — show progress badge + target name
   const completedCount = Math.min(currentPlayer.completedCount, 5);
@@ -1694,7 +1842,148 @@ function completeDestinationIfNeeded(playerName) {
   return true;
 }
 
-function drawCardForCurrentPlayer() {
+
+// ─── FLYING CARD ANIMATION ────────────────────────────────────────────────────
+// Reads pixel positions of draw pile and hand strip, creates a fixed overlay
+// card that animates from pile to hand, flipping face-up mid-flight.
+
+const GLOW_COLOURS = {
+  red:     "rgba(215,75,75,0.9)",
+  orange:  "rgba(219,127,47,0.9)",
+  blue:    "rgba(47,110,219,0.9)",
+  green:   "rgba(30,139,76,0.9)",
+  black:   "rgba(120,120,120,0.8)",
+  pink:    "rgba(198,79,142,0.9)",
+  yellow:  "rgba(214,179,0,0.9)",
+  rainbow: "rgba(255,255,255,0.7)"
+};
+
+function getDrawPileRect() {
+  const el = document.getElementById("mobile-hud-draw");
+  if (!el) return null;
+  const wrap = el.querySelector(".pile-wrap");
+  return (wrap || el).getBoundingClientRect();
+}
+
+function getHandTargetRect(colour) {
+  // Find the card in the peek strip matching this colour
+  const peek = document.getElementById("mobile-hand-peek");
+  if (!peek) return null;
+  const cards = peek.querySelectorAll(".mobile-hand-peek-card");
+  for (const card of cards) {
+    if (card.classList.contains(colour)) return card.getBoundingClientRect();
+  }
+  // Fallback: bottom-centre of screen
+  return { left: window.innerWidth / 2 - 27, top: window.innerHeight - 90, width: 54, height: 86 };
+}
+
+function animateCardDraw(colour) {
+  return new Promise(resolve => {
+    const fromRect = getDrawPileRect();
+    if (!fromRect) { resolve(); return; }
+
+    // Create overlay card — starts face-down at pile, ends face-up at hand
+    const fly = document.createElement("div");
+    fly.className = "flying-card flying-card-back";
+    fly.style.cssText = `
+      position: fixed;
+      width: 34px;
+      height: 48px;
+      border-radius: 8px;
+      z-index: 9999;
+      pointer-events: none;
+      transform-style: preserve-3d;
+      will-change: transform, top, left, opacity;
+      left: ${fromRect.left + fromRect.width / 2 - 17}px;
+      top: ${fromRect.top + fromRect.height / 2 - 24}px;
+      transition: none;
+    `;
+    document.body.appendChild(fly);
+
+    // After a tick, start the flight
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const toRect = getHandTargetRect(colour);
+        const toLeft = toRect ? toRect.left + toRect.width / 2 - 17 : window.innerWidth / 2 - 17;
+        const toTop  = toRect ? toRect.top  + toRect.height / 2 - 24 : window.innerHeight - 80;
+
+        // Phase 1 (0–50%): travel to destination, still face-down
+        // Phase 2 (50%): flip to face-up (rotateY 90deg midpoint)
+        // Phase 3 (50–100%): continue face-up to land position
+
+        const colours = CARD_COLOUR_HEX_MAP[colour] || ["#5b5b5b", "#1d1d1d"];
+        const faceBg = colour === "rainbow"
+          ? "linear-gradient(135deg, #f3a3a3 0%, #f0dd67 25%, #72c78e 50%, #8ab5ff 75%, #ef9cc3 100%)"
+          : `linear-gradient(180deg, ${colours[0]} 0%, ${colours[1]} 100%)`;
+
+        const duration = 480;
+        const start = performance.now();
+
+        function step(now) {
+          const t = Math.min(1, (now - start) / duration);
+          const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+
+          const x = fromRect.left + fromRect.width/2  - 17 + (toLeft - (fromRect.left + fromRect.width/2  - 17)) * ease;
+          const y = fromRect.top  + fromRect.height/2 - 24 + (toTop  - (fromRect.top  + fromRect.height/2 - 24)) * ease;
+
+          // Arc — card rises slightly in the middle
+          const arc = Math.sin(t * Math.PI) * -40;
+
+          // Flip at midpoint
+          let rotY = 0;
+          if (t < 0.45) {
+            rotY = 0;
+          } else if (t < 0.55) {
+            // Flip through 90deg
+            rotY = ((t - 0.45) / 0.1) * 90;
+            if (rotY >= 90) {
+              // Switch to face-up appearance
+              fly.classList.remove("flying-card-back");
+              fly.classList.add("flying-card-face");
+              fly.style.background = faceBg;
+            }
+          } else {
+            // Already face-up, continue from -90 back to 0
+            rotY = 90 - ((t - 0.55) / 0.45) * 90;
+          }
+
+          fly.style.left = `${x}px`;
+          fly.style.top  = `${y + arc}px`;
+          fly.style.transform = `rotateY(${rotY}deg) scale(${0.9 + ease * 0.1})`;
+
+          if (t < 1) {
+            requestAnimationFrame(step);
+          } else {
+            // Land: fade out
+            fly.style.transition = "opacity 180ms ease";
+            fly.style.opacity = "0";
+            setTimeout(() => { fly.remove(); resolve(); }, 200);
+          }
+        }
+
+        requestAnimationFrame(step);
+      });
+    });
+  });
+}
+
+function triggerCardGlow(colour) {
+  // Find the card in the peek strip and add a glow class
+  const peek = document.getElementById("mobile-hand-peek");
+  if (!peek) return;
+  const cards = peek.querySelectorAll(".mobile-hand-peek-card");
+  cards.forEach(card => {
+    if (card.classList.contains(colour)) {
+      card.classList.remove("card-glow");
+      // Force reflow
+      void card.offsetWidth;
+      card.style.setProperty("--glow-colour", GLOW_COLOURS[colour] || "rgba(255,255,255,0.7)");
+      card.classList.add("card-glow");
+    }
+  });
+}
+
+async function drawCardForCurrentPlayer() {
   const currentPlayerName = app.state.currentPlayer;
   const card = drawCard();
 
@@ -1705,11 +1994,24 @@ function drawCardForCurrentPlayer() {
   }
 
   const player = app.state.players[currentPlayerName];
+
+  // Fire fly animation before mutating state so pile position is still visible
+  const isMobile = window.innerWidth <= 767 ||
+    (window.innerHeight <= 500 && window.innerWidth > window.innerHeight);
+  if (isMobile) {
+    await animateCardDraw(card);
+  }
+
   player.hand.push(card);
   player.lastDrawColor = card;
   updateStatus(`${currentPlayerName} drew ${card}.`);
   closeMobileSheet();
   renderAll();
+
+  // Trigger glow on the landed card
+  if (isMobile) {
+    requestAnimationFrame(() => triggerCardGlow(card));
+  }
 
   if (!app.state.controlledHero) {
     endTurn();
