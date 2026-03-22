@@ -1,0 +1,56 @@
+/*
+ * didcot-dogs.v2.css
+ *
+ * CHANGELOG
+ * v2.0.0
+ *   - FIXED: #mobile-hud had display:none AND display:grid both set; none always
+ *     won. HUD is now hidden by default (display:none) and shown by JS adding
+ *     .visible class, which sets display:grid.
+ *   - FIXED: #board-svg-host svg no longer relies on CSS transform; viewBox
+ *     controls pan/zoom so transform:none is enforced here.
+ *   - FIXED: #board-wrap top/bottom on mobile now uses CSS custom properties so
+ *     HUD height and bottom bar height are a single source of truth.
+ *   - FIXED: #status-chip bottom offset on mobile matches bottom bar height.
+ *
+ * HOW TO USE:
+ *   Add a second <link> tag in index.html pointing to this file, AFTER the v1
+ *   stylesheet. It only overrides what changed.
+ */
+
+:root {
+  --mobile-hud-height: 108px;
+  --mobile-bar-height: 88px;
+}
+
+/* ── Mobile HUD visibility ──────────────────────────────────────────────── */
+
+/* Reset the conflicting rules from v1 */
+#mobile-hud {
+  display: none !important;
+}
+
+#mobile-hud.visible {
+  display: grid !important;
+}
+
+/* ── Board viewport ─────────────────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  #board-wrap {
+    top: var(--mobile-hud-height);
+    bottom: var(--mobile-bar-height);
+  }
+
+  #status-chip {
+    bottom: calc(var(--mobile-bar-height) + 14px);
+  }
+
+  /* Ensure the SVG itself has no transform — viewBox does the work */
+  #board-svg-host svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    transform: none !important;
+    will-change: auto !important;
+  }
+}
