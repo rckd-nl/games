@@ -17,12 +17,18 @@
  *   - IMPROVED: Pan is clamped so the board cannot be dragged entirely off screen.
  *   - FIXED: showMobileHud() moved to startGameAs() — HUD is now hidden during
  *     hero-pick screen and only appears once a player is chosen.
- *   - NOTE: All other game logic is unchanged from v1.9.5.
+ *   - FIXED: showMobileHud() now also adds .visible to #mobile-bottom-bar
+ *     and .visible-shell to #mobile-sheet — cards were invisible because the
+ *     uploaded file was missing those two lines.
+ *   - FIXED: openMobileSheet / toggleMobileSheet guard on .visible-shell.
+ *   - ADDED: End screen overlay — YOU WIN / YOU LOSE — fires when a player
+ *     completes their fifth destination. Styled after the hero pick sting.
+ *     "Play again" resets and returns to hero pick.
  */
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.0.0";
+const APP_VERSION = "v2.0.1";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -1283,7 +1289,7 @@ function renderDebug(audit) {
 
 function openMobileSheet() {
   const sheet = document.getElementById("mobile-sheet");
-  if (sheet) sheet.classList.add("expanded");
+  if (sheet && sheet.classList.contains("visible-shell")) sheet.classList.add("expanded");
 }
 
 function closeMobileSheet() {
@@ -1293,7 +1299,7 @@ function closeMobileSheet() {
 
 function toggleMobileSheet() {
   const sheet = document.getElementById("mobile-sheet");
-  if (!sheet) return;
+  if (!sheet || !sheet.classList.contains("visible-shell")) return;
   sheet.classList.toggle("expanded");
 }
 
@@ -1611,6 +1617,7 @@ function completeDestinationIfNeeded(playerName) {
 
   if (player.completedCount > 5) {
     updateStatus(`${playerName} returned to Didcot and wins the local prototype.`);
+    setTimeout(() => showEndScreen(playerName), 800);
   } else {
     const nextTarget = getCurrentTargetForPlayer(player);
     if (player.completedCount >= 5) {
@@ -1712,8 +1719,94 @@ function injectMobileBottomBar() {
 // display:none / display:grid in CSS
 // ---------------------------------------------------------------------------
 function showMobileHud() {
+  // Reveal HUD, bottom bar, and sheet shell — all hidden during hero-pick.
   const hud = document.getElementById("mobile-hud");
   if (hud) hud.classList.add("visible");
+
+  const bar = document.getElementById("mobile-bottom-bar");
+  if (bar) bar.classList.add("visible");
+
+  const sheet = document.getElementById("mobile-sheet");
+  if (sheet) sheet.classList.add("visible-shell");
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// END SCREEN  (win / lose celebration)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildEndScreenOverlay() {
+  if (document.getElementById("end-screen-overlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "end-screen-overlay";
+  overlay.className = "end-screen-overlay";
+
+  overlay.innerHTML = `
+    <div class="end-screen-loop">
+      <div class="end-screen-wipe end-screen-wipe-a"></div>
+      <div class="end-screen-wipe end-screen-wipe-b"></div>
+      <div class="end-screen-wipe end-screen-wipe-c"></div>
+      <div class="end-screen-noise"></div>
+    </div>
+    <div class="end-screen-inner">
+      <div id="end-screen-kicker" class="end-screen-kicker">Didcot Dogs</div>
+      <div id="end-screen-headline" class="end-screen-headline">YOU WIN!</div>
+      <div id="end-screen-sub" class="end-screen-sub">Five destinations complete.</div>
+      <div id="end-screen-portrait" class="end-screen-portrait-wrap"></div>
+      <button id="end-screen-play-again" class="action-btn primary end-screen-btn" type="button">Play again</button>
+    </div>
+  `;
+
+  document.getElementById("game-shell").appendChild(overlay);
+
+  document.getElementById("end-screen-play-again").addEventListener("click", () => {
+    hideEndScreen();
+    resetLocalGame();
+    // Show hero pick again
+    document.getElementById("hero-overlay").classList.add("active");
+    // Hide mobile chrome until hero re-chosen
+    const hud = document.getElementById("mobile-hud");
+    const bar = document.getElementById("mobile-bottom-bar");
+    const sheet = document.getElementById("mobile-sheet");
+    if (hud) hud.classList.remove("visible");
+    if (bar) bar.classList.remove("visible");
+    if (sheet) sheet.classList.remove("visible-shell", "expanded");
+  });
+}
+
+function showEndScreen(winnerName) {
+  buildEndScreenOverlay();
+
+  const overlay = document.getElementById("end-screen-overlay");
+  const headline = document.getElementById("end-screen-headline");
+  const sub = document.getElementById("end-screen-sub");
+  const portraitWrap = document.getElementById("end-screen-portrait");
+  const kicker = document.getElementById("end-screen-kicker");
+
+  const controlledHero = app.state.controlledHero;
+  const isWin = winnerName === controlledHero;
+
+  kicker.textContent = "Didcot Dogs";
+  headline.textContent = isWin ? "YOU WIN!" : "YOU LOSE!";
+  sub.textContent = isWin
+    ? `${winnerName} completed all five destinations. Legendary.`
+    : `${winnerName} beat you to it. Better luck next time.`;
+
+  // Portrait
+  portraitWrap.innerHTML = "";
+  const img = document.createElement("img");
+  img.src = PLAYER_CONFIG[winnerName].image;
+  img.alt = winnerName;
+  img.className = "end-screen-portrait";
+  portraitWrap.appendChild(img);
+
+  overlay.className = "end-screen-overlay active" + (isWin ? " end-win" : " end-lose");
+}
+
+function hideEndScreen() {
+  const overlay = document.getElementById("end-screen-overlay");
+  if (overlay) overlay.className = "end-screen-overlay";
 }
 
 function wireControlButtons() {
