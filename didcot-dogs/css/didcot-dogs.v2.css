@@ -4,7 +4,7 @@
  * Remove the v1 <link> from index.html.
  *
  * CHANGELOG
- * v2.0.1  (merge of v1 + all v2 fixes, no !important cascade wars )
+ * v2.0.1  (merge of v1 + all v2 fixes, no !important cascade wars)
  *   - FIXED: hero-overlay z-index raised to 4000 (was 80, behind mobile chrome).
  *   - FIXED: #mobile-hud display conflict removed — single display:none rule,
  *     shown via .visible class added by JS after hero pick.
@@ -2329,3 +2329,43 @@ html, body {
   /* Remove duplicate menu from left panel */
   .panel-menu-btn { display: none !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.9.9  ROOM/WAITING/RESUMING SCREENS — inlined from room.css
+   Duplicated here so these screens always work even if room.css fails to load
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+#room-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 4500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #090c11;
+}
+#room-screen.active { display: flex !important; }
+
+#waiting-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 4500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #090c11;
+}
+#waiting-screen.active { display: flex !important; }
+
+#resuming-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 5500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9,12,17,0.97);
+}
+#resuming-screen.active { display: flex !important; }
