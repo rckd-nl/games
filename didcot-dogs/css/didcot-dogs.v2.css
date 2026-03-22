@@ -2038,3 +2038,13 @@ html, body {
   0%   { transform: translateX(-50%) translateY(0);     opacity: 1; }
   100% { transform: translateX(-50%) translateY(-120%); opacity: 0; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.5.0  TARGET NODE PULSE FIX
+   The board text rule sets fill:#000 !important which blocks the pulse
+   animation on label text. This override restores animation control.
+   ═══════════════════════════════════════════════════════════════════════════ */
+#board-svg-host text.target-node-pulse {
+  fill: unset !important;
+  animation: targetNodePulse 1.35s linear infinite !important;
+}
