@@ -18,9 +18,9 @@
  * v2.9.0 — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.10.4");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.10.5");
 
-const APP_VERSION = "v2.10.4";
+const APP_VERSION = "v2.10.5";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1010,10 +1010,20 @@ function renderDestinationSequences(){
 
 function renderTargetPulse(){
   app.svg.querySelectorAll(".target-node-pulse").forEach(e=>e.classList.remove("target-node-pulse"));
-  // Pulse the VIEW HERO's target, not whoever's turn it is
   const hero=getViewHero();
   const tid=getCurrentTargetForPlayer(app.state.players[hero]); if(!tid) return;
+  // Pulse the node circle
   app.svg.querySelectorAll(`#${CSS.escape(tid)}`).forEach(e=>e.classList.add("target-node-pulse"));
+  // Also pulse the label text — labels have no IDs so match by text content
+  const labelName = formatNodeName(tid); // e.g. "Wittenham Clumps"
+  const labelsGroup = app.svg.querySelector("#Labels");
+  if(labelsGroup){
+    labelsGroup.querySelectorAll("text").forEach(t=>{
+      // Build full text content from all tspans
+      const full = [...t.querySelectorAll("tspan")].map(s=>s.textContent.trim()).join(" ").trim();
+      if(full === labelName) t.classList.add("target-node-pulse");
+    });
+  }
 }
 
 function renderDebug(audit){
