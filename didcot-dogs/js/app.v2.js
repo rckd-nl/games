@@ -51,7 +51,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.6.1";
+const APP_VERSION = "v2.6.2";
 
 // ─── DEV: Auto-sim for player 2 ──────────────────────────────────────────────
 // Set to true to have the non-controlled player auto-act after ~10s.
@@ -918,21 +918,20 @@ function endTurn() {
   closeRouteModal();
 
   if (app.roomCode) {
-    // Multiplayer: hand to the other player
+    // Multiplayer — always alternate, push to Firebase
     app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
-  } else if (app.state.controlledHero) {
-    // Solo dev mode
-    app.state.currentPlayer = app.state.controlledHero;
-  } else {
-    app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
-  }
-
-  renderAll();
-  scheduleAutoSim();
-
-  // Push turn change to Firebase so other player receives it
-  if (app.roomCode) {
+    renderAll();
+    if (app.__incrementLocalVersion) app.__incrementLocalVersion();
     import("./room.js").then(m => m.pushState(app.roomCode, app.state));
+  } else if (app.state.controlledHero) {
+    // Solo dev mode — stay on controlled hero
+    app.state.currentPlayer = app.state.controlledHero;
+    renderAll();
+    scheduleAutoSim();
+  } else {
+    // Pass and play
+    app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
+    renderAll();
   }
 }
 
@@ -1853,6 +1852,21 @@ function startGameAs(playerName) {
   updateStatus(`${playerName} begins. Choose one action: draw a card or click a route to play it.`);
 }
 
+
+// Used by room.js for multiplayer — does NOT create new state (that would
+// re-randomise route colours). Instead uses whatever state is already in
+// app.state (fetched from Firebase). Just handles the UI reveal sequence.
+function startGameMultiplayer(playerName) {
+  // Don't touch app.state — it came from Firebase
+  app.state.controlledHero = playerName;
+  document.getElementById("hero-overlay").classList.remove("active");
+  showMobileHud();
+  resetBoardView();
+  showStartToast(playerName);
+  renderAll();
+  showCurrentDestinationReveal(playerName);
+}
+
 function completeDestinationIfNeeded(playerName) {
   const player = app.state.players[playerName];
   const target = getCurrentTargetForPlayer(player);
@@ -2417,6 +2431,7 @@ async function init() {
     // Expose methods for room.js Firebase integration
     app.buildInitialState = (hero) => createInitialLocalState(app.rulesData, hero);
     app.startAs = (hero) => startGameAs(hero);
+    app.startMultiplayer = (hero) => startGameMultiplayer(hero);
     app.renderAll = () => renderAll();
 
     // Launch room flow (shows room screen or resumes saved game)
