@@ -18,11 +18,10 @@
  *   - FIXED: SVG no CSS transform — viewBox pan/zoom only (no pixellation).
  *   - REMOVED: All duplicate and conflicting display rules from v1 @media block.
  *
- * v2.10.2
- *   - FIXED: #game-shell mobile override now uses !important to prevent the base
- *     1920×1080 rule from winning on portrait phones (e.g. 656px wide). This also
- *     fixes #left-panel and #right-panel bleeding over the board.
- *   - FIXED: Same !important applied to landscape mobile override.
+ * v2.10.5
+ *   - FIXED: Target node pulse now works on all nodes. Separate
+ *     targetNodeCirclePulse keyframe uses !important on fill/stroke per frame
+ *     to override the base #Nodes circle rule. Text label pulse also fixed.
  */
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1881,8 +1880,9 @@ html, body {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    v2.5.0  TARGET NODE PULSE FIX
-   v2.10.4 EXTENDED: also unset fill/stroke !important on circles inside
-   #Nodes so the pulse animation isn't blocked by the base node styling rule.
+   v2.10.5 EXTENDED: override !important fill/stroke on circles so the
+   keyframe animation can control colour. Use a separate keyframe that
+   explicitly sets fill/stroke on every frame so !important can't win.
    ═══════════════════════════════════════════════════════════════════════════ */
 #board-svg-host text.target-node-pulse {
   fill: unset !important;
@@ -1890,11 +1890,22 @@ html, body {
 }
 
 #board-svg-host #Nodes circle.target-node-pulse,
-#board-svg-host #Nodes g.target-node-pulse circle,
-#board-svg-host #Nodes .target-node-pulse {
-  fill: unset !important;
-  stroke: unset !important;
+#board-svg-host #Nodes g.target-node-pulse circle {
+  animation: targetNodeCirclePulse 1.35s linear infinite !important;
+}
+
+#board-svg-host #Nodes g.target-node-pulse text {
   animation: targetNodePulse 1.35s linear infinite !important;
+  fill: unset !important;
+}
+
+@keyframes targetNodeCirclePulse {
+  0%   { fill: #ff4d4d !important; stroke: #ff4d4d !important; filter: drop-shadow(0 0 2px rgba(255,77,77,0.45)); }
+  20%  { fill: #ff9f1c !important; stroke: #ff9f1c !important; filter: drop-shadow(0 0 8px rgba(255,159,28,0.8)); }
+  40%  { fill: #ffe600 !important; stroke: #ffe600 !important; filter: drop-shadow(0 0 8px rgba(255,230,0,0.8)); }
+  60%  { fill: #2ec27e !important; stroke: #2ec27e !important; filter: drop-shadow(0 0 8px rgba(46,194,126,0.8)); }
+  80%  { fill: #2f6edb !important; stroke: #2f6edb !important; filter: drop-shadow(0 0 8px rgba(47,110,219,0.8)); }
+  100% { fill: #c64f8e !important; stroke: #c64f8e !important; filter: drop-shadow(0 0 8px rgba(198,79,142,0.8)); }
 }
 
 /* ── Menu button — desktop top bar ──────────────────────────────────────────── */
