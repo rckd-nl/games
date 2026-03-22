@@ -167,18 +167,16 @@ function launchGame(appRef, code, hero, state) {
   // Show identity card + board
   appRef.startMultiplayer(hero);
 
-  // Subscribe to all future remote changes
+  // Subscribe to all future remote changes.
+  // Skip the first callback — it fires immediately with current value
+  // which is the state we just set, not a remote change.
+  let skipFirst = true;
   subscribeToRoom(code, remoteState => {
     if (!remoteState || !remoteState.players) return;
+    if (skipFirst) { skipFirst = false; return; }
 
-    // Only apply if it's genuinely the remote player's state push
-    // i.e. the currentPlayer changed to our opponent, meaning they acted
-    const remoteIsOpponent = remoteState.currentPlayer === hero
-      ? false  // it's now our turn — apply it
-      : true;  // opponent is still playing — apply it
-
-    // Always apply — Firebase is source of truth
-    // Restore device-local field
+    // Apply remote state — Firebase is source of truth.
+    // Restore controlledHero which is device-local only.
     appRef.state = remoteState;
     appRef.state.controlledHero = hero;
     appRef.renderAll();
