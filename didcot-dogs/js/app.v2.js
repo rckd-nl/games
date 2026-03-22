@@ -2,25 +2,28 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
- * v2.10.3
- *   - FIXED: Players only see their own hand, destination sequences, and journey
- *     progress. Opponent hand and routes are never shown in the UI.
- *   - FIXED: renderDestinationSequences() now renders only the local player's
- *     sequence (was always rendering currentPlayer, which leaked on turn swap).
- *   - FIXED: renderActiveHand() renders local player's hand only.
- *   - FIXED: renderPlayerSummary() hides opponent card count and target.
- *   - FIXED: Desktop scales down gracefully on sub-1920 screens using CSS
- *     transform scale rather than fixed 1920px — board stays centred and visible.
- *   - FIXED: Draw card button uses header font, larger touch target.
- *   - ADDED: "← Menu" button on waiting screen so creator can abort.
+ * v2.11.0
+ *   - ADDED: Mystery node system. 3 nodes always show ? on board.
+ *   - ADDED: OH WHUPS — discard half your cards via selection modal.
+ *   - ADDED: NOWHERE TO POO — skip next 3 turns.
+ *   - ADDED: JUST SNIFFIN' — all routes cost +1 card for remainder of game.
+ *   - ADDED: GIMME GIMME — steal 3 random cards from opponent.
+ *   - ADDED: BRIGHT BROWN — choose a colour, steal all of that colour from opponent.
+ *   - ADDED: HITCH A LIFT — teleport instantly to next destination.
+ *   - ADDED: ZOOMIES — held inventory card; after next move, pick a free second move.
+ *   - ADDED: POOP — place hidden poo trap on a node; opponent skips 3 turns on arrival.
+ *   - FIXED: restoreArrays() handles mysteryNodes, poopedNodes, inventory arrays.
  *
- * v2.9.1 — Firebase array fix
- * v2.9.0 — Complete rewrite of multiplayer integration.
+ * v2.10.5 — target node pulse fix
+ * v2.10.4 — desktop scale mobile guard
+ * v2.10.3 — own-knowledge-only rendering
+ * v2.9.1  — Firebase array fix
+ * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.10.5");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.11.0");
 
-const APP_VERSION = "v2.10.5";
+const APP_VERSION = "v2.11.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -407,7 +410,15 @@ function buildDeck(rulesData) {
 }
 
 function createPlayerState(startNode) {
-  return {currentNode:startNode,previousNode:null,hand:[],journeyRouteIds:[],destinationQueue:[],completedDestinations:[],completedCount:0,lastDrawColor:null};
+  return {
+    currentNode:startNode, previousNode:null, hand:[],
+    journeyRouteIds:[], destinationQueue:[], completedDestinations:[],
+    completedCount:0, lastDrawColor:null,
+    inventory:[],       // held special cards: "zoom", "poop"
+    skipTurns:0,        // NOWHERE TO POO / POOP trap
+    routeCostBonus:0,   // JUST SNIFFIN'
+    pendingZoom:false,  // ZOOMIES waiting to activate
+  };
 }
 
 function createInitialLocalState(rulesData) {
@@ -416,9 +427,13 @@ function createInitialLocalState(rulesData) {
   const dests=shuffle(rulesData.destinationPool||[]);
   const routes={};
   routeIds.forEach(id=>{routes[id]={colour:colours[id],claimedBy:null};});
+  const allNodes = rulesData.nodes || [];
+  const mysteryNodes = pickMysteryNodes(allNodes, rulesData.startNode, []);
   return {
     currentPlayer:"Eric", gameStarted:false, selectedRouteId:null,
     drawPile:buildDeck(rulesData), discardPile:[], justCompleted:null, routes,
+    mysteryNodes,   // 3 node IDs showing ? on board
+    poopedNodes:{}, // { nodeId: placedByHero } — hidden traps
     players:{
       Eric:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(0,5)},
       Tango:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(5,10)}
@@ -492,7 +507,9 @@ function getConnectedNode(routeId,fromNode) {
 // ─── Payment / playability ────────────────────────────────────────────────────
 function getPaymentOptionsForColor(routeId,playerName,chosenColor=null) {
   const player=app.state.players[playerName], hc=countCards(player.hand);
-  const rc=hc.rainbow||0, routeColour=app.state.routes[routeId].colour, cost=app.rulesData.routes[routeId].length;
+  const rc=hc.rainbow||0, routeColour=app.state.routes[routeId].colour;
+  const baseCost=app.rulesData.routes[routeId].length;
+  const cost=baseCost+(player.routeCostBonus||0); // JUST SNIFFIN' penalty
   const ec=chosenColor||routeColour, owned=hc[ec]||0;
   const minR=Math.max(0,cost-owned), maxR=Math.min(rc,cost);
   const options=[];
@@ -540,7 +557,24 @@ function isMyTurn() {
 function endTurn() {
   app.state.selectedRouteId=null;
   closeRouteModal();
-  app.state.currentPlayer=app.state.currentPlayer==="Eric"?"Tango":"Eric";
+  const next=app.state.currentPlayer==="Eric"?"Tango":"Eric";
+  app.state.currentPlayer=next;
+  // Check if next player has skip turns (NOWHERE TO POO / POOP)
+  const nextPlayer=app.state.players[next];
+  if(nextPlayer.skipTurns>0){
+    nextPlayer.skipTurns--;
+    console.log("[DD] Skipping",next,"— turns left:",nextPlayer.skipTurns);
+    // Show a toast to the skipped player if they are local
+    if(next===getViewHero()){
+      showMobileToast("Skipping your turn…");
+      updateStatus("Your turn is being skipped!");
+    }
+    renderAll();
+    if(app.roomCode) fbPushState(app.roomCode, app.state).then(()=>updateRoomHud());
+    // Auto-end this skipped turn after a short delay
+    setTimeout(endTurn, 1200);
+    return;
+  }
   console.log("[DD] endTurn → now",app.state.currentPlayer);
   renderAll();
   if(app.roomCode) {
@@ -747,6 +781,8 @@ function restoreArrays(state) {
   };
   state.drawPile    = toArr(state.drawPile);
   state.discardPile = toArr(state.discardPile);
+  state.mysteryNodes = toArr(state.mysteryNodes);
+  if(!state.poopedNodes) state.poopedNodes={};
   if (state.players) {
     Object.keys(state.players).forEach(name => {
       const p = state.players[name];
@@ -754,6 +790,10 @@ function restoreArrays(state) {
       p.journeyRouteIds   = toArr(p.journeyRouteIds);
       p.destinationQueue  = toArr(p.destinationQueue);
       p.completedDestinations = toArr(p.completedDestinations);
+      p.inventory         = toArr(p.inventory);
+      if(p.skipTurns===undefined) p.skipTurns=0;
+      if(p.routeCostBonus===undefined) p.routeCostBonus=0;
+      if(p.pendingZoom===undefined) p.pendingZoom=false;
     });
   }
   return state;
@@ -1119,12 +1159,566 @@ function renderDesktopPiles(){
   if(discEl) renderDiscardPile(discEl, app.state.discardPile);
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MYSTERY NODE SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MYSTERY_EVENTS = [
+  {
+    id:"oh_whups",
+    title:"OH WHUPS",
+    body:"Oopadays. You've lost half your cards.",
+    emoji:"😬"
+  },
+  {
+    id:"nowhere_to_poo",
+    title:"NOWHERE TO POO",
+    body:"Can't seem to find the right spot… just gonna look around for 3 turns.",
+    emoji:"🔍"
+  },
+  {
+    id:"just_sniffin",
+    title:"JUST SNIFFIN'",
+    body:"Slow progress. Routes require an extra card.",
+    emoji:"👃"
+  },
+  {
+    id:"gimme_gimme",
+    title:"GIMME GIMME",
+    body:"Nabbed! Take 3 of your opponent's cards and run away.",
+    emoji:"🐾"
+  },
+  {
+    id:"bright_brown",
+    title:"BRIGHT BROWN",
+    body:"Choose a colour. Opponent will give you all cards of that colour.",
+    emoji:"💩"
+  },
+  {
+    id:"zoomies",
+    title:"ZOOMIES",
+    body:"Zoom zoom zoom. Next time you move, make a second move for free.",
+    emoji:"⚡"
+  },
+  {
+    id:"poop",
+    title:"POOP",
+    body:"Drop a log, slow down your opponent!",
+    emoji:"💩"
+  },
+  {
+    id:"hitch_a_lift",
+    title:"HITCH A LIFT",
+    body:"Dad's here to give a ride! Travel immediately to the next destination.",
+    emoji:"🚗"
+  }
+];
+
+function pickMysteryNodes(allNodes, startNode, exclude=[]) {
+  const pool = allNodes.filter(n => n !== startNode && !exclude.includes(n));
+  const picked = [];
+  const shuffled = shuffle([...pool]);
+  for(const n of shuffled) {
+    if(picked.length >= 3) break;
+    picked.push(n);
+  }
+  return picked;
+}
+
+function rotateMysteryNode(triggeredNodeId) {
+  if(!app.state.mysteryNodes) app.state.mysteryNodes=[];
+  const allNodes = app.rulesData.nodes || [];
+  const remaining = app.state.mysteryNodes.filter(n => n !== triggeredNodeId);
+  // Pick a new node not already a mystery and not start node
+  const exclude = [...remaining, app.rulesData.startNode,
+    app.state.players.Eric.currentNode,
+    app.state.players.Tango.currentNode];
+  const pool = allNodes.filter(n => !exclude.includes(n));
+  const newNode = shuffle([...pool])[0];
+  if(newNode) remaining.push(newNode);
+  app.state.mysteryNodes = remaining;
+}
+
+// ── Mystery node SVG rendering ────────────────────────────────────────────
+function renderMysteryNodes() {
+  if(!app.svg) return;
+  // Remove existing mystery markers
+  app.svg.querySelectorAll(".mystery-node-marker").forEach(e=>e.remove());
+  const layer = ensureLayer(app.svg, "mystery-layer");
+  layer.innerHTML = "";
+  const nodes = app.state.mysteryNodes || [];
+  nodes.forEach(nodeId => {
+    try {
+      const c = getNodeCenter(app.svg, nodeId);
+      const g = createSvgEl("g", {class:"mystery-node-marker", transform:`translate(${c.x},${c.y})`});
+      // Pulsing outer ring
+      const ring = createSvgEl("circle", {r:"28", fill:"none", stroke:"#ffe600",
+        "stroke-width":"3", class:"mystery-ring", opacity:"0.85"});
+      // Dark background circle
+      const bg = createSvgEl("circle", {r:"20", fill:"#0e1118", stroke:"#ffe600", "stroke-width":"2"});
+      // ? text
+      const txt = createSvgEl("text", {
+        "text-anchor":"middle", "dominant-baseline":"middle",
+        fill:"#ffe600", "font-size":"24", "font-weight":"700",
+        style:"font-family:var(--header-font,sans-serif);pointer-events:none"
+      });
+      txt.textContent = "?";
+      g.appendChild(ring); g.appendChild(bg); g.appendChild(txt);
+      layer.appendChild(g);
+    } catch(e) { /* node not in SVG */ }
+  });
+}
+
+// ── Poop node rendering (only visible to placer) ──────────────────────────
+function renderPoopNodes() {
+  if(!app.svg) return;
+  app.svg.querySelectorAll(".poop-node-marker").forEach(e=>e.remove());
+  const layer = ensureLayer(app.svg, "poop-layer");
+  layer.innerHTML = "";
+  const hero = getViewHero();
+  const poops = app.state.poopedNodes || {};
+  Object.entries(poops).forEach(([nodeId, placedBy]) => {
+    if(placedBy !== hero) return; // only show your own poops
+    try {
+      const c = getNodeCenter(app.svg, nodeId);
+      const g = createSvgEl("g", {class:"poop-node-marker", transform:`translate(${c.x},${c.y})`});
+      const txt = createSvgEl("text", {
+        "text-anchor":"middle", "dominant-baseline":"middle",
+        "font-size":"20", style:"pointer-events:none", dy:"-24"
+      });
+      txt.textContent = "💩";
+      g.appendChild(txt);
+      layer.appendChild(g);
+    } catch(e) {}
+  });
+}
+
+// ── Mystery event trigger ─────────────────────────────────────────────────
+// Returns a Promise that resolves when the event is fully handled
+function triggerMysteryEvent(nodeId, playerName) {
+  const event = MYSTERY_EVENTS[Math.floor(Math.random() * MYSTERY_EVENTS.length)];
+  rotateMysteryNode(nodeId);
+  return new Promise(resolve => {
+    showMysteryEventModal(event, playerName, resolve);
+  });
+}
+
+function showMysteryEventModal(event, playerName, onDone) {
+  // Build modal in DOM
+  let overlay = document.getElementById("mystery-modal-overlay");
+  if(!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "mystery-modal-overlay";
+    overlay.className = "mystery-modal-overlay";
+    document.getElementById("game-shell").appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="mystery-modal">
+      <div class="mystery-modal-emoji">${event.emoji}</div>
+      <div class="mystery-modal-title">${event.title}</div>
+      <div class="mystery-modal-body">${event.body}</div>
+      <div id="mystery-modal-content"></div>
+      <div class="mystery-modal-actions">
+        <button id="mystery-modal-ok" class="action-btn primary" type="button">OK!</button>
+      </div>
+    </div>`;
+  overlay.classList.add("open");
+
+  const content = document.getElementById("mystery-modal-content");
+  const okBtn = document.getElementById("mystery-modal-ok");
+  okBtn.disabled = false;
+
+  // Build event-specific UI
+  switch(event.id) {
+    case "oh_whups":
+      buildOhWhupsUI(content, playerName, okBtn, overlay, onDone);
+      break;
+    case "bright_brown":
+      buildBrightBrownUI(content, playerName, okBtn, overlay, onDone);
+      break;
+    default:
+      okBtn.onclick = () => {
+        overlay.classList.remove("open");
+        applyMysteryEffect(event.id, playerName);
+        onDone();
+      };
+  }
+}
+
+function closeMysteryModal() {
+  const o = document.getElementById("mystery-modal-overlay");
+  if(o) o.classList.remove("open");
+}
+
+// ── OH WHUPS ──────────────────────────────────────────────────────────────
+function buildOhWhupsUI(content, playerName, okBtn, overlay, onDone) {
+  const player = app.state.players[playerName];
+  const hand = [...player.hand];
+  const mustDiscard = Math.ceil(hand.length / 2);
+  const counts = countCards(hand);
+  const selected = {}; // colour -> count selected
+  let totalSelected = 0;
+
+  okBtn.disabled = true;
+  okBtn.textContent = `Discard ${mustDiscard} cards`;
+
+  function renderCards() {
+    content.innerHTML = `<div class="mystery-card-select-label">Select ${mustDiscard} cards to discard (${totalSelected}/${mustDiscard})</div>
+      <div class="mystery-card-select-grid"></div>`;
+    const grid = content.querySelector(".mystery-card-select-grid");
+    Object.entries(counts).forEach(([colour, count]) => {
+      for(let i = 0; i < count; i++) {
+        const idx = i;
+        const sel = (selected[colour] || 0) > idx;
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = `hand-card ${colour}${sel?" mystery-card-selected":""}`;
+        card.innerHTML = `<div class="card-name">${colour}</div>`;
+        card.onclick = () => {
+          const cur = selected[colour] || 0;
+          if(sel) {
+            selected[colour] = Math.max(0, cur-1);
+            totalSelected--;
+          } else if(totalSelected < mustDiscard) {
+            selected[colour] = cur+1;
+            totalSelected++;
+          }
+          renderCards();
+          okBtn.disabled = totalSelected < mustDiscard;
+        };
+        grid.appendChild(card);
+      }
+    });
+  }
+  renderCards();
+
+  okBtn.onclick = () => {
+    if(totalSelected < mustDiscard) return;
+    // Remove selected cards from hand
+    let h = [...player.hand];
+    Object.entries(selected).forEach(([colour, n]) => {
+      let removed = 0;
+      h = h.filter(c => {
+        if(c === colour && removed < n) { removed++; return false; }
+        return true;
+      });
+    });
+    const discarded = hand.length - h.length;
+    player.hand = h;
+    app.state.discardPile.push(...Object.entries(selected).flatMap(([c,n])=>Array(n).fill(c)));
+    overlay.classList.remove("open");
+    updateStatus(`Oh Whups! Discarded ${discarded} cards.`, TOAST_NOTABLE);
+    onDone();
+  };
+}
+
+// ── BRIGHT BROWN ──────────────────────────────────────────────────────────
+function buildBrightBrownUI(content, playerName, okBtn, overlay, onDone) {
+  const colours = ["red","orange","blue","green","black","pink","yellow"];
+  let chosenColour = null;
+  okBtn.disabled = true;
+  okBtn.textContent = "Steal cards";
+
+  content.innerHTML = `<div class="mystery-card-select-label">Choose a colour to steal from opponent:</div>
+    <div class="mystery-colour-grid"></div>`;
+  const grid = content.querySelector(".mystery-colour-grid");
+  colours.forEach(colour => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `route-colour-choice-card ${colour}`;
+    btn.textContent = colour;
+    btn.onclick = () => {
+      chosenColour = colour;
+      grid.querySelectorAll(".route-colour-choice-card").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      okBtn.disabled = false;
+    };
+    grid.appendChild(btn);
+  });
+
+  okBtn.onclick = () => {
+    if(!chosenColour) return;
+    const opponent = playerName === "Eric" ? "Tango" : "Eric";
+    const oppPlayer = app.state.players[opponent];
+    const stolen = oppPlayer.hand.filter(c => c === chosenColour);
+    oppPlayer.hand = oppPlayer.hand.filter(c => c !== chosenColour);
+    app.state.players[playerName].hand.push(...stolen);
+    overlay.classList.remove("open");
+    updateStatus(`Bright Brown! Stole ${stolen.length} ${chosenColour} card(s).`, TOAST_NOTABLE);
+    onDone();
+  };
+}
+
+// ── Apply effects for simple events ──────────────────────────────────────
+function applyMysteryEffect(eventId, playerName) {
+  const player = app.state.players[playerName];
+  const opponent = playerName === "Eric" ? "Tango" : "Eric";
+  const oppPlayer = app.state.players[opponent];
+
+  switch(eventId) {
+    case "nowhere_to_poo":
+      player.skipTurns += 3;
+      updateStatus("Nowhere to Poo! Skipping 3 turns.", TOAST_NOTABLE);
+      break;
+
+    case "just_sniffin":
+      player.routeCostBonus = (player.routeCostBonus || 0) + 1;
+      updateStatus("Just Sniffin'! Routes cost +1 card.", TOAST_NOTABLE);
+      break;
+
+    case "gimme_gimme": {
+      const n = Math.min(3, oppPlayer.hand.length);
+      const stolen = shuffle([...oppPlayer.hand]).slice(0, n);
+      stolen.forEach(c => {
+        const i = oppPlayer.hand.indexOf(c);
+        if(i !== -1) oppPlayer.hand.splice(i, 1);
+        player.hand.push(c);
+      });
+      updateStatus(`Gimme Gimme! Stole ${n} card(s) from ${opponent}.`, TOAST_NOTABLE);
+      break;
+    }
+
+    case "zoomies":
+      player.inventory = [...(player.inventory||[]), "zoom"];
+      player.pendingZoom = false;
+      updateStatus("Zoomies! You have a free second move ready.", TOAST_NOTABLE);
+      break;
+
+    case "poop":
+      player.inventory = [...(player.inventory||[]), "poop"];
+      updateStatus("Poop! You're holding a poo — drop it on a node.", TOAST_NOTABLE);
+      break;
+
+    case "hitch_a_lift":
+      applyHitchALift(playerName);
+      break;
+
+    default:
+      break;
+  }
+}
+
+// ── HITCH A LIFT ──────────────────────────────────────────────────────────
+function applyHitchALift(playerName) {
+  const player = app.state.players[playerName];
+  // Complete destination first if currently on it
+  completeDestinationIfNeeded(playerName);
+  const target = getCurrentTargetForPlayer(player);
+  if(!target) { updateStatus("Hitch a Lift! Nowhere to go.", TOAST_NOTABLE); return; }
+  player.currentNode = target;
+  player.previousNode = null; // warp clears backtrack restriction
+  updateStatus(`Hitch a Lift! Warped to ${formatNodeName(target)}.`, TOAST_NOTABLE);
+  renderTokens();
+  // Complete again in case warped directly onto destination
+  completeDestinationIfNeeded(playerName);
+}
+
+// ── POOP drop prompt ──────────────────────────────────────────────────────
+function maybePromptPoopDrop(playerName, nodeId) {
+  const player = app.state.players[playerName];
+  if(!player.inventory || !player.inventory.includes("poop")) return Promise.resolve();
+  if(playerName !== getViewHero()) return Promise.resolve();
+  return new Promise(resolve => {
+    let overlay = document.getElementById("mystery-modal-overlay");
+    if(!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "mystery-modal-overlay";
+      overlay.className = "mystery-modal-overlay";
+      document.getElementById("game-shell").appendChild(overlay);
+    }
+    overlay.innerHTML = `
+      <div class="mystery-modal">
+        <div class="mystery-modal-emoji">💩</div>
+        <div class="mystery-modal-title">Do a poo?</div>
+        <div class="mystery-modal-body">You're at ${formatNodeName(nodeId)}. Leave a surprise for your opponent?</div>
+        <div class="mystery-modal-actions">
+          <button id="poop-no-btn" class="action-btn subtle" type="button">Not here</button>
+          <button id="poop-yes-btn" class="action-btn primary" type="button">💩 Yes!</button>
+        </div>
+      </div>`;
+    overlay.classList.add("open");
+    document.getElementById("poop-no-btn").onclick = () => { overlay.classList.remove("open"); resolve(); };
+    document.getElementById("poop-yes-btn").onclick = () => {
+      // Consume poop from inventory
+      const idx = player.inventory.indexOf("poop");
+      if(idx !== -1) player.inventory.splice(idx, 1);
+      if(!app.state.poopedNodes) app.state.poopedNodes = {};
+      app.state.poopedNodes[nodeId] = playerName;
+      overlay.classList.remove("open");
+      updateStatus(`💩 Left a surprise at ${formatNodeName(nodeId)}!`, TOAST_NOTABLE);
+      renderPoopNodes();
+      resolve();
+    };
+  });
+}
+
+// ── POOP trap check ───────────────────────────────────────────────────────
+function checkPoopTrap(playerName, nodeId) {
+  if(!app.state.poopedNodes) return false;
+  const placedBy = app.state.poopedNodes[nodeId];
+  if(!placedBy || placedBy === playerName) return false;
+  // Stepped in poop!
+  delete app.state.poopedNodes[nodeId];
+  app.state.players[playerName].skipTurns += 3;
+  if(playerName === getViewHero()) {
+    showPoopTrapModal();
+  } else {
+    updateStatus(`${playerName} stepped in poop! 3 turns skipped.`, TOAST_NOTABLE);
+  }
+  return true;
+}
+
+function showPoopTrapModal() {
+  let overlay = document.getElementById("mystery-modal-overlay");
+  if(!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "mystery-modal-overlay";
+    overlay.className = "mystery-modal-overlay";
+    document.getElementById("game-shell").appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="mystery-modal">
+      <div class="mystery-modal-emoji">💩</div>
+      <div class="mystery-modal-title">YOU STEPPED IN POOP!</div>
+      <div class="mystery-modal-body">Stay here and clean your shoes for 3 turns.</div>
+      <div class="mystery-modal-actions">
+        <button id="mystery-modal-ok" class="action-btn primary" type="button">Ugh…</button>
+      </div>
+    </div>`;
+  overlay.classList.add("open");
+  document.getElementById("mystery-modal-ok").onclick = () => overlay.classList.remove("open");
+}
+
+// ── ZOOMIES activation ────────────────────────────────────────────────────
+function maybeActivateZoom(playerName) {
+  const player = app.state.players[playerName];
+  if(!player.inventory || !player.inventory.includes("zoom")) return Promise.resolve(false);
+  if(playerName !== getViewHero()) {
+    // Opponent used zoom — consume silently
+    const idx = player.inventory.indexOf("zoom");
+    if(idx !== -1) player.inventory.splice(idx, 1);
+    return Promise.resolve(false);
+  }
+  // Find eligible connected routes from current node
+  const currentNode = player.currentNode;
+  const eligibleRoutes = Object.keys(app.rulesData.routes).filter(routeId => {
+    const rs = app.state.routes[routeId];
+    if(rs.claimedBy) return false;
+    const cn = getConnectedNode(routeId, currentNode);
+    if(!cn) return false;
+    if(cn === player.previousNode) return false;
+    return true;
+  });
+  if(!eligibleRoutes.length) {
+    // No zoom targets — consume and skip
+    const idx = player.inventory.indexOf("zoom");
+    if(idx !== -1) player.inventory.splice(idx, 1);
+    updateStatus("Zoomies fizzled — no connected routes!", TOAST_NOTABLE);
+    return Promise.resolve(false);
+  }
+  // Show zoom route picker
+  return new Promise(resolve => {
+    let overlay = document.getElementById("mystery-modal-overlay");
+    if(!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "mystery-modal-overlay";
+      overlay.className = "mystery-modal-overlay";
+      document.getElementById("game-shell").appendChild(overlay);
+    }
+    overlay.innerHTML = `
+      <div class="mystery-modal">
+        <div class="mystery-modal-emoji">⚡</div>
+        <div class="mystery-modal-title">WHERE ARE YOU ZOOMING?</div>
+        <div class="mystery-modal-body">Pick a connected route for your free second move.</div>
+        <div id="zoom-route-list" class="mystery-route-list"></div>
+        <div class="mystery-modal-actions">
+          <button id="zoom-skip-btn" class="action-btn subtle" type="button">Skip zoom</button>
+        </div>
+      </div>`;
+    overlay.classList.add("open");
+    const list = document.getElementById("zoom-route-list");
+    eligibleRoutes.forEach(routeId => {
+      const to = getConnectedNode(routeId, currentNode);
+      const rc = getDisplayRouteColor(app.state.routes[routeId].colour);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "route-option-row";
+      btn.innerHTML = `<strong>${formatNodeName(to)}</strong> <span style="opacity:0.6;font-size:13px">via ${formatRouteName(routeId)} (${rc})</span>`;
+      btn.onclick = async () => {
+        overlay.classList.remove("open");
+        // Consume zoom
+        const idx = player.inventory.indexOf("zoom");
+        if(idx !== -1) player.inventory.splice(idx, 1);
+        // Execute free move
+        const from = player.currentNode;
+        app.state.routes[routeId].claimedBy = playerName;
+        player.previousNode = from;
+        player.currentNode = to;
+        player.journeyRouteIds.push(routeId);
+        renderAll();
+        updateStatus(`⚡ Zoomed to ${formatNodeName(to)}!`, TOAST_NOTABLE);
+        await animateTokenAlongRoute(playerName, routeId, from, to);
+        completeDestinationIfNeeded(playerName);
+        renderAll();
+        resolve(true);
+      };
+      list.appendChild(btn);
+    });
+    document.getElementById("zoom-skip-btn").onclick = () => {
+      overlay.classList.remove("open");
+      resolve(false);
+    };
+  });
+}
+
+// ── Check if landing on mystery node ─────────────────────────────────────
+function isMysteryNode(nodeId) {
+  return (app.state.mysteryNodes||[]).includes(nodeId);
+}
+
 function renderAll(){
   renderTurnBadge(); renderCounts(); renderSelectedRouteCard(); renderActiveHand();
   renderPlayerSummary(); renderDestinationSequences(); renderRoutes(); renderTokens();
   renderTargetPulse(); renderDebug(app.audit); renderButtons(); renderMobileRoutesPanel();
-  renderDesktopPiles();
+  renderDesktopPiles(); renderMysteryNodes(); renderPoopNodes();
+  renderInventoryBadge();
   if(app.roomCode) updateRoomHud();
+}
+
+function renderInventoryBadge() {
+  const hero = getViewHero();
+  if(!app.state) return;
+  const player = app.state.players[hero];
+  if(!player) return;
+  const inv = player.inventory || [];
+  // Show in left panel below draw button
+  let badge = document.getElementById("inventory-badge");
+  if(!badge) {
+    badge = document.createElement("div");
+    badge.id = "inventory-badge";
+    badge.className = "inventory-badge";
+    const drawBtn = document.getElementById("draw-card-btn");
+    if(drawBtn && drawBtn.parentNode) drawBtn.parentNode.insertBefore(badge, drawBtn.nextSibling);
+  }
+  if(!inv.length) { badge.innerHTML = ""; return; }
+  badge.innerHTML = inv.map(item => {
+    if(item === "zoom") return `<span class="inv-item inv-zoom">⚡ ZOOMIES</span>`;
+    if(item === "poop") return `<span class="inv-item inv-poop">💩 POOP</span>`;
+    return `<span class="inv-item">${item}</span>`;
+  }).join("");
+  // Status indicators
+  const bits = [];
+  if(player.skipTurns > 0) bits.push(`⏸ Skipping ${player.skipTurns} turn(s)`);
+  if(player.routeCostBonus > 0) bits.push(`+${player.routeCostBonus} card cost`);
+  const statusBadge = document.getElementById("status-effect-badge") || (() => {
+    const el = document.createElement("div");
+    el.id = "status-effect-badge";
+    el.className = "status-effect-badge";
+    if(badge.parentNode) badge.parentNode.insertBefore(el, badge.nextSibling);
+    return el;
+  })();
+  statusBadge.innerHTML = bits.map(b=>`<span class="status-effect-item">${b}</span>`).join("");
 }
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
@@ -1205,7 +1799,26 @@ async function confirmRouteModalPlay(){
   app.state.selectedRouteId=null; closeRouteModal(); renderAll();
   updateStatus(`${pn} → ${formatNodeName(to)}`,TOAST_NOTABLE);
   await animateTokenAlongRoute(pn,routeId,from,to);
-  completeDestinationIfNeeded(pn); renderAll();
+
+  // Check poop trap before completing destination
+  checkPoopTrap(pn, to);
+
+  // Check mystery node
+  if(isMysteryNode(to)) {
+    await triggerMysteryEvent(to, pn);
+  }
+
+  // Complete destination (may reveal new destination card)
+  completeDestinationIfNeeded(pn);
+  renderAll();
+
+  // Check ZOOMIES inventory — only for current local hero
+  if(pn === getViewHero()) {
+    await maybePromptPoopDrop(pn, to);
+    await maybeActivateZoom(pn);
+  }
+
+  renderAll();
   endTurn();
 }
 
