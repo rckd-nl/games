@@ -8,7 +8,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.9.1";
+const APP_VERSION = "v2.9.2";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -609,12 +609,23 @@ function wireRoomButtons(){
       state.currentPlayer="Eric";
       const code=await fbCreateRoom(state);
       app.roomCode=code; app.localHero="Eric";
+      app.state={...state, controlledHero:"Eric"};
       sessionStorage.setItem("dd_room_code",code); sessionStorage.setItem("dd_hero","Eric");
 
-      // Show waiting screen with code
+      // Show identity card immediately — creator is always Eric
+      hideScreen("room-screen");
+      document.getElementById("hero-overlay").classList.remove("active");
+      showMobileHud();
+      resetBoardView();
+      renderAll();
+      showCurrentDestinationReveal("Eric");
+      showStartToast("Eric");
+      updateRoomHud();
+
+      // Then show waiting overlay with code on top
       const codeEl=document.getElementById("waiting-code");
       if(codeEl) codeEl.textContent=code;
-      hideScreen("room-screen"); showScreen("waiting-screen");
+      showScreen("waiting-screen");
 
       // Watch for Tango joining
       let started=false;
@@ -622,7 +633,17 @@ function wireRoomButtons(){
         if(presence?.Tango?.connected&&!started){
           started=true;
           hideScreen("waiting-screen");
-          launchGame("Eric", state);
+          // Board already shown — just subscribe to remote changes
+          console.log("[DD] Tango joined, subscribing to game state");
+          let skipFirst=true;
+          fbSubscribeRoom(code, remoteState=>{
+            if(!remoteState||!remoteState.players) return;
+            if(skipFirst){ skipFirst=false; return; }
+            console.log("[DD] Eric received remote state, currentPlayer:", remoteState.currentPlayer);
+            app.state={...restoreArrays({...remoteState}), controlledHero:"Eric"};
+            renderAll();
+            updateRoomHud();
+          });
         }
       });
     } catch(err){
