@@ -65,11 +65,12 @@ export async function initRoomFlow(appRef) {
       appRef.state = state;
       appRef.state.controlledHero = savedHero;
       registerDisconnect(savedCode, savedHero);
-      startGameSubscription(appRef, savedCode);
       hideRoomScreen();
       hideWaitingScreen();
-      // Show game directly
+      // Resume directly without hero pick
       document.getElementById("hero-overlay").classList.remove("active");
+      appRef.startAs(savedHero);
+      startGameSubscription(appRef, savedCode);
       return;
     } catch (e) {
       // Saved room gone — clear and show room screen fresh
@@ -173,11 +174,8 @@ function wireRoomButtons(appRef) {
 // ── Start game after both players present ─────────────────────────────────────
 
 function startGame(appRef, code, hero, state) {
-  // Show hero overlay — but hero is already decided
-  const heroOverlay = document.getElementById("hero-overlay");
-  heroOverlay.classList.remove("active");
-
-  // Directly call app's startGameAs equivalent
+  // startAs() handles: hiding hero overlay, identity card, renderAll,
+  // destination reveal, showMobileHud. It's the full game start sequence.
   appRef.startAs(hero);
   startGameSubscription(appRef, code);
 }
@@ -185,22 +183,25 @@ function startGame(appRef, code, hero, state) {
 // ── Subscribe to Firebase state changes ───────────────────────────────────────
 
 function startGameSubscription(appRef, code) {
-  let isFirstCall = true;
+  let localVersion = 0;  // incremented on every local push to detect echo
+
+  // Expose increment so app.v2.js can call it before pushState
+  appRef.__incrementLocalVersion = () => { localVersion++; };
 
   subscribeToRoom(code, remoteState => {
-    // Skip the first call — it's our own write echoing back
-    if (isFirstCall) {
-      isFirstCall = false;
+    if (!remoteState) return;
+
+    // If this update was triggered by our own push, localVersion > 0 — skip it
+    if (localVersion > 0) {
+      localVersion--;
       return;
     }
 
-    // Only apply remote state if it's not our own turn
-    // (our own writes already updated local state)
-    const isMyTurn = remoteState.currentPlayer === appRef.localHero;
-    if (!isMyTurn || remoteState.currentPlayer !== appRef.state.currentPlayer) {
-      appRef.state = remoteState;
-      appRef.state.controlledHero = appRef.localHero;
-      appRef.renderAll();
-    }
+    // Apply remote state — always trust Firebase as source of truth
+    // Preserve localHero since it is device-specific
+    const hero = appRef.localHero;
+    appRef.state = remoteState;
+    appRef.state.controlledHero = hero;
+    appRef.renderAll();
   });
 }
