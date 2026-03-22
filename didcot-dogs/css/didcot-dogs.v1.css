@@ -8,7 +8,7 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  touch-action: manipulation;
+  touch-action: auto;
 }
 
 * {
@@ -441,6 +441,12 @@ html, body {
 .route-modal-actions {
   display: flex;
   justify-content: flex-end;
+  }
+
+.route-modal-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   gap: 10px;
 }
 
@@ -809,6 +815,7 @@ html, body {
   left: 350px;
   right: 350px;
   top: 92px;
+  touch-action: none;
   bottom: 24px;
   border-radius: 28px;
   overflow: hidden;
@@ -1262,7 +1269,7 @@ html, body {
   #status-chip {
     left: 50%;
     transform: translateX(-50%);
-    bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(126px + env(safe-area-inset-bottom, 0px));
     max-width: calc(100vw - 24px);
     font-size: 14px;
     padding: 8px 12px;
@@ -1280,6 +1287,7 @@ html, body {
     width: calc(100vw - 8px);
     max-width: calc(100vw - 8px);
     border-radius: 18px 18px 0 0;
+    min-height: 0;
     padding: 18px;
     max-height: calc(100vh - 110px - env(safe-area-inset-top, 0px));
     overflow: auto;
@@ -1289,7 +1297,32 @@ html, body {
   .destination-reveal-title {
     font-size: 28px;
   }
+  .route-modal-body {
+    max-height: 42vh;
+    min-height: 0;
+    padding-right: 2px;
+  }
 
+  .route-spend-card,
+  .route-colour-choice-card {
+    width: 52px;
+    height: 72px;
+    padding: 6px;
+    font-size: 11px;
+    border-radius: 10px;
+  }
+
+  .route-spend-card::before,
+  .route-colour-choice-card::before {
+    inset: 4px;
+    border-radius: 6px;
+  }
+
+  .route-option-row-label {
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  
   .hero-inner {
     width: min(94vw, 520px);
     padding: 28px 18px;
