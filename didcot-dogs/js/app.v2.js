@@ -549,8 +549,11 @@ function updateRoomHud(){
   if(identity&&cfg){
     identity.innerHTML=`
       <div class="desktop-identity-inner">
-        <img class="desktop-identity-portrait ${hero==="Eric"?"hero-portrait-eric":"hero-portrait-tango"}"
-             src="${cfg.image}" alt="${hero}">
+        <img class="desktop-identity-portrait"
+             id="desktop-identity-portrait"
+             data-hero="${hero}"
+             src="${cfg.image}" alt="${hero}"
+             style="border-color:${hero==="Eric"?"rgba(25,167,255,0.6)":"rgba(255,230,0,0.6)"}">
         <div class="desktop-identity-text">
           <div class="desktop-identity-label">YOU ARE</div>
           <div class="desktop-identity-name">${hero.toUpperCase()}</div>
@@ -558,6 +561,9 @@ function updateRoomHud(){
         </div>
       </div>`;
   }
+
+  // Start harsh wobble on portrait
+  requestAnimationFrame(startPortraitWobble);
 
   // Desktop footer — turn indicator (moves to where badge is)
   const ti=document.getElementById("desktop-turn-indicator");
@@ -793,6 +799,28 @@ function returnToMenu(){
   resetBoardView(); renderAll();
   showScreen("room-screen");
   wireRoomButtons(); // safe — uses onclick so no stacking
+}
+
+
+// ─── Portrait harsh wobble ────────────────────────────────────────────────────
+let __wobbleTimer = null;
+function startPortraitWobble() {
+  if (__wobbleTimer) return;
+  function snap() {
+    const img = document.getElementById("desktop-identity-portrait");
+    if (!img) { __wobbleTimer = null; return; }
+    const deg = (Math.random() < 0.5 ? -1 : 1) * 15;
+    img.style.transform = `rotate(${deg}deg)`;
+    img.style.transition = "transform 60ms step-end";
+    const next = 500 + Math.random() * 1000;
+    __wobbleTimer = setTimeout(snap, next);
+  }
+  snap();
+}
+function stopPortraitWobble() {
+  if (__wobbleTimer) { clearTimeout(__wobbleTimer); __wobbleTimer = null; }
+  const img = document.getElementById("desktop-identity-portrait");
+  if (img) { img.style.transform = ""; }
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
@@ -1373,8 +1401,8 @@ async function init(){
     await initFirebase();
 
     const [rulesData,destinationData]=await Promise.all([
-      loadJson("./data/didcot-dogs-rules.v1.json"),
-      loadJson("./data/didcot-dogs-destinations.v1.json")
+      loadJson("./data/didcot-dogs-rules.v1.json?v=3"),
+      loadJson("./data/didcot-dogs-destinations.v1.json?v=3")
     ]);
     const svg=await injectBoardSvg();
     ensureSvgDefs(svg); startClaimGradientAnimation(svg);
