@@ -51,7 +51,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.4.0";
+const APP_VERSION = "v2.4.1";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -1326,13 +1326,18 @@ function renderDestinationSequences() {
 }
 
 function renderTargetPulse() {
+  // Clear from all elements first
   app.svg.querySelectorAll(".target-node-pulse").forEach(el => el.classList.remove("target-node-pulse"));
 
   const targetNodeId = getCurrentTargetForPlayer(app.state.players[app.state.currentPlayer]);
   if (!targetNodeId) return;
 
-  const targetEl = getNodeElement(app.svg, targetNodeId);
-  if (targetEl) targetEl.classList.add("target-node-pulse");
+  // Query ALL elements with this ID — covers both the circle in #Nodes
+  // and the text in #Labels (SVG allows duplicate IDs across groups).
+  // Using querySelectorAll so both always pulse together.
+  app.svg.querySelectorAll(`#${CSS.escape(targetNodeId)}`).forEach(el => {
+    el.classList.add("target-node-pulse");
+  });
 }
 
 function renderDebug(audit) {
