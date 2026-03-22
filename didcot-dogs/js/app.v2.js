@@ -8,7 +8,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.9.8";
+const APP_VERSION = "v2.9.9";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1420,8 +1420,8 @@ async function init(){
     app.state=createInitialLocalState(rulesData);
 
     wireRouteInteractions(); wireControlButtons(); setupMobileBoardGestures();
-    setupFullscreenButton(); resetBoardView(); renderAll();
-
+    setupFullscreenButton(); resetBoardView();
+    // Don't renderAll() here — initRoomFlow decides what to show first
     await initRoomFlow();
   } catch(err){
     console.error("[DD] init error:",err);
