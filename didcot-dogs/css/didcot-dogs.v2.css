@@ -1726,3 +1726,279 @@ html, body {
   .end-screen-portrait-wrap { width: 120px; height: 120px; }
   .end-screen-portrait      { width: 96px; height: 96px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.2.0  CARD PILE VISUALS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── HUD grid update — 3 rows ─────────────────────────────────────────────
+   Row 1: turn pill | draw pile | discard pile  (3 equal cols)
+   Row 2: destination (full width)
+   Row 3: draw btn | routes btn
+   ─────────────────────────────────────────────────────────────────────── */
+#mobile-hud {
+  grid-template-columns: 1fr auto auto;
+  grid-template-rows: auto auto auto;
+  align-items: center;
+}
+
+#mobile-hud-turn        { grid-column: 1; grid-row: 1; }
+#mobile-hud-draw        { grid-column: 2; grid-row: 1; justify-self: center; }
+#mobile-hud-discard     { grid-column: 3; grid-row: 1; justify-self: center; }
+#mobile-hud-destination { grid-column: 1 / -1; grid-row: 2; }
+#mobile-open-sheet-btn  { grid-column: 1; grid-row: 3; }
+#mobile-reset-view-btn  { grid-column: 2 / -1; grid-row: 3; }
+
+/* Pile containers sit flush — no pill background */
+.mobile-hud-pile {
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: 0;
+  width: auto;
+  pointer-events: none;
+}
+
+/* ── Pile wrapper ─────────────────────────────────────────────────────────── */
+.pile-wrap {
+  position: relative;
+  width: 38px;
+  height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── Individual cards in the stack ───────────────────────────────────────── */
+.pile-card {
+  position: absolute;
+  width: 34px;
+  height: 48px;
+  border-radius: 6px;
+  border: 1.5px solid rgba(0,0,0,0.18);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  top: var(--pile-offset, 0px);
+  transform: rotate(var(--pile-rot, 0deg));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Face-down back — dark with paw */
+.pile-card-back {
+  background: linear-gradient(160deg, #1e2535 0%, #0e1118 100%);
+  border-color: rgba(255,255,255,0.08);
+}
+
+/* Face-up (discard) cards show their colour gradient */
+.pile-card-face {
+  /* background set inline by JS */
+}
+
+.pile-card-label {
+  position: absolute;
+  bottom: 3px;
+  left: 4px;
+  font-family: var(--ui-font);
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: capitalize;
+  color: rgba(255,255,255,0.85);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 28px;
+}
+
+/* Empty pile slot */
+.pile-card-empty {
+  background: rgba(255,255,255,0.04);
+  border: 1.5px dashed rgba(255,255,255,0.14);
+  border-radius: 6px;
+  width: 34px;
+  height: 48px;
+  position: absolute;
+  top: 0;
+}
+
+/* ── Count badge ──────────────────────────────────────────────────────────── */
+.pile-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(229,57,53,0.92);
+  border: 1.5px solid rgba(255,255,255,0.9);
+  color: #fff;
+  font-family: var(--ui-font);
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  z-index: 10;
+}
+
+.pile-badge-discard {
+  background: rgba(30,35,48,0.95);
+  border-color: rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.75);
+}
+
+/* ── Pile label below stack ───────────────────────────────────────────────── */
+.pile-label {
+  position: absolute;
+  bottom: -14px;
+  font-family: var(--ui-font);
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.38);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* Adjust --mobile-hud-height to accommodate 3 rows */
+:root {
+  --mobile-hud-height: 124px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.3.0  CARD DRAW ANIMATION + LANDSCAPE MOBILE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Flying card overlay ──────────────────────────────────────────────────── */
+.flying-card {
+  border-radius: 8px;
+  border: 2px solid rgba(0,0,0,0.18);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  backface-visibility: hidden;
+}
+
+.flying-card-back {
+  background: linear-gradient(160deg, #1e2535 0%, #0e1118 100%);
+}
+
+.flying-card-face {
+  /* background set inline by JS */
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45), 0 0 16px rgba(255,255,255,0.15);
+}
+
+/* ── Colour-matched glow on newly drawn card ──────────────────────────────── */
+.mobile-hand-peek-card.card-glow {
+  animation: cardGlowPulse 1.5s ease forwards;
+  box-shadow:
+    0 6px 14px rgba(0,0,0,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.35),
+    0 0 0 2px var(--glow-colour, rgba(255,255,255,0.6)),
+    0 0 18px var(--glow-colour, rgba(255,255,255,0.4));
+}
+
+@keyframes cardGlowPulse {
+  0%   { box-shadow:
+    0 6px 14px rgba(0,0,0,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.35),
+    0 0 0 3px var(--glow-colour, rgba(255,255,255,0.8)),
+    0 0 24px var(--glow-colour, rgba(255,255,255,0.6)); }
+  60%  { box-shadow:
+    0 6px 14px rgba(0,0,0,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.35),
+    0 0 0 2px var(--glow-colour, rgba(255,255,255,0.5)),
+    0 0 14px var(--glow-colour, rgba(255,255,255,0.3)); }
+  100% { box-shadow:
+    0 6px 14px rgba(0,0,0,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.35),
+    0 0 0 0px transparent,
+    0 0 0px transparent; }
+}
+
+/* ── Landscape mobile — force mobile layout ───────────────────────────────── */
+/* Targets phones in landscape (height ≤ 500px) regardless of pixel width.   */
+/* Tablets in landscape are typically > 500px tall so won't be affected.      */
+@media (orientation: landscape) and (max-height: 500px) {
+
+  #game-shell {
+    width: 100vw;
+    height: 100vh;
+  }
+
+  #top-bar,
+  #left-panel,
+  #right-panel { display: none; }
+
+  #board-wrap {
+    left: 0; right: 0;
+    top: var(--mobile-hud-height);
+    bottom: var(--mobile-bar-height);
+    border-radius: 0;
+    border: none;
+  }
+
+  #mobile-hud { display: grid; }
+  #mobile-hud.visible { display: grid; }
+
+  #mobile-bottom-bar.visible { display: block; }
+
+  #status-chip {
+    bottom: calc(var(--mobile-bar-height) + 14px);
+    z-index: 2010;
+    max-width: calc(100vw - 40px);
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  .route-modal-overlay,
+  .destination-reveal-overlay {
+    position: fixed;
+    top: var(--mobile-hud-height);
+    bottom: var(--mobile-bar-height);
+    left: 0; right: 0;
+    padding: 12px;
+    align-items: center;
+    background: rgba(9, 12, 17, 0.72);
+  }
+
+  .route-modal,
+  .destination-reveal-card {
+    width: 100%;
+    max-width: 480px;
+    max-height: 100%;
+    border-radius: 20px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 18px;
+  }
+
+  /* Landscape HUD — condense to single row to save vertical space */
+  #mobile-hud {
+    grid-template-columns: auto auto auto 1fr auto auto;
+    grid-template-rows: auto;
+    gap: 4px;
+  }
+  #mobile-hud-turn        { grid-column: 1; grid-row: 1; }
+  #mobile-hud-draw        { grid-column: 2; grid-row: 1; }
+  #mobile-hud-discard     { grid-column: 3; grid-row: 1; }
+  #mobile-hud-destination { grid-column: 4; grid-row: 1; }
+  #mobile-open-sheet-btn  { grid-column: 5; grid-row: 1; }
+  #mobile-reset-view-btn  { grid-column: 6; grid-row: 1; }
+
+  /* Smaller pile stacks in landscape */
+  .pile-wrap      { width: 30px; height: 42px; }
+  .pile-card      { width: 26px; height: 38px; }
+  .pile-card-empty{ width: 26px; height: 38px; }
+  .pile-label     { display: none; }
+
+  /* Recalculate HUD height for single-row landscape */
+  :root { --mobile-hud-height: 52px; }
+
+  /* Hero pick — landscape adjustments */
+  .hero-choice-wrap   { gap: 16px; }
+  .hero-pick-card     { min-height: 160px; width: min(44vw, 280px); flex-direction: row; padding: 16px; }
+  .hero-token-frame   { width: 100px; height: 100px; flex-shrink: 0; }
+  .hero-portrait      { width: 80px; height: 80px; }
+  .hero-title         { font-size: 42px; }
+}
