@@ -1752,7 +1752,7 @@ html, body {
     width: 100vw !important;
     height: 100vh !important;
   }
- 
+
   #top-bar,
   #left-panel,
   #right-panel { display: none !important; }
