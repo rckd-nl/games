@@ -51,13 +51,13 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.5.0";
+const APP_VERSION = "v2.6.0";
 
 // ─── DEV: Auto-sim for player 2 ──────────────────────────────────────────────
 // Set to true to have the non-controlled player auto-act after ~10s.
 // Useful for observing one player's full flow without manually switching.
 // Set to false for normal pass-and-play or before Firebase multiplayer.
-const DEV_AUTO_SIM = true;
+const DEV_AUTO_SIM = false;  // flip to true for solo testing without Firebase
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -98,6 +98,8 @@ let app = {
   svg: null,
   audit: null,
   state: null,
+  roomCode: null,      // Firebase room code
+  localHero: null,     // which hero this device controls
   boardView: {
     // zoom level: 1 = fully zoomed out (fit), up to maxScale
     scale: 1,
@@ -1729,6 +1731,7 @@ function closeRouteModal() {
 }
 
 async function confirmRouteModalPlay() {
+  if (!isMyTurn()) return;
   cancelAutoSim();
   if (!app.modal.routeId || app.modal.selectedOptionIndex === null) return;
 
@@ -2031,6 +2034,7 @@ function triggerCardGlow(colour) {
 }
 
 async function drawCardForCurrentPlayer() {
+  if (!isMyTurn()) return;
   cancelAutoSim();
   const currentPlayerName = app.state.currentPlayer;
   const card = drawCard();
@@ -2055,6 +2059,7 @@ async function drawCardForCurrentPlayer() {
   updateStatus(`${currentPlayerName} drew ${card}.`); // silent on mobile
   closeMobileSheet();
   renderAll();
+  if (app.roomCode) { import("./room.js").then(m => m.pushState(app.roomCode, app.state)); }
 
   // Trigger glow on the landed card
   if (isMobile) {
@@ -2192,6 +2197,16 @@ function hideEndScreen() {
   if (overlay) overlay.className = "end-screen-overlay";
 }
 
+
+
+// ─── TURN LOCKING ─────────────────────────────────────────────────────────────
+// In multiplayer, actions are only allowed when it is the local hero's turn.
+// In solo / dev mode (no roomCode), always returns true.
+function isMyTurn() {
+  if (!app.roomCode) return true;
+  if (!app.localHero) return true;
+  return app.state.currentPlayer === app.localHero;
+}
 
 // ─── AUTO-SIM (player 2 bot) ──────────────────────────────────────────────────
 
@@ -2383,11 +2398,16 @@ async function init() {
     wireRouteInteractions();
     wireControlButtons();
     setupMobileBoardGestures();
-    // showMobileHud() is called inside startGameAs() so the HUD stays
-    // hidden during the hero-pick screen.
     resetBoardView();
-    renderAll();
-    updateStatus("Pick your hero to begin.");
+
+    // Expose methods for room.js Firebase integration
+    app.buildInitialState = (hero) => createInitialLocalState(app.rulesData, hero);
+    app.startAs = (hero) => startGameAs(hero);
+    app.renderAll = () => renderAll();
+
+    // Launch room flow (shows room screen or resumes saved game)
+    const roomModule = await import("./room.js");
+    await roomModule.initRoomFlow(app);
   } catch (error) {
     console.error(error);
     document.getElementById("status-chip").textContent = `Error loading board: ${error.message}`;
