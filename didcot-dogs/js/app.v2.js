@@ -51,7 +51,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.7.0";
+const APP_VERSION = "v2.8.0";
 
 // ─── DEV: Auto-sim for player 2 ──────────────────────────────────────────────
 // Set to true to have the non-controlled player auto-act after ~10s.
@@ -919,7 +919,9 @@ function endTurn() {
 
   if (app.roomCode) {
     // Multiplayer — always alternate, push to Firebase
-    app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
+    const prev = app.state.currentPlayer;
+    app.state.currentPlayer = prev === "Eric" ? "Tango" : "Eric";
+    console.log("[Didcot Dogs] endTurn: switched from", prev, "to", app.state.currentPlayer, "pushing to Firebase");
     renderAll();
     import("./room.js").then(m => { m.pushState(app.roomCode, app.state); m.updateRoomHud(app); });
   } else if (app.state.controlledHero) {
@@ -1861,6 +1863,9 @@ function startGameAs(playerName) {
 // re-randomise route colours). Instead uses whatever state is already in
 // app.state (fetched from Firebase). Just handles the UI reveal sequence.
 function startGameMultiplayer(playerName) {
+  console.log("[Didcot Dogs] startGameMultiplayer:", playerName,
+    "routes:", Object.keys(app.state?.routes || {}).length,
+    "drawPile:", app.state?.drawPile?.length);
   // Don't touch app.state — it came from Firebase
   app.state.controlledHero = playerName;
   document.getElementById("hero-overlay").classList.remove("active");
@@ -2243,7 +2248,8 @@ function hideEndScreen() {
 function isMyTurn() {
   if (!app.roomCode) return true;
   if (!app.localHero) return true;
-  return app.state.currentPlayer === app.localHero;
+  const result = app.state.currentPlayer === app.localHero;
+  return result;
 }
 
 // ─── AUTO-SIM (player 2 bot) ──────────────────────────────────────────────────
@@ -2409,29 +2415,26 @@ async function init() {
     tightenSvgViewBox(svg);   // sets app.boardView.baseViewBox
 
     const audit = getSvgAudit(svg, rulesData);
-    const state = createInitialLocalState(rulesData);
 
-    app = {
-      rulesData,
-      destinationData,
-      svg,
-      audit,
-      state,
-      boardView: {
-        scale: 1,
-        panX: 0,
-        panY: 0,
-        minScale: 1,
-        maxScale: 3,
-        baseViewBox: app.boardView.baseViewBox   // preserve from tightenSvgViewBox
-      },
-      modal: {
-        routeId: null,
-        chosenColor: null,
-        selectedOptionIndex: null,
-        options: []
-      }
-    };
+    // Mutate app in place — never replace the object reference.
+    // room.js holds appRef = app; replacing app would break that reference.
+    app.rulesData      = rulesData;
+    app.destinationData = destinationData;
+    app.svg            = svg;
+    app.audit          = audit;
+    // Only create initial state if not resuming a multiplayer session
+    // (room.js will set app.state from Firebase if resuming)
+    if (!app.state || !app.state.players) {
+      app.state = createInitialLocalState(rulesData);
+    }
+    // roomCode and localHero preserved if set before init() (unlikely but safe)
+    app.boardView.scale    = 1;
+    app.boardView.panX     = 0;
+    app.boardView.panY     = 0;
+    app.boardView.minScale = 1;
+    app.boardView.maxScale = 3;
+    // baseViewBox already set by tightenSvgViewBox above
+    app.modal = { routeId: null, chosenColor: null, selectedOptionIndex: null, options: [] };
 
     wireRouteInteractions();
     wireControlButtons();
