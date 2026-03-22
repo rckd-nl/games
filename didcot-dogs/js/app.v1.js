@@ -1,6 +1,6 @@
 console.log("Didcot Dogs app.v1.js loaded");
 
-const APP_VERSION = "v1.9.4";
+const APP_VERSION = "v1.9.5";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -73,8 +73,40 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function clampBoardPan() {
+  const boardWrap = document.getElementById("board-wrap");
+  if (!boardWrap || !app.svg) return;
+
+  const wrapWidth = boardWrap.clientWidth;
+  const wrapHeight = boardWrap.clientHeight;
+
+  const svgWidth = app.svg.clientWidth || wrapWidth;
+  const svgHeight = app.svg.clientHeight || wrapHeight;
+
+  const scaledWidth = svgWidth * app.boardView.scale;
+  const scaledHeight = svgHeight * app.boardView.scale;
+
+  if (scaledWidth <= wrapWidth) {
+    app.boardView.x = (wrapWidth - scaledWidth) / 2;
+  } else {
+    const minX = wrapWidth - scaledWidth;
+    const maxX = 0;
+    app.boardView.x = clamp(app.boardView.x, minX, maxX);
+  }
+
+  if (scaledHeight <= wrapHeight) {
+    app.boardView.y = (wrapHeight - scaledHeight) / 2;
+  } else {
+    const minY = wrapHeight - scaledHeight;
+    const maxY = 0;
+    app.boardView.y = clamp(app.boardView.y, minY, maxY);
+  }
+}
+
 function applyBoardViewTransform() {
   if (!app.svg) return;
+
+  clampBoardPan();
 
   const { scale, x, y } = app.boardView;
   app.svg.style.transformOrigin = "0 0";
@@ -1402,7 +1434,10 @@ async function confirmRouteModalPlay() {
   await animateTokenAlongRoute(currentPlayerName, routeId, fromNode, toNode);
   completeDestinationIfNeeded(currentPlayerName);
   renderAll();
-  endTurn();
+
+  if (!app.state.controlledHero) {
+    endTurn();
+  }
 }
 
 function showStartToast(playerName) {
@@ -1509,7 +1544,10 @@ function drawCardForCurrentPlayer() {
   updateStatus(`${currentPlayerName} drew ${card}.`);
   closeMobileSheet();
   renderAll();
-  endTurn();
+
+  if (!app.state.controlledHero) {
+    endTurn();
+  }
 }
 
 function handleRouteHover(routeId) {
@@ -1663,6 +1701,11 @@ async function init() {
     document.getElementById("status-chip").textContent = `Error loading board: ${error.message}`;
   }
 }
+
+window.addEventListener("resize", () => {
+  if (!app.svg) return;
+  applyBoardViewTransform();
+});
 
 document.addEventListener("DOMContentLoaded", () => {
   setupFullscreenButton();
