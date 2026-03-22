@@ -51,7 +51,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.6.2";
+const APP_VERSION = "v2.7.0";
 
 // ─── DEV: Auto-sim for player 2 ──────────────────────────────────────────────
 // Set to true to have the non-controlled player auto-act after ~10s.
@@ -1608,6 +1608,10 @@ function renderAll() {
   renderDebug(app.audit);
   renderButtons();
   renderMobileRoutesPanel();
+  // Update room HUD if in multiplayer
+  if (app.roomCode) {
+    import("./room.js").then(m => m.updateRoomHud(app));
+  }
 }
 
 function buildCardChoiceEl(color, active = false) {
@@ -2082,7 +2086,7 @@ async function drawCardForCurrentPlayer() {
   updateStatus(`${currentPlayerName} drew ${card}.`); // silent on mobile
   closeMobileSheet();
   renderAll();
-  if (app.roomCode) { if (app.__incrementLocalVersion) app.__incrementLocalVersion(); import("./room.js").then(m => m.pushState(app.roomCode, app.state)); }
+  if (app.roomCode) { import("./room.js").then(m => { m.pushState(app.roomCode, app.state); m.updateRoomHud(app); }); }
 
   // Trigger glow on the landed card
   if (isMobile) {
@@ -2127,6 +2131,11 @@ function wireRouteInteractions() {
 
 function resetLocalGame() {
   cancelAutoSim();
+  if (app.roomCode) {
+    import("./room.js").then(m => m.clearRoomSession());
+    app.roomCode  = null;
+    app.localHero = null;
+  }
   app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
   closeRouteModal();
   closeDestinationReveal();
@@ -2430,8 +2439,9 @@ async function init() {
 
     // Expose methods for room.js Firebase integration
     app.buildInitialState = (hero) => createInitialLocalState(app.rulesData, hero);
-    app.startAs = (hero) => startGameAs(hero);
-    app.startMultiplayer = (hero) => startGameMultiplayer(hero);
+    app.startAs           = (hero) => startGameAs(hero);
+    app.startMultiplayer  = (hero) => startGameMultiplayer(hero);
+    app.renderAll         = () => renderAll();
     app.renderAll = () => renderAll();
 
     // Launch room flow (shows room screen or resumes saved game)
