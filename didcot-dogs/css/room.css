@@ -1,0 +1,232 @@
+/*
+ * room.css — Didcot Dogs
+ *
+ * CHANGELOG
+ * v1.0.0
+ *   - Room screen: create / join UI before hero pick.
+ *   - Waiting screen: animated holding screen with room code display.
+ *   - Both use the same wipe-sting aesthetic as the hero overlay.
+ */
+
+/* ── Room screen ─────────────────────────────────────────────────────────── */
+#room-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 4500;   /* above hero overlay (4000) */
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #090c11;
+}
+#room-screen.active { display: flex; }
+
+.room-inner {
+  position: relative;
+  z-index: 3;
+  text-align: center;
+  width: min(520px, 92vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.room-kicker {
+  font-family: var(--header-font);
+  font-size: 28px;
+  color: rgba(255,255,255,0.7);
+}
+
+.room-title {
+  font-family: var(--header-font);
+  font-size: 72px;
+  line-height: 0.92;
+  color: #ffffff;
+  text-shadow:
+    0 0 14px rgba(141,18,24,0.4),
+    0 0 32px rgba(34,59,124,0.25);
+}
+
+.room-divider {
+  width: 100%;
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.10);
+  margin: 4px 0;
+}
+
+/* Create button */
+#room-create-btn {
+  width: 100%;
+  min-height: 60px;
+  font-size: 22px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #a81820 0%, var(--deep-red) 100%);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  font-family: var(--header-font);
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(141,18,24,0.4);
+  transition: transform 100ms ease, background 150ms ease;
+}
+#room-create-btn:hover  { transform: translateY(-2px); }
+#room-create-btn:active { transform: scale(0.98); }
+#room-create-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* Join section */
+.room-join-wrap {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+}
+
+#room-join-input {
+  flex: 1;
+  min-height: 54px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  color: #ffffff;
+  font-family: var(--header-font);
+  font-size: 28px;
+  text-align: center;
+  letter-spacing: 0.18em;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+#room-join-input:focus {
+  border-color: rgba(229,57,53,0.7);
+  background: rgba(255,255,255,0.10);
+}
+#room-join-input::placeholder {
+  color: rgba(255,255,255,0.25);
+  letter-spacing: 0.08em;
+  font-size: 18px;
+}
+
+#room-join-btn {
+  min-height: 54px;
+  padding: 0 22px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-family: var(--header-font);
+  font-size: 20px;
+  cursor: pointer;
+  transition: background 150ms ease;
+  white-space: nowrap;
+}
+#room-join-btn:hover    { background: rgba(255,255,255,0.14); }
+#room-join-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#room-error {
+  font-family: var(--ui-font);
+  font-size: 14px;
+  color: rgba(229,57,53,0.9);
+  min-height: 18px;
+}
+
+.room-or {
+  font-family: var(--ui-font);
+  font-size: 13px;
+  color: rgba(255,255,255,0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+/* Wipe background (reuses hero wipe classes from main CSS) */
+.room-loop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* ── Waiting screen ───────────────────────────────────────────────────────── */
+#waiting-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 4500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #090c11;
+}
+#waiting-screen.active { display: flex; }
+
+.waiting-inner {
+  position: relative;
+  z-index: 3;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.waiting-title {
+  font-family: var(--header-font);
+  font-size: 52px;
+  color: #ffffff;
+}
+
+.waiting-sub {
+  font-family: var(--ui-font);
+  font-size: 18px;
+  color: rgba(255,255,255,0.6);
+}
+
+/* The big room code */
+.waiting-code-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.waiting-code-label {
+  font-family: var(--ui-font);
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+#waiting-code {
+  font-family: var(--header-font);
+  font-size: 96px;
+  line-height: 1;
+  color: #ffe600;
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 30px rgba(255,230,0,0.4);
+}
+
+/* Animated dots — "waiting for opponent" */
+.waiting-dots {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.waiting-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.35);
+  animation: waitingDotPulse 1.4s ease-in-out infinite;
+}
+.waiting-dot:nth-child(2) { animation-delay: 0.2s; }
+.waiting-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes waitingDotPulse {
+  0%, 100% { transform: scale(1);    opacity: 0.35; }
+  50%       { transform: scale(1.5); opacity: 1; }
+}
+
+/* Mobile sizing */
+@media (max-width: 767px) {
+  .room-title   { font-size: 52px; }
+  #waiting-code { font-size: 72px; }
+  .waiting-title { font-size: 38px; }
+}
