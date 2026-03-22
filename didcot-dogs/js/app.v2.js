@@ -8,7 +8,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.9.4";
+const APP_VERSION = "v2.9.5";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -611,12 +611,8 @@ function wireRoomButtons(){
       app.roomCode=code;
       sessionStorage.setItem("dd_room_code",code);
 
-      // Show code on waiting screen, then show hero pick on top
-      const codeEl=document.getElementById("waiting-code");
-      if(codeEl) codeEl.textContent=code;
+      // Step 1: hide room screen, show hero pick ONLY (no waiting screen yet)
       hideScreen("room-screen");
-      showScreen("waiting-screen");
-      // Show hero overlay on top of waiting screen
       document.getElementById("hero-overlay").classList.add("active");
 
       function creatorPickHero(hero){
@@ -624,13 +620,16 @@ function wireRoomButtons(){
         app.localHero=hero;
         app.state={...state, controlledHero:hero, currentPlayer:hero};
         sessionStorage.setItem("dd_hero",hero);
-        // Write chosen hero to Firebase as starting player
+        // Write chosen hero to Firebase
         fbPushState(code,{...state,currentPlayer:hero,phase:"waiting"});
+        // Hide hero overlay, start board
         document.getElementById("hero-overlay").classList.remove("active");
         showMobileHud(); resetBoardView(); renderAll();
         showCurrentDestinationReveal(hero); showStartToast(hero);
         updateRoomHud();
-        // Keep waiting overlay on top
+        // Step 2: NOW show waiting screen (after board is ready)
+        const codeEl=document.getElementById("waiting-code");
+        if(codeEl) codeEl.textContent=code;
         showScreen("waiting-screen");
         // Watch for opponent joining
         let started=false;
@@ -650,7 +649,7 @@ function wireRoomButtons(){
           }
         });
       }
-      // Temporarily wire hero buttons for multiplayer creator pick
+      // Wire hero buttons for multiplayer creator pick
       document.getElementById("pick-eric-btn").onclick=()=>creatorPickHero("Eric");
       document.getElementById("pick-tango-btn").onclick=()=>creatorPickHero("Tango");
     } catch(err){
