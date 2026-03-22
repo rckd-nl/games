@@ -8,7 +8,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.9.2";
+const APP_VERSION = "v2.9.4";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -608,44 +608,51 @@ function wireRoomButtons(){
       const state=createInitialLocalState(app.rulesData);
       state.currentPlayer="Eric";
       const code=await fbCreateRoom(state);
-      app.roomCode=code; app.localHero="Eric";
-      app.state={...state, controlledHero:"Eric"};
-      sessionStorage.setItem("dd_room_code",code); sessionStorage.setItem("dd_hero","Eric");
+      app.roomCode=code;
+      sessionStorage.setItem("dd_room_code",code);
 
-      // Show identity card immediately — creator is always Eric
-      hideScreen("room-screen");
-      document.getElementById("hero-overlay").classList.remove("active");
-      showMobileHud();
-      resetBoardView();
-      renderAll();
-      showCurrentDestinationReveal("Eric");
-      showStartToast("Eric");
-      updateRoomHud();
-
-      // Then show waiting overlay with code on top
+      // Show code on waiting screen, then show hero pick on top
       const codeEl=document.getElementById("waiting-code");
       if(codeEl) codeEl.textContent=code;
+      hideScreen("room-screen");
       showScreen("waiting-screen");
+      // Show hero overlay on top of waiting screen
+      document.getElementById("hero-overlay").classList.add("active");
 
-      // Watch for Tango joining
-      let started=false;
-      fbSubscribePresence(code, presence=>{
-        if(presence?.Tango?.connected&&!started){
-          started=true;
-          hideScreen("waiting-screen");
-          // Board already shown — just subscribe to remote changes
-          console.log("[DD] Tango joined, subscribing to game state");
-          let skipFirst=true;
-          fbSubscribeRoom(code, remoteState=>{
-            if(!remoteState||!remoteState.players) return;
-            if(skipFirst){ skipFirst=false; return; }
-            console.log("[DD] Eric received remote state, currentPlayer:", remoteState.currentPlayer);
-            app.state={...restoreArrays({...remoteState}), controlledHero:"Eric"};
-            renderAll();
-            updateRoomHud();
-          });
-        }
-      });
+      function creatorPickHero(hero){
+        const joinerHero=hero==="Eric"?"Tango":"Eric";
+        app.localHero=hero;
+        app.state={...state, controlledHero:hero, currentPlayer:hero};
+        sessionStorage.setItem("dd_hero",hero);
+        // Write chosen hero to Firebase as starting player
+        fbPushState(code,{...state,currentPlayer:hero,phase:"waiting"});
+        document.getElementById("hero-overlay").classList.remove("active");
+        showMobileHud(); resetBoardView(); renderAll();
+        showCurrentDestinationReveal(hero); showStartToast(hero);
+        updateRoomHud();
+        // Keep waiting overlay on top
+        showScreen("waiting-screen");
+        // Watch for opponent joining
+        let started=false;
+        fbSubscribePresence(code, presence=>{
+          if(presence?.[joinerHero]?.connected&&!started){
+            started=true;
+            hideScreen("waiting-screen");
+            console.log("[DD] Opponent joined, subscribing");
+            let skipFirst=true;
+            fbSubscribeRoom(code, remoteState=>{
+              if(!remoteState||!remoteState.players) return;
+              if(skipFirst){skipFirst=false;return;}
+              console.log("[DD] Creator received remote state, currentPlayer:",remoteState.currentPlayer);
+              app.state={...restoreArrays({...remoteState}),controlledHero:hero};
+              renderAll(); updateRoomHud();
+            });
+          }
+        });
+      }
+      // Temporarily wire hero buttons for multiplayer creator pick
+      document.getElementById("pick-eric-btn").onclick=()=>creatorPickHero("Eric");
+      document.getElementById("pick-tango-btn").onclick=()=>creatorPickHero("Tango");
     } catch(err){
       errorEl.textContent=err.message;
       createBtn.disabled=false; createBtn.textContent="Create game";
@@ -657,11 +664,13 @@ function wireRoomButtons(){
     if(code.length!==4){ errorEl.textContent="Enter a 4-character code."; return; }
     joinBtn.disabled=true; joinBtn.textContent="Joining…"; errorEl.textContent="";
     try {
-      const state=await fbJoinRoom(code);
-      app.roomCode=code; app.localHero="Tango";
-      sessionStorage.setItem("dd_room_code",code); sessionStorage.setItem("dd_hero","Tango");
+      const firebaseState=await fbJoinRoom(code);
+      const creatorHero=firebaseState.currentPlayer||"Eric";
+      const joinerHero=creatorHero==="Eric"?"Tango":"Eric";
+      app.roomCode=code; app.localHero=joinerHero;
+      sessionStorage.setItem("dd_room_code",code); sessionStorage.setItem("dd_hero",joinerHero);
       hideScreen("room-screen");
-      launchGame("Tango", state);
+      launchGame(joinerHero, firebaseState);
     } catch(err){
       errorEl.textContent=err.message;
       joinBtn.disabled=false; joinBtn.textContent="Join";
@@ -724,6 +733,22 @@ function launchGame(hero, firebaseState){
     renderAll();
     updateRoomHud();
   });
+}
+
+
+// ─── Return to menu ───────────────────────────────────────────────────────────
+function returnToMenu(){
+  sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
+  app.roomCode=null; app.localHero=null;
+  cancelAutoSim(); closeRouteModal(); closeDestinationReveal(); closeMobileSheet();
+  app.state=createInitialLocalState(app.rulesData);
+  ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
+  const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
+  hideScreen("waiting-screen"); hideScreen("resuming-screen"); hideEndScreen();
+  document.getElementById("hero-overlay").classList.remove("active");
+  const rhud=document.getElementById("room-hud");if(rhud)rhud.style.display="none";
+  resetBoardView(); renderAll();
+  showScreen("room-screen"); wireRoomButtons();
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
@@ -831,7 +856,20 @@ function renderPlayerSummary(){
     const p=app.state.players[n], t=getCurrentTargetForPlayer(p);
     const card=document.createElement("div");
     card.className=`player-summary-card${app.state.currentPlayer===n?" active":""}`;
-    card.innerHTML=`<div class="player-summary-name">${n}</div><div class="player-summary-meta">Node: ${formatNodeName(p.currentNode)}<br>Hand: ${p.hand.length}<br>Done: ${Math.min(p.completedCount,5)}/5<br>Target: ${t?formatNodeName(t):"—"}</div>`;
+    // Hide opponent target — it should be a secret
+    const isMe = !app.localHero || app.localHero===n;
+    const targetText = isMe
+      ? (t ? formatNodeName(t) : "—")
+      : "?";
+    const targetDestination = isMe && t ? (app.destinationData?.destinations[t]?.title||formatNodeName(t)) : targetText;
+    card.innerHTML=`
+      <div class="player-summary-name">${n}</div>
+      <div class="player-summary-meta">
+        <span class="summary-row"><span class="summary-lbl">Current location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
+        <span class="summary-row"><span class="summary-lbl">Cards in hand</span><span class="summary-val">${p.hand.length}</span></span>
+        <span class="summary-row"><span class="summary-lbl">Journeys complete</span><span class="summary-val">${Math.min(p.completedCount,5)}/5</span></span>
+        <span class="summary-row"><span class="summary-lbl">Current target</span><span class="summary-val ${isMe?"":"summary-secret"}">${targetDestination}</span></span>
+      </div>`;
     wrap.appendChild(card);
   });
 }
@@ -944,10 +982,19 @@ function renderMobileRoutesPanel(){
 
 function renderButtons(){const b=document.getElementById("draw-card-btn");if(b)b.disabled=false;}
 
+
+function renderDesktopPiles(){
+  const drawEl=document.getElementById("desktop-draw-pile");
+  const discEl=document.getElementById("desktop-discard-pile");
+  if(drawEl) renderDrawPile(drawEl, app.state.drawPile.length);
+  if(discEl) renderDiscardPile(discEl, app.state.discardPile);
+}
+
 function renderAll(){
   renderTurnBadge(); renderCounts(); renderSelectedRouteCard(); renderActiveHand();
   renderPlayerSummary(); renderDestinationSequences(); renderRoutes(); renderTokens();
   renderTargetPulse(); renderDebug(app.audit); renderButtons(); renderMobileRoutesPanel();
+  renderDesktopPiles();
   if(app.roomCode) updateRoomHud();
 }
 
@@ -1206,6 +1253,8 @@ function showMobileHud(){
 // ─── Control buttons ──────────────────────────────────────────────────────────
 function wireControlButtons(){
   document.getElementById("draw-card-btn")?.addEventListener("click",drawCardForCurrentPlayer);
+  document.getElementById("menu-btn")?.addEventListener("click",returnToMenu);
+  document.getElementById("mobile-menu-btn")?.addEventListener("click",returnToMenu);
   document.getElementById("reset-local-btn")?.addEventListener("click",()=>{
     cancelAutoSim();
     sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
@@ -1234,6 +1283,15 @@ function wireControlButtons(){
   document.getElementById("route-modal-overlay")?.addEventListener("click",evt=>{if(evt.target.id==="route-modal-overlay")closeRouteModal();});
   document.getElementById("destination-reveal-close")?.addEventListener("click",closeDestinationReveal);
   document.getElementById("destination-reveal-overlay")?.addEventListener("click",evt=>{if(evt.target.id==="destination-reveal-overlay")closeDestinationReveal();});
+
+  // Debug toggle
+  document.getElementById("debug-toggle-btn")?.addEventListener("click",()=>{
+    const dbg=document.getElementById("left-debug");
+    const btn=document.getElementById("debug-toggle-btn");
+    if(!dbg) return;
+    const hidden=dbg.classList.toggle("left-debug-hidden");
+    if(btn) btn.textContent=hidden?"Debug ▾":"Debug ▴";
+  });
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
