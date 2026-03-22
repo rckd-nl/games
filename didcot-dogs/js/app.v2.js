@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.11.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.11.1");
 
-const APP_VERSION = "v2.11.0";
+const APP_VERSION = "v2.11.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1243,7 +1243,6 @@ function rotateMysteryNode(triggeredNodeId) {
 // ── Mystery node SVG rendering ────────────────────────────────────────────
 function renderMysteryNodes() {
   if(!app.svg) return;
-  // Remove existing mystery markers
   app.svg.querySelectorAll(".mystery-node-marker").forEach(e=>e.remove());
   const layer = ensureLayer(app.svg, "mystery-layer");
   layer.innerHTML = "";
@@ -1252,18 +1251,29 @@ function renderMysteryNodes() {
     try {
       const c = getNodeCenter(app.svg, nodeId);
       const g = createSvgEl("g", {class:"mystery-node-marker", transform:`translate(${c.x},${c.y})`});
-      // Pulsing outer ring
-      const ring = createSvgEl("circle", {r:"28", fill:"none", stroke:"#ffe600",
-        "stroke-width":"3", class:"mystery-ring", opacity:"0.85"});
-      // Dark background circle
-      const bg = createSvgEl("circle", {r:"20", fill:"#0e1118", stroke:"#ffe600", "stroke-width":"2"});
-      // ? text
+
+      // Pulsing outer ring — use transform:scale animation, not r animation
+      // (r animation unreliable cross-browser, also avoids #Nodes circle !important)
+      const ring = createSvgEl("circle", {r:"26", fill:"none", stroke:"#ffe600",
+        "stroke-width":"2.5", class:"mystery-ring"});
+      // Inline style on fill/stroke beats any stylesheet !important
+      ring.style.fill = "none";
+      ring.style.stroke = "#ffe600";
+
+      // Dark background — inline style to defeat #Nodes circle fill:white !important
+      const bg = createSvgEl("circle", {r:"22"});
+      bg.style.fill = "#0e1118";
+      bg.style.stroke = "#ffe600";
+      bg.style.strokeWidth = "2.5";
+
+      // ? label — inline fill to defeat text fill:#000 !important
       const txt = createSvgEl("text", {
         "text-anchor":"middle", "dominant-baseline":"middle",
-        fill:"#ffe600", "font-size":"24", "font-weight":"700",
-        style:"font-family:var(--header-font,sans-serif);pointer-events:none"
+        "font-size":"22", "font-weight":"800",
+        style:"font-family:var(--header-font,sans-serif);pointer-events:none;fill:#ffe600"
       });
       txt.textContent = "?";
+
       g.appendChild(ring); g.appendChild(bg); g.appendChild(txt);
       layer.appendChild(g);
     } catch(e) { /* node not in SVG */ }
