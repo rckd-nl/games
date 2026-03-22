@@ -943,12 +943,12 @@ html, body {
 
 #mobile-hud {
   display: none;
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 10px);
-  left: 10px;
-  right: 10px;
-  z-index: 42;
-  gap: 8px;
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 8px;
+  right: 8px;
+  z-index: 2000;
+  gap: 6px;
   align-items: center;
   flex-wrap: wrap;
   pointer-events: none;
@@ -956,7 +956,7 @@ html, body {
 
 .mobile-hud-pill,
 .mobile-hud-btn {
-  min-height: 38px;
+  min-height: 36px;
   padding: 0 12px;
   border-radius: 999px;
   display: inline-flex;
@@ -969,7 +969,7 @@ html, body {
 }
 
 .mobile-hud-pill {
-  background: rgba(12, 16, 22, 0.86);
+  background: rgba(12, 16, 22, 0.88);
   border: 1px solid rgba(255,255,255,0.14);
   color: #ffffff;
   max-width: 100%;
@@ -978,20 +978,20 @@ html, body {
 .mobile-hud-btn {
   appearance: none;
   border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(141,18,24,0.92);
+  background: rgba(141,18,24,0.94);
   color: #ffffff;
   cursor: pointer;
 }
 
 #mobile-sheet {
   display: none;
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  top: calc(env(safe-area-inset-top, 0px) + 58px);
-  bottom: calc(102px + env(safe-area-inset-bottom, 0px));
-  z-index: 41;
-  background: rgba(15, 19, 26, 0.97);
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  top: calc(env(safe-area-inset-top, 0px) + 54px);
+  bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+  z-index: 1990;
+  background: rgba(15, 19, 26, 0.98);
   border-radius: 18px;
   border: 1px solid rgba(255,255,255,0.12);
   box-shadow: 0 12px 30px rgba(0,0,0,0.28);
@@ -1032,8 +1032,10 @@ html, body {
 
 #mobile-sheet-content {
   padding: 0 14px 18px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   height: calc(100% - 36px);
+  -webkit-overflow-scrolling: touch;
 }
 
 #mobile-sheet-summary,
@@ -1046,18 +1048,19 @@ html, body {
 
 #mobile-bottom-bar {
   display: none;
-  position: absolute;
+  position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 43;
+  z-index: 2001;
   padding:
-    8px 10px
-    calc(8px + env(safe-area-inset-bottom, 0px))
+    4px 10px
+    calc(4px + env(safe-area-inset-bottom, 0px))
     10px;
-  background: linear-gradient(180deg, rgba(10,13,19,0.82) 0%, rgba(10,13,19,0.96) 22%);
-  border-top: 1px solid rgba(255,255,255,0.12);
+  background: linear-gradient(180deg, rgba(10,13,19,0.1) 0%, rgba(10,13,19,0.9) 24%, rgba(10,13,19,0.98) 100%);
+  border-top: 1px solid rgba(255,255,255,0.10);
   box-shadow: 0 -12px 30px rgba(0,0,0,0.24);
+  overflow: visible;
 }
 
 .mobile-bottom-bar-grid {
@@ -1092,9 +1095,11 @@ html, body {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  overflow-y: hidden;
-  padding: 6px 2px 0;
+  overflow-y: visible;
+  padding: 0 2px 0;
   scrollbar-width: none;
+  min-height: 54px;
+  align-items: flex-end;
 }
 
 #mobile-hand-peek::-webkit-scrollbar {
@@ -1108,7 +1113,7 @@ html, body {
   padding: 6px;
   position: relative;
   flex: 0 0 auto;
-  margin-top: 18px;
+  margin-top: -18px;
   box-shadow: 0 6px 14px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.35);
   border: 2px solid rgba(0,0,0,0.16);
   display: flex;
@@ -1274,8 +1279,8 @@ html, body {
   #board-wrap {
     left: 0;
     right: 0;
-    top: calc(env(safe-area-inset-top, 0px) + 52px);
-    bottom: calc(98px + env(safe-area-inset-bottom, 0px));
+    top: 52px;
+    bottom: 86px;
     border-radius: 0;
     border: none;
   }
@@ -1283,10 +1288,11 @@ html, body {
   #status-chip {
     left: 50%;
     transform: translateX(-50%);
-    bottom: calc(106px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(92px + env(safe-area-inset-bottom, 0px));
     max-width: calc(100vw - 24px);
     font-size: 14px;
     padding: 8px 12px;
+    z-index: 2002;
   }
 
   .route-modal-overlay,
@@ -1345,14 +1351,5 @@ html, body {
 
   .hero-name {
     font-size: 32px;
-  }
-
-  #mobile-sheet-summary .player-summary-card,
-  #mobile-sheet-destination .destination-sequence {
-    margin: 0;
-  }
-
-  #mobile-sheet-hand .hand-grid {
-    max-height: none;
   }
 }
