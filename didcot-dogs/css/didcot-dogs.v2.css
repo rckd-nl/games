@@ -1884,7 +1884,8 @@ html, body {
    keyframe animation can control colour. Use a separate keyframe that
    explicitly sets fill/stroke on every frame so !important can't win.
    ═══════════════════════════════════════════════════════════════════════════ */
-#board-svg-host text.target-node-pulse {
+#board-svg-host text.target-node-pulse,
+#board-svg-host #Labels text.target-node-pulse {
   fill: unset !important;
   animation: targetNodePulse 1.35s linear infinite !important;
 }
