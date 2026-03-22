@@ -1,5 +1,6 @@
 /*
  * app.v2.js — Didcot Dogs
+ * v2.9.1 — Firebase array fix (drawPile/hand/destinationQueue restored after Firebase object conversion)
  * v2.9.0 — Complete rewrite of multiplayer integration.
  *   All Firebase and room logic inlined here. No dynamic imports.
  *   Single file = no module resolution failures.
@@ -7,7 +8,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.9.0";
+const APP_VERSION = "v2.9.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -538,16 +539,32 @@ function showMobileToast(text){
 
 // ─── Room HUD ─────────────────────────────────────────────────────────────────
 function updateRoomHud(){
-  const hud=document.getElementById("room-hud");
-  if(!hud||!app.roomCode) return;
+  if(!app.roomCode) return;
   const mine=app.state.currentPlayer===app.localHero;
-  hud.style.display="flex";
-  hud.innerHTML=`
-    <span class="room-hud-code">Room: <strong>${app.roomCode}</strong></span>
-    <span class="room-hud-player">You: <strong>${app.localHero||"?"}</strong></span>
-    <span class="room-hud-turn ${mine?"room-hud-turn-mine":"room-hud-turn-theirs"}">
-      ${mine?"YOUR TURN":`${app.state.currentPlayer}'s turn…`}
-    </span>`;
+
+  // Desktop room HUD strip
+  const hud=document.getElementById("room-hud");
+  if(hud){
+    hud.style.display="flex";
+    hud.innerHTML=`
+      <span class="room-hud-code">Room: <strong>${app.roomCode}</strong></span>
+      <span class="room-hud-player">You: <strong>${app.localHero||"?"}</strong></span>
+      <span class="room-hud-turn ${mine?"room-hud-turn-mine":"room-hud-turn-theirs"}">
+        ${mine?"YOUR TURN":`${app.state.currentPlayer}'s turn…`}
+      </span>`;
+  }
+
+  // Mobile: update the turn pill to show room code + whose turn
+  const turnPill=document.getElementById("mobile-hud-turn");
+  if(turnPill){
+    turnPill.innerHTML=`
+      <span style="opacity:0.55;font-size:11px;letter-spacing:0.08em">${app.roomCode}</span>
+      <span style="margin:0 6px;opacity:0.3">·</span>
+      <span style="color:${mine?"#ffe600":"rgba(255,255,255,0.6)"}">
+        ${mine?"YOUR TURN":`${app.state.currentPlayer}'s turn`}
+      </span>`;
+    turnPill.style.fontFamily="var(--header-font)";
+  }
 }
 
 // ─── Room screen ──────────────────────────────────────────────────────────────
@@ -565,7 +582,7 @@ async function initRoomFlow() {
       if(!state||!state.players) throw new Error("No state");
       app.roomCode=savedCode; app.localHero=savedHero;
       hideScreen("resuming-screen");
-      launchGame(savedHero, state);
+      launchGame(savedHero, restoreArrays(state));
       return;
     } catch(e){
       console.warn("[DD] Resume failed:",e.message);
@@ -634,11 +651,37 @@ function wireRoomButtons(){
   joinInput.addEventListener("input",()=>{joinInput.value=joinInput.value.toUpperCase();});
 }
 
+
+// Firebase stores arrays as {0:x, 1:y} objects — restore them
+function restoreArrays(state) {
+  const toArr = v => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v;
+    // Firebase object-ified array: keys are "0","1","2"...
+    const keys = Object.keys(v);
+    if (keys.length === 0) return [];
+    if (keys.every(k => !isNaN(k))) return keys.sort((a,b)=>+a-+b).map(k=>v[k]);
+    return v;
+  };
+  state.drawPile    = toArr(state.drawPile);
+  state.discardPile = toArr(state.discardPile);
+  if (state.players) {
+    Object.keys(state.players).forEach(name => {
+      const p = state.players[name];
+      p.hand              = toArr(p.hand);
+      p.journeyRouteIds   = toArr(p.journeyRouteIds);
+      p.destinationQueue  = toArr(p.destinationQueue);
+      p.completedDestinations = toArr(p.completedDestinations);
+    });
+  }
+  return state;
+}
+
 function launchGame(hero, firebaseState){
   console.log("[DD] launchGame hero:",hero,"routes:",Object.keys(firebaseState.routes||{}).length,"deck:",firebaseState.drawPile?.length,"currentPlayer:",firebaseState.currentPlayer);
 
-  // Apply canonical Firebase state
-  app.state={...firebaseState, controlledHero:hero};
+  // Apply canonical Firebase state — restore arrays mangled by Firebase
+  app.state={...restoreArrays({...firebaseState}), controlledHero:hero};
   app.localHero=hero;
 
   // Hide hero overlay, show identity card, start board
@@ -656,7 +699,7 @@ function launchGame(hero, firebaseState){
     if(!remoteState||!remoteState.players) return;
     if(skipFirst){ skipFirst=false; return; }
     console.log("[DD] Remote state received, currentPlayer:",remoteState.currentPlayer,"localHero:",hero);
-    app.state={...remoteState, controlledHero:hero};
+    app.state={...restoreArrays({...remoteState}), controlledHero:hero};
     renderAll();
     updateRoomHud();
   });
