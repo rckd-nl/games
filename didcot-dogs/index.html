@@ -28,7 +28,7 @@
       </div>
 
       <!-- Room screen — shown before hero pick in multiplayer -->
-      <div id="room-screen">
+      <div id="room-screen" class="active">
         <div class="room-loop">
           <div class="hero-wipe hero-wipe-a"></div>
           <div class="hero-wipe hero-wipe-b"></div>
@@ -67,6 +67,7 @@
             <div class="waiting-dot"></div>
           </div>
           <div class="waiting-sub">Ask your opponent to open the game<br>and enter the code above.</div>
+          <button id="waiting-cancel-btn" type="button">← Back to menu</button>
         </div>
       </div>
 
@@ -173,7 +174,7 @@
         </div>
 
         <div class="panel-section">
-          <div class="mini-heading">Active hand</div>
+          <div class="mini-heading">Your hand</div>
           <div id="active-hand" class="hand-grid"></div>
         </div>
 
@@ -183,7 +184,7 @@
         </div>
 
         <div class="panel-section">
-          <button id="draw-card-btn" class="action-btn primary" type="button">Draw card</button>
+          <button id="draw-card-btn" class="action-btn primary draw-card-btn-big" type="button">Draw card</button>
         </div>
 
         <div style="display:none"><div id="left-debug"></div></div>
@@ -223,6 +224,6 @@
 
     </div>
   </div>
-  <script type="module" src="./js/app.v2.js?v=1001"></script>
+  <script type="module" src="./js/app.v2.js?v=1002"></script>
 </body>
 </html>
