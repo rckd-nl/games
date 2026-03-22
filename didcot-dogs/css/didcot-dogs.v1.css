@@ -8,6 +8,7 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  touch-action: manipulation;
 }
 
 * {
@@ -38,6 +39,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 #game-shell {
@@ -1061,34 +1063,6 @@ html, body {
   border-top: 1px solid rgba(255,255,255,0.10);
   box-shadow: 0 -12px 30px rgba(0,0,0,0.24);
   overflow: visible;
-}
-
-.mobile-bottom-bar-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.mobile-bottom-btn {
-  appearance: none;
-  min-height: 48px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(255,255,255,0.08);
-  color: #ffffff;
-  font-family: var(--ui-font);
-  font-size: 15px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.mobile-bottom-btn.primary {
-  background: rgba(141,18,24,0.94);
-}
-
-.mobile-bottom-btn.subtle {
-  background: rgba(255,255,255,0.05);
 }
 
 #mobile-hand-peek {
