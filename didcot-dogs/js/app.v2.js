@@ -1,20 +1,31 @@
 /*
  * app.v2.js — Didcot Dogs
- * v2.9.1 — Firebase array fix (drawPile/hand/destinationQueue restored after Firebase object conversion)
+ *
+ * CHANGELOG
+ * v2.10.3
+ *   - FIXED: Players only see their own hand, destination sequences, and journey
+ *     progress. Opponent hand and routes are never shown in the UI.
+ *   - FIXED: renderDestinationSequences() now renders only the local player's
+ *     sequence (was always rendering currentPlayer, which leaked on turn swap).
+ *   - FIXED: renderActiveHand() renders local player's hand only.
+ *   - FIXED: renderPlayerSummary() hides opponent card count and target.
+ *   - FIXED: Desktop scales down gracefully on sub-1920 screens using CSS
+ *     transform scale rather than fixed 1920px — board stays centred and visible.
+ *   - FIXED: Draw card button uses header font, larger touch target.
+ *   - ADDED: "← Menu" button on waiting screen so creator can abort.
+ *
+ * v2.9.1 — Firebase array fix
  * v2.9.0 — Complete rewrite of multiplayer integration.
- *   All Firebase and room logic inlined here. No dynamic imports.
- *   Single file = no module resolution failures.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.9.9 — room screen should show on load");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.10.3");
 
-const APP_VERSION = "v2.10.1";
+const APP_VERSION = "v2.10.3";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
 // ─── Firebase ─────────────────────────────────────────────────────────────────
-// Loaded via top-level await-compatible approach using CDN
 let _db = null;
 let _firebaseSet, _firebaseGet, _firebaseRef, _firebaseOnValue, _firebaseOnDisconnect, _firebaseServerTimestamp;
 
@@ -80,7 +91,6 @@ async function fbJoinRoom(code) {
 
 async function fbPushState(code, state) {
   if (!code || !_db) return;
-  // Strip device-local fields before writing
   const { controlledHero, ...firebaseState } = state;
   try {
     await _firebaseSet(dbRef(`rooms/${code}/state`), firebaseState);
@@ -170,6 +180,12 @@ function countCards(hand) {
 }
 function getDisplayRouteColor(c) { return c==="grey"?"wild":c; }
 
+// Returns the hero whose perspective we're rendering from.
+// In solo play this is controlledHero; in multiplayer it's localHero.
+function getViewHero() {
+  return app.localHero || app.state?.controlledHero || app.state?.currentPlayer || "Eric";
+}
+
 // ─── Board view ───────────────────────────────────────────────────────────────
 function applyBoardViewTransform() {
   const svg=app.svg; if(!svg||!app.boardView.baseViewBox) return;
@@ -190,6 +206,35 @@ function clientToSvgPoint(cx,cy) {
   if(!bw||!svg) return {x:0,y:0};
   const r=bw.getBoundingClientRect(), vb=svg.viewBox.baseVal;
   return { x:vb.x+(cx-r.left)*vb.width/r.width, y:vb.y+(cy-r.top)*vb.height/r.height };
+}
+
+// ─── Desktop scale-to-fit ─────────────────────────────────────────────────────
+// Scales #game-shell down on sub-1920 screens so nothing is cut off.
+function applyDesktopScale() {
+  const shell = document.getElementById("game-shell");
+  if (!shell) return;
+  const isMobile = window.innerWidth <= 767 ||
+    (window.innerHeight <= 500 && window.innerWidth > window.innerHeight);
+  if (isMobile) {
+    shell.style.transform = "";
+    shell.style.transformOrigin = "";
+    return;
+  }
+  const scaleX = window.innerWidth  / 1920;
+  const scaleY = window.innerHeight / 1080;
+  const scale  = Math.min(scaleX, scaleY, 1); // never upscale
+  if (scale < 1) {
+    shell.style.transform = `scale(${scale})`;
+    shell.style.transformOrigin = "top center";
+    // Shrink #app height so scroll doesn't appear
+    const app_el = document.getElementById("app");
+    if (app_el) app_el.style.height = `${1080 * scale}px`;
+  } else {
+    shell.style.transform = "";
+    shell.style.transformOrigin = "";
+    const app_el = document.getElementById("app");
+    if (app_el) app_el.style.height = "";
+  }
 }
 
 function setupMobileBoardGestures() {
@@ -544,7 +589,6 @@ function updateRoomHud(){
   const hero=app.localHero||"?";
   const cfg=PLAYER_CONFIG[hero];
 
-  // Desktop footer — identity card (YOU ARE ERIC with portrait)
   const identity=document.getElementById("desktop-identity");
   if(identity&&cfg){
     identity.innerHTML=`
@@ -562,20 +606,16 @@ function updateRoomHud(){
       </div>`;
   }
 
-  // Start harsh wobble on portrait
   requestAnimationFrame(startPortraitWobble);
 
-  // Desktop footer — turn indicator (moves to where badge is)
   const ti=document.getElementById("desktop-turn-indicator");
   if(ti){
     ti.className=`desktop-turn-indicator ${mine?"desktop-turn-mine":"desktop-turn-theirs"}`;
     ti.textContent=mine?"YOUR TURN":`${app.state.currentPlayer}'s turn`;
   }
 
-  // Also update the left panel turn badge to show turn indicator state
   renderTurnBadge();
 
-  // Mobile: update the turn pill to show room code + whose turn
   const turnPill=document.getElementById("mobile-hud-turn");
   if(turnPill){
     turnPill.innerHTML=`
@@ -592,31 +632,24 @@ function updateRoomHud(){
 function showScreen(id){ const e=document.getElementById(id); if(e) e.classList.add("active"); }
 function hideScreen(id){ const e=document.getElementById(id); if(e) e.classList.remove("active"); }
 
-// initRoomFlow inlined into init()
-
 function wireRoomButtons(){
   const createBtn=document.getElementById("room-create-btn");
   const joinBtn=document.getElementById("room-join-btn");
   const joinInput=document.getElementById("room-join-input");
   const errorEl=document.getElementById("room-error");
 
-  // Reset button states
   createBtn.disabled=false; createBtn.textContent="Create game";
   joinBtn.disabled=false; joinBtn.textContent="Join";
   if(errorEl) errorEl.textContent="";
 
-  // Use onclick (not addEventListener) so re-wiring always replaces, never stacks
   createBtn.onclick = async()=>{
     createBtn.disabled=true; createBtn.textContent="Creating…"; errorEl.textContent="";
     try {
-      // Build canonical state — route colours randomised ONCE here
       const state=createInitialLocalState(app.rulesData);
       state.currentPlayer="Eric";
       const code=await fbCreateRoom(state);
       app.roomCode=code;
-      // Don't save session until hero is picked — prevents bad restore on refresh
 
-      // Step 1: hide room screen, show hero pick ONLY (no waiting screen yet)
       hideScreen("room-screen");
       document.getElementById("hero-overlay").classList.add("active");
 
@@ -624,21 +657,21 @@ function wireRoomButtons(){
         const joinerHero=hero==="Eric"?"Tango":"Eric";
         app.localHero=hero;
         app.state={...state, controlledHero:hero, currentPlayer:hero};
-        // Save session NOW — after hero is chosen
         sessionStorage.setItem("dd_room_code",code);
         sessionStorage.setItem("dd_hero",hero);
-        // Write chosen hero to Firebase
         fbPushState(code,{...state,currentPlayer:hero,phase:"waiting"});
-        // Hide hero overlay, start board
         document.getElementById("hero-overlay").classList.remove("active");
         showMobileHud(); resetBoardView(); renderAll();
         showCurrentDestinationReveal(hero); showStartToast(hero);
         updateRoomHud();
-        // Step 2: NOW show waiting screen (after board is ready)
+        // Show waiting screen with cancel button
         const codeEl=document.getElementById("waiting-code");
         if(codeEl) codeEl.textContent=code;
         showScreen("waiting-screen");
-        // Watch for opponent joining
+        // Wire the waiting screen cancel button
+        const cancelBtn=document.getElementById("waiting-cancel-btn");
+        if(cancelBtn) cancelBtn.onclick=()=>returnToMenu();
+
         let started=false;
         fbSubscribePresence(code, presence=>{
           if(presence?.[joinerHero]?.connected&&!started){
@@ -656,7 +689,6 @@ function wireRoomButtons(){
           }
         });
       }
-      // Wire hero buttons for multiplayer creator pick
       document.getElementById("pick-eric-btn").onclick=()=>creatorPickHero("Eric");
       document.getElementById("pick-tango-btn").onclick=()=>creatorPickHero("Tango");
     } catch(err){
@@ -687,13 +719,10 @@ function wireRoomButtons(){
   joinInput.oninput=()=>{joinInput.value=joinInput.value.toUpperCase();};
 }
 
-
-// Firebase stores arrays as {0:x, 1:y} objects — restore them
 function restoreArrays(state) {
   const toArr = v => {
     if (!v) return [];
     if (Array.isArray(v)) return v;
-    // Firebase object-ified array: keys are "0","1","2"...
     const keys = Object.keys(v);
     if (keys.length === 0) return [];
     if (keys.every(k => !isNaN(k))) return keys.sort((a,b)=>+a-+b).map(k=>v[k]);
@@ -715,12 +744,8 @@ function restoreArrays(state) {
 
 function launchGame(hero, firebaseState){
   console.log("[DD] launchGame hero:",hero,"routes:",Object.keys(firebaseState.routes||{}).length,"deck:",firebaseState.drawPile?.length,"currentPlayer:",firebaseState.currentPlayer);
-
-  // Apply canonical Firebase state — restore arrays mangled by Firebase
   app.state={...restoreArrays({...firebaseState}), controlledHero:hero};
   app.localHero=hero;
-
-  // Hide hero overlay, show identity card, start board
   document.getElementById("hero-overlay").classList.remove("active");
   showMobileHud();
   resetBoardView();
@@ -729,7 +754,6 @@ function launchGame(hero, firebaseState){
   showCurrentDestinationReveal(hero);
   updateRoomHud();
 
-  // Subscribe to remote changes — skip first (own state echo)
   let skipFirst=true;
   fbSubscribeRoom(app.roomCode, remoteState=>{
     if(!remoteState||!remoteState.players) return;
@@ -741,31 +765,25 @@ function launchGame(hero, firebaseState){
   });
 }
 
-
 // ─── Return to menu ───────────────────────────────────────────────────────────
 function returnToMenu(){
-  // Clear ALL session state
   sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
   app.roomCode=null; app.localHero=null;
   cancelAutoSim(); closeRouteModal(); closeDestinationReveal(); closeMobileSheet();
   app.state=createInitialLocalState(app.rulesData);
 
-  // Hide all overlays and mobile chrome
   ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
   const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
   ["waiting-screen","resuming-screen"].forEach(hideScreen);
   hideEndScreen();
 
-  // Make sure hero overlay is gone
   document.getElementById("hero-overlay").classList.remove("active");
 
-  // Reset hero buttons (clear any multiplayer onclick overrides)
   const pe=document.getElementById("pick-eric-btn");
   const pt=document.getElementById("pick-tango-btn");
   if(pe) pe.onclick=null;
   if(pt) pt.onclick=null;
 
-  // Hide desktop identity footer
   const di=document.getElementById("desktop-identity");
   if(di) di.innerHTML="";
   const ti=document.getElementById("desktop-turn-indicator");
@@ -775,9 +793,8 @@ function returnToMenu(){
 
   resetBoardView(); renderAll();
   showScreen("room-screen");
-  wireRoomButtons(); // safe — uses onclick so no stacking
+  wireRoomButtons();
 }
-
 
 // ─── Portrait harsh wobble ────────────────────────────────────────────────────
 let __wobbleTimer = null;
@@ -848,7 +865,6 @@ function renderTurnBadge(){
   const b=document.getElementById("turn-player-badge"); if(!b) return;
   b.className=`player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
   b.textContent=`${app.state.currentPlayer} to play`;
-  // Update desktop footer turn indicator
   const ti=document.getElementById("desktop-turn-indicator");
   if(ti){
     const mine=isMyTurn();
@@ -899,65 +915,87 @@ function renderHandInto(container,player,cls="hand-card"){
   });
 }
 
+// Always render the VIEW HERO's hand — never the opponent's
 function renderActiveHand(){
   const wrap=document.getElementById("active-hand"); if(!wrap) return;
-  const player=app.state.players[app.state.currentPlayer];
-  renderHandInto(wrap,player,"hand-card"); player.lastDrawColor=null;
+  const hero=getViewHero();
+  const player=app.state.players[hero];
+  renderHandInto(wrap,player,"hand-card");
+  player.lastDrawColor=null;
 }
 
+// Only show OWN player summary info — opponent details hidden
 function renderPlayerSummary(){
   const wrap=document.getElementById("player-summary-wrap"); if(!wrap) return;
   wrap.innerHTML="";
+  const hero=getViewHero();
   ["Eric","Tango"].forEach(n=>{
-    const p=app.state.players[n], t=getCurrentTargetForPlayer(p);
+    const p=app.state.players[n];
+    const isMe=n===hero;
+    const t=isMe?getCurrentTargetForPlayer(p):null;
     const card=document.createElement("div");
     card.className=`player-summary-card${app.state.currentPlayer===n?" active":""}`;
-    // Hide opponent target — it should be a secret
-    const isMe = !app.localHero || app.localHero===n;
-    const targetText = isMe
-      ? (t ? formatNodeName(t) : "—")
-      : "?";
-    const targetDestination = isMe && t ? (app.destinationData?.destinations[t]?.title||formatNodeName(t)) : targetText;
-    card.innerHTML=`
-      <div class="player-summary-name">${n}</div>
-      <div class="player-summary-meta">
-        <span class="summary-row"><span class="summary-lbl">Current location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
-        <span class="summary-row"><span class="summary-lbl">Cards in hand</span><span class="summary-val">${p.hand.length}</span></span>
-        <span class="summary-row"><span class="summary-lbl">Journeys complete</span><span class="summary-val">${Math.min(p.completedCount,5)}/5</span></span>
-        <span class="summary-row"><span class="summary-lbl">Current target</span><span class="summary-val ${isMe?"":"summary-secret"}">${targetDestination}</span></span>
-      </div>`;
+    if(isMe){
+      const targetTitle=t?(app.destinationData?.destinations[t]?.title||formatNodeName(t)):"—";
+      card.innerHTML=`
+        <div class="player-summary-name">${n} <span style="font-size:13px;opacity:0.5;font-family:var(--ui-font)">(you)</span></div>
+        <div class="player-summary-meta">
+          <span class="summary-row"><span class="summary-lbl">Location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
+          <span class="summary-row"><span class="summary-lbl">Cards</span><span class="summary-val">${p.hand.length}</span></span>
+          <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,5)}/5</span></span>
+          <span class="summary-row"><span class="summary-lbl">Target</span><span class="summary-val">${targetTitle}</span></span>
+        </div>`;
+    } else {
+      // Opponent — only show location and journey count, nothing secret
+      card.innerHTML=`
+        <div class="player-summary-name">${n}</div>
+        <div class="player-summary-meta">
+          <span class="summary-row"><span class="summary-lbl">Location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
+          <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,5)}/5</span></span>
+        </div>`;
+    }
     wrap.appendChild(card);
   });
 }
 
+// Only render the VIEW HERO's destination sequence
 function buildDestinationSequenceElement(playerName,showFlip=true){
   const player=app.state.players[playerName];
   const seq=document.createElement("div"); seq.className="destination-sequence";
-  const title=document.createElement("div"); title.className="sequence-title"; title.textContent=`${playerName} routes`;
+  const title=document.createElement("div"); title.className="sequence-title"; title.textContent="Your routes";
   const grid=document.createElement("div"); grid.className="destination-card-grid";
   for(let i=0;i<5;i++){
     const did=player.destinationQueue[i], dest=app.destinationData.destinations[did];
     const label=dest?dest.title:formatNodeName(did), body=dest?.description||"";
     let el;
-    if(i<player.completedCount){el=document.createElement("div");el.className="destination-card completed-card";el.innerHTML=`<div class="destination-title">✓ ${label}</div>`;}
-    else if(i===player.completedCount&&player.completedCount<5){
+    if(i<player.completedCount){
+      el=document.createElement("div");el.className="destination-card completed-card";
+      el.innerHTML=`<div class="destination-title">✓ ${label}</div>`;
+    } else if(i===player.completedCount&&player.completedCount<5){
       el=document.createElement("div");el.className="destination-card active-card";
       if(showFlip&&app.state.justCompleted?.playerName===playerName)el.classList.add("flip-in");
       el.innerHTML=`<div class="destination-title">${label}</div><div class="destination-body">${body}</div>`;
-    } else {el=document.createElement("div");el.className="destination-card hidden-card";el.textContent="?";}
+    } else {
+      el=document.createElement("div");el.className="destination-card hidden-card";el.textContent="?";
+    }
     grid.appendChild(el);
   }
   seq.appendChild(title); seq.appendChild(grid); return seq;
 }
 
+// Always render only the local player's destination sequence
 function renderDestinationSequences(){
   const wrap=document.getElementById("destination-sequences"); if(!wrap) return;
-  wrap.innerHTML=""; wrap.appendChild(buildDestinationSequenceElement(app.state.currentPlayer,true));
+  wrap.innerHTML="";
+  const hero=getViewHero();
+  wrap.appendChild(buildDestinationSequenceElement(hero,true));
 }
 
 function renderTargetPulse(){
   app.svg.querySelectorAll(".target-node-pulse").forEach(e=>e.classList.remove("target-node-pulse"));
-  const tid=getCurrentTargetForPlayer(app.state.players[app.state.currentPlayer]); if(!tid) return;
+  // Pulse the VIEW HERO's target, not whoever's turn it is
+  const hero=getViewHero();
+  const tid=getCurrentTargetForPlayer(app.state.players[hero]); if(!tid) return;
   app.svg.querySelectorAll(`#${CSS.escape(tid)}`).forEach(e=>e.classList.add("target-node-pulse"));
 }
 
@@ -1012,12 +1050,14 @@ function renderMobileRoutesPanel(){
   const handPeek=document.getElementById("mobile-hand-peek");
   if(!hudTurn||!hudDraw||!hudDest||!handPeek) return;
 
-  const pn=app.state.currentPlayer, player=app.state.players[pn];
+  // Always show the VIEW HERO's data
+  const hero=getViewHero();
+  const player=app.state.players[hero];
   const tid=getCurrentTargetForPlayer(player);
   const ttitle=tid?(app.destinationData.destinations[tid]?.title||formatNodeName(tid)):"—";
   const comp=Math.min(player.completedCount,5);
 
-  hudTurn.textContent=pn;
+  hudTurn.textContent=app.state.currentPlayer;
   renderDrawPile(hudDraw,app.state.drawPile.length);
   const discEl=document.getElementById("mobile-hud-discard");
   if(discEl) renderDiscardPile(discEl,app.state.discardPile);
@@ -1030,9 +1070,9 @@ function renderMobileRoutesPanel(){
   const bar=document.getElementById("mobile-bottom-bar");
   if(bar&&!bar.querySelector(".hand-chevron")){const ch=document.createElement("div");ch.className="hand-chevron";ch.innerHTML="&#8964;";bar.insertBefore(ch,bar.firstChild);}
 
-  if(sheetSum) sheetSum.innerHTML=`<div class="player-summary-card active"><div class="player-summary-name">${pn}</div><div class="player-summary-meta">Node: ${formatNodeName(player.currentNode)}<br>Done: ${comp}/5<br>Target: ${ttitle}</div></div>`;
+  if(sheetSum) sheetSum.innerHTML=`<div class="player-summary-card active"><div class="player-summary-name">${hero}</div><div class="player-summary-meta">Node: ${formatNodeName(player.currentNode)}<br>Done: ${comp}/5<br>Target: ${ttitle}</div></div>`;
   if(sheetHand){sheetHand.innerHTML="";renderHandInto(sheetHand,player,"mobile-hand-peek-card");}
-  if(sheetDest){sheetDest.innerHTML="";sheetDest.appendChild(buildDestinationSequenceElement(pn,false));}
+  if(sheetDest){sheetDest.innerHTML="";sheetDest.appendChild(buildDestinationSequenceElement(hero,false));}
   handPeek.innerHTML=""; renderHandInto(handPeek,player,"mobile-hand-peek-card");
 }
 
@@ -1044,7 +1084,6 @@ function renderButtons(){
   b.textContent=mine?"Draw card":"Waaaaiit…";
   b.classList.toggle("btn-waiting",!mine);
 }
-
 
 function renderDesktopPiles(){
   const drawEl=document.getElementById("desktop-draw-pile");
@@ -1231,7 +1270,6 @@ function runAutoSimTurn(){
 
 // ─── Card draw animation ──────────────────────────────────────────────────────
 function getDrawPileRect(){
-  // Use desktop pile on desktop, mobile pile on mobile
   const mob=window.innerWidth<=767||(window.innerHeight<=500&&window.innerWidth>window.innerHeight);
   const id=mob?"mobile-hud-draw":"desktop-draw-pile";
   const e=document.getElementById(id); if(!e)return null;
@@ -1244,10 +1282,8 @@ function getHandTargetRect(colour){
     for(const c of peek.querySelectorAll(".mobile-hand-peek-card"))if(c.classList.contains(colour))return c.getBoundingClientRect();
     return{left:window.innerWidth/2-27,top:window.innerHeight-90,width:54,height:86};
   }
-  // Desktop — fly to the active-hand grid
   const hand=document.getElementById("active-hand");if(!hand)return null;
   for(const c of hand.querySelectorAll(".hand-card"))if(c.classList.contains(colour))return c.getBoundingClientRect();
-  // Fallback: centre of hand grid
   return hand.getBoundingClientRect();
 }
 function animateCardDraw(colour){
@@ -1289,7 +1325,6 @@ async function drawCardForCurrentPlayer(){
   const pn=app.state.currentPlayer, card=drawCard();
   if(!card){updateStatus("No cards available.");renderAll();return;}
   const player=app.state.players[pn];
-  // Animation on both mobile and desktop
   await animateCardDraw(card);
   player.hand.push(card); player.lastDrawColor=card;
   closeMobileSheet(); renderAll();
@@ -1341,17 +1376,13 @@ function wireControlButtons(){
     updateStatus("Game reset.");
     showScreen("room-screen"); wireRoomButtons();
   });
-  // Pick buttons: .onclick is set by multiplayer flow (creatorPickHero).
-  // If no .onclick is set, fall back to solo pick.
-  // We use a wrapper that checks .onclick first to avoid addEventListener stacking.
+
   function soloPickHero(hero) {
-    // Only act as solo pick if multiplayer hasn't taken over this button
     app.state=createInitialLocalState(app.rulesData); app.state.controlledHero=hero;
     document.getElementById("hero-overlay").classList.remove("active");
     showMobileHud(); resetBoardView(); showStartToast(hero); renderAll(); showCurrentDestinationReveal(hero);
   }
   document.getElementById("pick-eric-btn")?.addEventListener("click",()=>{
-    // If .onclick is set (multiplayer), it already fired — don't double-act
     if(!document.getElementById("pick-eric-btn").onclick) soloPickHero("Eric");
   });
   document.getElementById("pick-tango-btn")?.addEventListener("click",()=>{
@@ -1367,7 +1398,6 @@ function wireControlButtons(){
   document.getElementById("destination-reveal-close")?.addEventListener("click",closeDestinationReveal);
   document.getElementById("destination-reveal-overlay")?.addEventListener("click",evt=>{if(evt.target.id==="destination-reveal-overlay")closeDestinationReveal();});
 
-  // Version info toggle (footer)
   document.getElementById("debug-toggle-btn")?.addEventListener("click",()=>{
     const dbg=document.getElementById("left-debug");
     const btn=document.getElementById("debug-toggle-btn");
@@ -1381,18 +1411,15 @@ function wireControlButtons(){
 async function init(){
   injectMobileBottomBar();
   setupFullscreenButton();
+  applyDesktopScale();
 
-  // Step 1: Firebase first (fast, needed for room flow)
   try { await initFirebase(); }
   catch(err){ console.error("[DD] Firebase failed:",err); }
 
-  // Step 2: Show room screen immediately — don't wait for data
-  // This means the UI is responsive before the SVG/JSON loads
   document.getElementById("hero-overlay").classList.remove("active");
   showScreen("room-screen");
   wireRoomButtons();
 
-  // Step 3: Load game data — rules hardcoded, destinations from file
   try {
     const rulesData = {"version":"v1.1","game":"didcot-dogs","startNode":"Didcot","characters":["Eric","Tango"],"routeColours":["red","orange","blue","green","black","pink","yellow","grey"],"drawColours":["red","orange","blue","green","black","pink","yellow"],"deck":{"copiesPerColour":8,"rainbowCount":4},"winCondition":{"targetJourneysBeforeReturn":5,"finalDestinationAfterFive":"Didcot"},"svgNodeIdAliases":{"Clifton_Hampden1":"Clifton_Hampden"},"destinationPool":["Chilton","Abingdon","Clifton_Hampden","Dorchester","Blewbury","Wittenham_Clumps","Wallingford","East_Hagbourne","Brightwell-cum-Sotwell","Milton_Interchange"],"nodes":["Steventon","Drayton","Abingdon","Culham","Sutton_Courtenay","Clifton_Hampden","Didcot","Milton_Interchange","Appleford","Berinsfield","Dorchester","Wittenham_Clumps","Brightwell-cum-Sotwell","Wallingford","Benson","Cholsey","South_Moreton","Aston_Upthorpe","Blewbury","Upton","Chilton","Harwell","West_Hagbourne","East_Hagbourne","North_Moreton","Fulscot","Long_Wittenham","Shillingford"],"routes":{"Didcot_to_Fulscot":{"length":2},"Abingdon_to_Culham":{"length":3},"Harwell_to_Chilton":{"length":4},"South_Moreton_to_Wallingford":{"length":5},"North_Moreton_to_South_Moreton":{"length":1},"Fulscot_to_South_Moreton":{"length":2},"Didcot_to_North_Moreton":{"length":3},"Didcot_to_Milton_Interchange":{"length":6},"South_Moreton_to_Cholsey":{"length":3},"Aston_Upthorpe_to_South_Moreton":{"length":3},"East_Hagbourne_to_Blewbury":{"length":3},"Abingdon_to_Clifton_Hampden":{"length":6},"Aston_Upthorpe_to_Cholsey":{"length":4},"Didcot_to_Appleford":{"length":4},"Sutton_Courtenay_to_Culham":{"length":1},"Drayton_to_Milton_Interchange":{"length":3},"Drayton_to_Abingdon":{"length":4},"Appleford_to_Sutton_Courtenay":{"length":2},"Culham_to_Clifton_Hampden":{"length":5},"Clifton_Hampden_to_Berinsfield":{"length":3},"Milton_Interchange_to_Harwell":{"length":3},"Didcot_to_Long_Wittenham":{"length":4},"Wittenham_Clumps_to_Brightwell-cum-Sotwell":{"length":4},"Clifton_Hampden_to_Wittenham_Clumps":{"length":4},"Drayton_to_Sutton_Courtenay":{"length":3},"Sutton_Courtenay_to_Milton_Interchange":{"length":4},"Didcot_to_Brightwell-cum-Sotwell":{"length":6},"Berinsfield_to_Dorchester":{"length":3},"Dorchester_to_Shillingford":{"length":3},"Benson_to_Wallingford":{"length":3},"Drayton_to_Steventon":{"length":3},"Steventon_to_Milton_Interchange":{"length":1},"Didcot_to_Harwell":{"length":5},"Milton_Interchange_to_Chilton":{"length":6},"Chilton_to_Upton":{"length":3},"Blewbury_to_Aston_Upthorpe":{"length":3},"Upton_to_West_Hagbourne":{"length":1},"Didcot_to_East_Hagbourne":{"length":2},"Long_Wittenham_to_Clifton_Hampden":{"length":3},"West_Hagbourne_to_East_Hagbourne":{"length":2},"Brightwell-cum-Sotwell_to_Wallingford":{"length":3},"Long_Wittenham_to_Wittenham_Clumps":{"length":2},"Upton_to_Blewbury":{"length":3},"Steventon_to_Chilton":{"length":6},"Shillingford_to_Benson":{"length":2},"Cholsey_to_Wallingford":{"length":4},"Shillingford_to_Wallingford":{"length":4}}};
     const destinationData = await loadJson("./data/didcot-dogs-destinations.v1.json?v=4");
@@ -1407,7 +1434,6 @@ async function init(){
     wireRouteInteractions(); wireControlButtons(); setupMobileBoardGestures();
     resetBoardView();
 
-    // Check if there's a saved session to resume (only after data loaded)
     const savedCode=sessionStorage.getItem("dd_room_code");
     const savedHero=sessionStorage.getItem("dd_hero");
     if(savedCode&&savedHero){
@@ -1429,11 +1455,13 @@ async function init(){
     console.log("[DD] Game data loaded. Routes:",Object.keys(rulesData.routes||{}).length);
   } catch(err){
     console.error("[DD] Data load error:",err);
-    // Show error in room screen so user can still see the UI
     const errEl=document.getElementById("room-error");
     if(errEl) errEl.textContent=`Failed to load game data: ${err.message}`;
   }
 }
 
-window.addEventListener("resize",()=>{if(app.svg&&app.boardView.baseViewBox)applyBoardViewTransform();});
+window.addEventListener("resize",()=>{
+  if(app.svg&&app.boardView.baseViewBox) applyBoardViewTransform();
+  applyDesktopScale();
+});
 document.addEventListener("DOMContentLoaded",()=>{setupFullscreenButton();init();});
