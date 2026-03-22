@@ -257,3 +257,90 @@
   font-size: 42px;
   color: rgba(255,255,255,0.8);
 }
+
+/* ── Room HUD strip ───────────────────────────────────────────────────────── */
+/* Persistent bar at bottom of board showing room code, player, whose turn.  */
+#room-hud {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1800;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  background: rgba(9, 12, 17, 0.97);
+  border-top: 1px solid rgba(255,255,255,0.10);
+  font-family: var(--ui-font);
+  font-size: 13px;
+  color: rgba(255,255,255,0.6);
+}
+
+.room-hud-code strong,
+.room-hud-player strong {
+  color: rgba(255,255,255,0.9);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.room-hud-turn {
+  font-family: var(--header-font);
+  font-size: 15px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+}
+
+.room-hud-turn-mine {
+  background: rgba(141,18,24,0.85);
+  border-color: rgba(229,57,53,0.5);
+  color: #fff;
+  animation: roomHudPulse 1.8s ease-in-out infinite;
+}
+
+.room-hud-turn-theirs {
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.45);
+}
+
+@keyframes roomHudPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0); }
+  50%       { box-shadow: 0 0 0 4px rgba(229,57,53,0.25); }
+}
+
+/* On mobile, room-hud sits above the bottom card strip */
+@media (max-width: 767px) {
+  #room-hud {
+    bottom: var(--mobile-bar-height, 88px);
+    font-size: 11px;
+    padding: 6px 12px;
+  }
+  .room-hud-turn { font-size: 12px; padding: 3px 10px; }
+}
+
+/* ── Resuming screen ──────────────────────────────────────────────────────── */
+#resuming-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 5500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: #090c11;
+}
+#resuming-screen.active { display: flex; }
+
+.resuming-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.resuming-title {
+  font-family: var(--header-font);
+  font-size: 42px;
+  color: rgba(255,255,255,0.8);
+}
