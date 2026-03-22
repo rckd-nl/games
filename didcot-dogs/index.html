@@ -129,7 +129,6 @@
           <div id="game-title">Didcot Dogs</div>
           <div id="game-subtitle">Private two-player route game prototype v2</div>
         </div>
-        <button id="menu-btn" type="button">← Menu</button>
         <button id="fullscreen-btn" type="button">Full screen</button>
       </div>
 
@@ -187,13 +186,7 @@
           <button id="draw-card-btn" class="action-btn primary" type="button">Draw card</button>
         </div>
 
-        <!-- Debug — collapsed under a toggle -->
-        <div class="panel-section">
-          <button id="debug-toggle-btn" class="debug-toggle-btn" type="button">Debug ▾</button>
-          <div id="left-debug" class="left-debug-hidden"></div>
-        </div>
-
-        <button id="menu-btn" class="action-btn subtle panel-menu-btn" type="button">← Menu</button>
+        <div style="display:none"><div id="left-debug"></div></div>
         <button id="reset-local-btn" class="action-btn subtle" type="button" style="display:none">Reset</button>
       </aside>
 
@@ -212,6 +205,21 @@
       </aside>
 
       <div id="status-chip">Loading board…</div>
+
+      <!-- Desktop footer — room code, player identity, version info -->
+      <div id="desktop-footer">
+        <div id="desktop-footer-left">
+          <div id="desktop-identity"></div>
+        </div>
+        <div id="desktop-footer-centre">
+          <div id="desktop-turn-indicator"></div>
+        </div>
+        <div id="desktop-footer-right">
+          <button id="menu-btn" class="footer-btn" type="button">← Menu</button>
+          <button id="debug-toggle-btn" class="footer-btn footer-btn-subtle" type="button">Version info ▾</button>
+          <div id="left-debug" class="left-debug-hidden desktop-debug-popup"></div>
+        </div>
+      </div>
 
     </div>
   </div>
