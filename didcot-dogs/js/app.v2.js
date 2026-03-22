@@ -8,7 +8,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.9.5";
+const APP_VERSION = "v2.9.6";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -541,18 +541,33 @@ function showMobileToast(text){
 function updateRoomHud(){
   if(!app.roomCode) return;
   const mine=app.state.currentPlayer===app.localHero;
+  const hero=app.localHero||"?";
+  const cfg=PLAYER_CONFIG[hero];
 
-  // Desktop room HUD strip
-  const hud=document.getElementById("room-hud");
-  if(hud){
-    hud.style.display="flex";
-    hud.innerHTML=`
-      <span class="room-hud-code">Room: <strong>${app.roomCode}</strong></span>
-      <span class="room-hud-player">You: <strong>${app.localHero||"?"}</strong></span>
-      <span class="room-hud-turn ${mine?"room-hud-turn-mine":"room-hud-turn-theirs"}">
-        ${mine?"YOUR TURN":`${app.state.currentPlayer}'s turn…`}
-      </span>`;
+  // Desktop footer — identity card (YOU ARE ERIC with portrait)
+  const identity=document.getElementById("desktop-identity");
+  if(identity&&cfg){
+    identity.innerHTML=`
+      <div class="desktop-identity-inner">
+        <img class="desktop-identity-portrait ${hero==="Eric"?"hero-portrait-eric":"hero-portrait-tango"}"
+             src="${cfg.image}" alt="${hero}">
+        <div class="desktop-identity-text">
+          <div class="desktop-identity-label">YOU ARE</div>
+          <div class="desktop-identity-name">${hero.toUpperCase()}</div>
+          <div class="desktop-identity-room">Room: <strong>${app.roomCode}</strong></div>
+        </div>
+      </div>`;
   }
+
+  // Desktop footer — turn indicator (moves to where badge is)
+  const ti=document.getElementById("desktop-turn-indicator");
+  if(ti){
+    ti.className=`desktop-turn-indicator ${mine?"desktop-turn-mine":"desktop-turn-theirs"}`;
+    ti.textContent=mine?"YOUR TURN":`${app.state.currentPlayer}'s turn`;
+  }
+
+  // Also update the left panel turn badge to show turn indicator state
+  renderTurnBadge();
 
   // Mobile: update the turn pill to show room code + whose turn
   const turnPill=document.getElementById("mobile-hud-turn");
@@ -798,6 +813,13 @@ function renderTurnBadge(){
   const b=document.getElementById("turn-player-badge"); if(!b) return;
   b.className=`player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
   b.textContent=`${app.state.currentPlayer} to play`;
+  // Update desktop footer turn indicator
+  const ti=document.getElementById("desktop-turn-indicator");
+  if(ti){
+    const mine=isMyTurn();
+    ti.className=`desktop-turn-indicator ${mine?"desktop-turn-mine":"desktop-turn-theirs"}`;
+    ti.textContent=mine?"YOUR TURN":`${app.state.currentPlayer}'s turn`;
+  }
 }
 
 function renderCounts(){
@@ -979,7 +1001,14 @@ function renderMobileRoutesPanel(){
   handPeek.innerHTML=""; renderHandInto(handPeek,player,"mobile-hand-peek-card");
 }
 
-function renderButtons(){const b=document.getElementById("draw-card-btn");if(b)b.disabled=false;}
+function renderButtons(){
+  const b=document.getElementById("draw-card-btn");
+  if(!b) return;
+  const mine=isMyTurn();
+  b.disabled=!mine;
+  b.textContent=mine?"Draw card":"Waaaaiit…";
+  b.classList.toggle("btn-waiting",!mine);
+}
 
 
 function renderDesktopPiles(){
@@ -1166,11 +1195,25 @@ function runAutoSimTurn(){
 }
 
 // ─── Card draw animation ──────────────────────────────────────────────────────
-function getDrawPileRect(){const e=document.getElementById("mobile-hud-draw");if(!e)return null;return(e.querySelector(".pile-wrap")||e).getBoundingClientRect();}
+function getDrawPileRect(){
+  // Use desktop pile on desktop, mobile pile on mobile
+  const mob=window.innerWidth<=767||(window.innerHeight<=500&&window.innerWidth>window.innerHeight);
+  const id=mob?"mobile-hud-draw":"desktop-draw-pile";
+  const e=document.getElementById(id); if(!e)return null;
+  return(e.querySelector(".pile-wrap")||e).getBoundingClientRect();
+}
 function getHandTargetRect(colour){
-  const peek=document.getElementById("mobile-hand-peek");if(!peek)return null;
-  for(const c of peek.querySelectorAll(".mobile-hand-peek-card"))if(c.classList.contains(colour))return c.getBoundingClientRect();
-  return{left:window.innerWidth/2-27,top:window.innerHeight-90,width:54,height:86};
+  const mob=window.innerWidth<=767||(window.innerHeight<=500&&window.innerWidth>window.innerHeight);
+  if(mob){
+    const peek=document.getElementById("mobile-hand-peek");if(!peek)return null;
+    for(const c of peek.querySelectorAll(".mobile-hand-peek-card"))if(c.classList.contains(colour))return c.getBoundingClientRect();
+    return{left:window.innerWidth/2-27,top:window.innerHeight-90,width:54,height:86};
+  }
+  // Desktop — fly to the active-hand grid
+  const hand=document.getElementById("active-hand");if(!hand)return null;
+  for(const c of hand.querySelectorAll(".hand-card"))if(c.classList.contains(colour))return c.getBoundingClientRect();
+  // Fallback: centre of hand grid
+  return hand.getBoundingClientRect();
 }
 function animateCardDraw(colour){
   return new Promise(resolve=>{
@@ -1211,11 +1254,11 @@ async function drawCardForCurrentPlayer(){
   const pn=app.state.currentPlayer, card=drawCard();
   if(!card){updateStatus("No cards available.");renderAll();return;}
   const player=app.state.players[pn];
-  const mob=window.innerWidth<=767||(window.innerHeight<=500&&window.innerWidth>window.innerHeight);
-  if(mob) await animateCardDraw(card);
+  // Animation on both mobile and desktop
+  await animateCardDraw(card);
   player.hand.push(card); player.lastDrawColor=card;
   closeMobileSheet(); renderAll();
-  if(mob) requestAnimationFrame(()=>triggerCardGlow(card));
+  requestAnimationFrame(()=>triggerCardGlow(card));
   endTurn();
 }
 
@@ -1283,13 +1326,13 @@ function wireControlButtons(){
   document.getElementById("destination-reveal-close")?.addEventListener("click",closeDestinationReveal);
   document.getElementById("destination-reveal-overlay")?.addEventListener("click",evt=>{if(evt.target.id==="destination-reveal-overlay")closeDestinationReveal();});
 
-  // Debug toggle
+  // Version info toggle (footer)
   document.getElementById("debug-toggle-btn")?.addEventListener("click",()=>{
     const dbg=document.getElementById("left-debug");
     const btn=document.getElementById("debug-toggle-btn");
     if(!dbg) return;
     const hidden=dbg.classList.toggle("left-debug-hidden");
-    if(btn) btn.textContent=hidden?"Debug ▾":"Debug ▴";
+    if(btn) btn.textContent=hidden?"Version info ▾":"Version info ▴";
   });
 }
 
