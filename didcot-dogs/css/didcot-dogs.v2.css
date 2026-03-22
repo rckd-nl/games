@@ -2175,3 +2175,162 @@ html, body {
   overflow-y: auto;
 }
 #left-panel .panel-section { flex-shrink: 0; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.9.6  DESKTOP FOOTER + IDENTITY CARD
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Desktop footer bar ──────────────────────────────────────────────────── */
+#desktop-footer {
+  display: none; /* shown only on desktop via game-shell class */
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 68px;
+  background: rgba(9,12,17,0.97);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  z-index: 1900;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  #desktop-footer { display: flex; }
+  /* Shrink board-wrap so it doesn't bleed under footer */
+  #board-wrap { bottom: 68px !important; }
+  #left-panel, #right-panel { padding-bottom: 68px; }
+}
+
+#desktop-footer-left  { display: flex; align-items: center; flex: 1; }
+#desktop-footer-centre { display: flex; align-items: center; justify-content: center; flex: 1; }
+#desktop-footer-right  { display: flex; align-items: center; gap: 10px; justify-content: flex-end; flex: 1; }
+
+/* ── Identity card in footer ─────────────────────────────────────────────── */
+.desktop-identity-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.desktop-identity-portrait {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+
+/* Portrait oscillation — same wobble as token */
+.hero-portrait-eric  { animation: portraitWobble 3.2s ease-in-out infinite; border-color: rgba(25,167,255,0.6); }
+.hero-portrait-tango { animation: portraitWobble 2.8s ease-in-out infinite; border-color: rgba(255,230,0,0.6); }
+
+@keyframes portraitWobble {
+  0%,100% { transform: rotate(-2deg) scale(1.00); }
+  25%      { transform: rotate(2deg)  scale(1.02); }
+  50%      { transform: rotate(-1deg) scale(1.01); }
+  75%      { transform: rotate(3deg)  scale(1.00); }
+}
+
+.desktop-identity-text { display: flex; flex-direction: column; gap: 1px; }
+
+.desktop-identity-label {
+  font-family: var(--ui-font);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.38);
+  line-height: 1;
+}
+
+.desktop-identity-name {
+  font-family: var(--header-font);
+  font-size: 22px;
+  color: #fff;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.desktop-identity-room {
+  font-family: var(--ui-font);
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  letter-spacing: 0.08em;
+}
+.desktop-identity-room strong { color: rgba(255,255,255,0.7); font-weight: 800; }
+
+/* ── Desktop turn indicator (centre footer) ──────────────────────────────── */
+.desktop-turn-indicator {
+  font-family: var(--header-font);
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  padding: 6px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  transition: background 300ms ease, color 300ms ease, border-color 300ms ease;
+}
+
+.desktop-turn-mine {
+  background: rgba(141,18,24,0.85);
+  border-color: rgba(229,57,53,0.45);
+  color: #fff;
+  animation: desktopTurnPulse 1.8s ease-in-out infinite;
+}
+
+.desktop-turn-theirs {
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.35);
+}
+
+@keyframes desktopTurnPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(229,57,53,0); }
+  50%      { box-shadow: 0 0 0 6px rgba(229,57,53,0.2); }
+}
+
+/* ── Footer buttons ──────────────────────────────────────────────────────── */
+.footer-btn {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.6);
+  border-radius: 10px;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-family: var(--ui-font);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms ease, color 150ms ease;
+}
+.footer-btn:hover { background: rgba(255,255,255,0.10); color: #fff; }
+.footer-btn-subtle { color: rgba(255,255,255,0.35); font-size: 12px; }
+
+/* Version info popup */
+.desktop-debug-popup {
+  position: absolute;
+  bottom: 76px;
+  right: 20px;
+  background: rgba(9,12,17,0.97);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 12px 16px;
+  min-width: 220px;
+  z-index: 2100;
+  font-size: 12px;
+}
+.desktop-debug-popup.left-debug-hidden { display: none; }
+
+/* ── Draw card button — waiting state ────────────────────────────────────── */
+.btn-waiting {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  letter-spacing: 0.04em;
+}
+
+/* ── Remove old room-hud on desktop (replaced by footer) ─────────────────── */
+@media (min-width: 768px) {
+  #room-hud { display: none !important; }
+  /* Remove duplicate menu from left panel */
+  .panel-menu-btn { display: none !important; }
+}
