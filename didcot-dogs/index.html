@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Didcot Dogs v2 (!)</title>
+  <title>Didcot Dogs v2</title>
   <link rel="stylesheet" href="https://use.typekit.net/gff4ipy.css">
   <link rel="stylesheet" href="./css/didcot-dogs.v2.css" />
   <link rel="stylesheet" href="./css/room.css" />
@@ -129,6 +129,7 @@
           <div id="game-title">Didcot Dogs</div>
           <div id="game-subtitle">Private two-player route game prototype v2</div>
         </div>
+        <button id="menu-btn" type="button">← Menu</button>
         <button id="fullscreen-btn" type="button">Full screen</button>
       </div>
 
@@ -137,6 +138,7 @@
         <div id="mobile-hud-draw" class="mobile-hud-pile"></div>
         <div id="mobile-hud-discard" class="mobile-hud-pile"></div>
         <div id="mobile-hud-destination" class="mobile-hud-pill">Target: —</div>
+        <button id="mobile-menu-btn" class="mobile-hud-btn mobile-hud-btn-menu" type="button">← Menu</button>
         <button id="mobile-open-sheet-btn" class="mobile-hud-btn" type="button">Draw card</button>
         <button id="mobile-reset-view-btn" class="mobile-hud-btn" type="button">Routes</button>
       </div>
@@ -154,35 +156,45 @@
 
       <aside id="left-panel">
         <div class="panel-title">Turn</div>
+
         <div class="panel-section">
           <div id="turn-player-badge" class="player-badge eric">Eric to play</div>
-          <div id="turn-instruction" class="panel-copy">
-            Choose one action: draw a card or click a route to play it.
-          </div>
         </div>
-        <div class="panel-section controls-grid">
-          <button id="draw-card-btn" class="action-btn primary" type="button">Pick random card</button>
-          <button id="reset-local-btn" class="action-btn subtle" type="button">Reset local game</button>
+
+        <!-- Card piles — visual stacks matching mobile -->
+        <div class="panel-section desktop-piles-row">
+          <div id="desktop-draw-pile" class="desktop-pile-wrap"></div>
+          <div id="desktop-discard-pile" class="desktop-pile-wrap"></div>
         </div>
-        <div class="panel-section counts-grid">
-          <div class="count-card">
-            <div class="count-label">Draw pile</div>
-            <div id="draw-pile-count" class="count-value">0</div>
-          </div>
-          <div class="count-card">
-            <div class="count-label">Discard pile</div>
-            <div id="discard-pile-count" class="count-value">0</div>
-          </div>
+
+        <!-- Hidden counts still needed by renderCounts() -->
+        <div style="display:none">
+          <div id="draw-pile-count">0</div>
+          <div id="discard-pile-count">0</div>
         </div>
-        <div class="panel-section">
-          <div class="mini-heading">Selected route</div>
-          <div id="selected-route-card" class="selected-route-card">No route selected.</div>
-        </div>
+
         <div class="panel-section">
           <div class="mini-heading">Active hand</div>
           <div id="active-hand" class="hand-grid"></div>
         </div>
-        <div id="left-debug"></div>
+
+        <!-- Selected route — hidden, still exists for JS -->
+        <div style="display:none">
+          <div id="selected-route-card" class="selected-route-card"></div>
+        </div>
+
+        <div class="panel-section">
+          <button id="draw-card-btn" class="action-btn primary" type="button">Draw card</button>
+        </div>
+
+        <!-- Debug — collapsed under a toggle -->
+        <div class="panel-section">
+          <button id="debug-toggle-btn" class="debug-toggle-btn" type="button">Debug ▾</button>
+          <div id="left-debug" class="left-debug-hidden"></div>
+        </div>
+
+        <button id="menu-btn" class="action-btn subtle panel-menu-btn" type="button">← Menu</button>
+        <button id="reset-local-btn" class="action-btn subtle" type="button" style="display:none">Reset</button>
       </aside>
 
       <main id="board-wrap">
