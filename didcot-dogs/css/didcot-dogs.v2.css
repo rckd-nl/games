@@ -4,7 +4,7 @@
  * Remove the v1 <link> from index.html.
  *
  * CHANGELOG
- * v2.0.1  (merge of v1 + all v2 fixes, no !important cascade wars)
+ * v2.0.1  (merge of v1 + all v2 fixes, no !important cascade wars )
  *   - FIXED: hero-overlay z-index raised to 4000 (was 80, behind mobile chrome).
  *   - FIXED: #mobile-hud display conflict removed — single display:none rule,
  *     shown via .visible class added by JS after hero pick.
