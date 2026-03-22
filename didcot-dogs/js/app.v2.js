@@ -8,7 +8,7 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.9.6";
+const APP_VERSION = "v2.9.7";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -594,7 +594,8 @@ async function initRoomFlow() {
     showScreen("resuming-screen");
     try {
       const state=await fbJoinRoom(savedCode);
-      if(!state||!state.players) throw new Error("No state");
+      // Only restore if the game was actually in a playing state with valid players
+      if(!state||!state.players||state.phase==="waiting") throw new Error("Game not ready");
       app.roomCode=savedCode; app.localHero=savedHero;
       hideScreen("resuming-screen");
       launchGame(savedHero, restoreArrays(state));
@@ -616,7 +617,13 @@ function wireRoomButtons(){
   const joinInput=document.getElementById("room-join-input");
   const errorEl=document.getElementById("room-error");
 
-  createBtn.addEventListener("click", async()=>{
+  // Reset button states
+  createBtn.disabled=false; createBtn.textContent="Create game";
+  joinBtn.disabled=false; joinBtn.textContent="Join";
+  if(errorEl) errorEl.textContent="";
+
+  // Use onclick (not addEventListener) so re-wiring always replaces, never stacks
+  createBtn.onclick = async()=>{
     createBtn.disabled=true; createBtn.textContent="Creating…"; errorEl.textContent="";
     try {
       // Build canonical state — route colours randomised ONCE here
@@ -624,7 +631,7 @@ function wireRoomButtons(){
       state.currentPlayer="Eric";
       const code=await fbCreateRoom(state);
       app.roomCode=code;
-      sessionStorage.setItem("dd_room_code",code);
+      // Don't save session until hero is picked — prevents bad restore on refresh
 
       // Step 1: hide room screen, show hero pick ONLY (no waiting screen yet)
       hideScreen("room-screen");
@@ -634,6 +641,8 @@ function wireRoomButtons(){
         const joinerHero=hero==="Eric"?"Tango":"Eric";
         app.localHero=hero;
         app.state={...state, controlledHero:hero, currentPlayer:hero};
+        // Save session NOW — after hero is chosen
+        sessionStorage.setItem("dd_room_code",code);
         sessionStorage.setItem("dd_hero",hero);
         // Write chosen hero to Firebase
         fbPushState(code,{...state,currentPlayer:hero,phase:"waiting"});
@@ -671,9 +680,9 @@ function wireRoomButtons(){
       errorEl.textContent=err.message;
       createBtn.disabled=false; createBtn.textContent="Create game";
     }
-  });
+  };
 
-  joinBtn.addEventListener("click", async()=>{
+  joinBtn.onclick = async()=>{
     const code=(joinInput.value||"").toUpperCase().trim();
     if(code.length!==4){ errorEl.textContent="Enter a 4-character code."; return; }
     joinBtn.disabled=true; joinBtn.textContent="Joining…"; errorEl.textContent="";
@@ -689,10 +698,10 @@ function wireRoomButtons(){
       errorEl.textContent=err.message;
       joinBtn.disabled=false; joinBtn.textContent="Join";
     }
-  });
+  };
 
-  joinInput.addEventListener("keydown",e=>{if(e.key==="Enter")joinBtn.click();});
-  joinInput.addEventListener("input",()=>{joinInput.value=joinInput.value.toUpperCase();});
+  joinInput.onkeydown=e=>{if(e.key==="Enter")joinBtn.click();};
+  joinInput.oninput=()=>{joinInput.value=joinInput.value.toUpperCase();};
 }
 
 
@@ -752,17 +761,38 @@ function launchGame(hero, firebaseState){
 
 // ─── Return to menu ───────────────────────────────────────────────────────────
 function returnToMenu(){
+  // Clear ALL session state
   sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
   app.roomCode=null; app.localHero=null;
   cancelAutoSim(); closeRouteModal(); closeDestinationReveal(); closeMobileSheet();
   app.state=createInitialLocalState(app.rulesData);
+
+  // Hide all overlays and mobile chrome
   ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
   const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
-  hideScreen("waiting-screen"); hideScreen("resuming-screen"); hideEndScreen();
+  ["waiting-screen","resuming-screen"].forEach(hideScreen);
+  hideEndScreen();
+
+  // Make sure hero overlay is gone
   document.getElementById("hero-overlay").classList.remove("active");
-  const rhud=document.getElementById("room-hud");if(rhud)rhud.style.display="none";
+
+  // Reset hero buttons (clear any multiplayer onclick overrides)
+  const pe=document.getElementById("pick-eric-btn");
+  const pt=document.getElementById("pick-tango-btn");
+  if(pe) pe.onclick=null;
+  if(pt) pt.onclick=null;
+
+  // Hide desktop identity footer
+  const di=document.getElementById("desktop-identity");
+  if(di) di.innerHTML="";
+  const ti=document.getElementById("desktop-turn-indicator");
+  if(ti) ti.textContent="";
+  const rhud=document.getElementById("room-hud");
+  if(rhud) rhud.style.display="none";
+
   resetBoardView(); renderAll();
-  showScreen("room-screen"); wireRoomButtons();
+  showScreen("room-screen");
+  wireRoomButtons(); // safe — uses onclick so no stacking
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
