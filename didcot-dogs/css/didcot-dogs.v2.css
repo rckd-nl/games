@@ -2255,3 +2255,205 @@ html, body {
 #app {
   align-items: flex-start;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.11.0  MYSTERY NODE SYSTEM
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Mystery node SVG markers ─────────────────────────────────────────────── */
+.mystery-ring {
+  animation: mysteryRingPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes mysteryRingPulse {
+  0%, 100% { stroke-opacity: 0.5; r: 26; }
+  50%       { stroke-opacity: 1;   r: 30; }
+}
+
+/* ── Mystery event modal ──────────────────────────────────────────────────── */
+.mystery-modal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 12, 17, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.mystery-modal-overlay.open {
+  display: flex;
+}
+
+.mystery-modal {
+  width: 560px;
+  max-width: calc(100vw - 40px);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: rgba(14, 18, 26, 0.98);
+  border: 1px solid rgba(255, 230, 0, 0.35);
+  border-radius: 26px;
+  box-shadow: 0 0 0 1px rgba(255,230,0,0.08), 0 24px 60px rgba(0,0,0,0.5);
+  padding: 28px 24px 22px;
+  animation: mysteryModalIn 280ms cubic-bezier(0.18, 0.88, 0.28, 1.1) forwards;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@keyframes mysteryModalIn {
+  0%   { transform: scale(0.88) translateY(20px); opacity: 0; }
+  100% { transform: scale(1)    translateY(0);    opacity: 1; }
+}
+
+.mystery-modal-emoji {
+  font-size: 52px;
+  text-align: center;
+  line-height: 1;
+  filter: drop-shadow(0 0 12px rgba(255,230,0,0.4));
+}
+
+.mystery-modal-title {
+  font-family: var(--header-font);
+  font-size: 36px;
+  color: #ffe600;
+  text-align: center;
+  line-height: 1;
+  text-shadow: 0 0 20px rgba(255,230,0,0.4);
+}
+
+.mystery-modal-body {
+  font-family: var(--ui-font);
+  font-size: 17px;
+  color: rgba(255,255,255,0.84);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.mystery-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+/* ── Card selection grid (OH WHUPS) ───────────────────────────────────────── */
+.mystery-card-select-label {
+  font-size: 14px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 10px;
+  font-family: var(--ui-font);
+}
+
+.mystery-card-select-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.mystery-card-selected {
+  outline: 3px solid #ffe600 !important;
+  box-shadow: 0 0 14px rgba(255,230,0,0.5) !important;
+  transform: translateY(-4px);
+}
+
+/* ── Colour grid (BRIGHT BROWN) ───────────────────────────────────────────── */
+.mystery-colour-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+/* ── Zoom route list ──────────────────────────────────────────────────────── */
+.mystery-route-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* ── Inventory badge (left panel) ─────────────────────────────────────────── */
+.inventory-badge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0 4px;
+  min-height: 0;
+}
+
+.inv-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  color: #fff;
+}
+
+.inv-zoom {
+  border-color: rgba(255,230,0,0.5);
+  background: rgba(255,230,0,0.12);
+  color: #ffe600;
+  animation: invZoomPulse 1.6s ease-in-out infinite;
+}
+
+.inv-poop {
+  border-color: rgba(139,90,43,0.6);
+  background: rgba(139,90,43,0.18);
+}
+
+@keyframes invZoomPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,230,0,0); }
+  50%       { box-shadow: 0 0 0 4px rgba(255,230,0,0.2); }
+}
+
+/* ── Status effect badge (JUST SNIFFIN' etc.) ────────────────────────────── */
+.status-effect-badge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 8px;
+  min-height: 0;
+}
+
+.status-effect-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-family: var(--ui-font);
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(229,57,53,0.4);
+  background: rgba(229,57,53,0.12);
+  color: rgba(255,150,150,0.9);
+}
+
+/* ── Mobile mystery modal adjustments ────────────────────────────────────── */
+@media (max-width: 767px) {
+  .mystery-modal-overlay {
+    position: fixed;
+    top: var(--mobile-hud-height);
+    bottom: var(--mobile-bar-height);
+    padding: 12px;
+    align-items: center;
+  }
+
+  .mystery-modal {
+    width: 100%;
+    max-width: 480px;
+    padding: 20px 16px 16px;
+    border-radius: 20px;
+  }
+
+  .mystery-modal-title { font-size: 26px; }
+  .mystery-modal-emoji { font-size: 40px; }
+  .mystery-modal-body  { font-size: 15px; }
+}
