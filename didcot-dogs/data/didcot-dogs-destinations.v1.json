@@ -3,7 +3,7 @@
   "destinations": {
     "Chilton": {
       "title": "Chilton",
-      "description": "Head over to Chilton and get ready for a trip up to the Ridgeway."
+      "description": "Head to Chilton and get ready for a trip to the Ridgeway with Boyce."
     },
     "Abingdon": {
       "title": "Abingdon",
@@ -33,10 +33,7 @@
       "title": "East Hagbourne",
       "description": "Pretend to be a steam train on the old train line."
     },
-    "Brightwell-cum-Sotwell": {
-      "title": "Brightwell-cum-Sotwell",
-      "description": "Visit the donkey sanctuary and woof very loudly at every single donk."
-    },
+r
     "Milton_Interchange": {
       "title": "Milton Interchange",
       "description": "Wander around the service station car park trying to find a place to poo."
