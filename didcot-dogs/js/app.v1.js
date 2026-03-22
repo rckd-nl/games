@@ -1,6 +1,6 @@
 console.log("Didcot Dogs app.v1.js loaded");
 
-const APP_VERSION = "v1.10.0";
+const APP_VERSION = "v1.9.3";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -41,25 +41,6 @@ let app = {
     chosenColor: null,
     selectedOptionIndex: null,
     options: []
-  },
-  view: {
-    scale: 1,
-    minScale: 1,
-    maxScale: 3.2,
-    x: 0,
-    y: 0,
-    initialized: false,
-    pointers: new Map(),
-    dragStartX: 0,
-    dragStartY: 0,
-    startX: 0,
-    startY: 0,
-    pinchStartScale: 1,
-    pinchStartDistance: 0,
-    pinchWorldX: 0,
-    pinchWorldY: 0,
-    resizeObserver: null,
-    raf: 0
   }
 };
 
@@ -93,229 +74,7 @@ async function injectBoardSvg() {
   svg.removeAttribute("height");
   svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   svg.style.background = "transparent";
-  host.style.transformOrigin = "0 0";
-  host.style.willChange = "transform";
   return svg;
-}
-
-function isMobileViewport() {
-  return window.matchMedia("(max-width: 900px)").matches;
-}
-
-function getBoardViewportMetrics() {
-  const viewport = document.getElementById("board-wrap");
-  const host = document.getElementById("board-svg-host");
-  const svg = app.svg;
-  if (!viewport || !host || !svg) return null;
-
-  const viewportRect = viewport.getBoundingClientRect();
-  const viewBox = svg.viewBox?.baseVal;
-  if (!viewBox || !viewBox.width || !viewBox.height) return null;
-
-  const fitScale = Math.min(viewportRect.width / viewBox.width, viewportRect.height / viewBox.height);
-  const boardWidth = viewBox.width * fitScale;
-  const boardHeight = viewBox.height * fitScale;
-
-  return {
-    viewport,
-    host,
-    viewportRect,
-    viewBox,
-    fitScale,
-    boardWidth,
-    boardHeight,
-    scaledWidth: boardWidth * app.view.scale,
-    scaledHeight: boardHeight * app.view.scale
-  };
-}
-
-function clampViewState() {
-  const metrics = getBoardViewportMetrics();
-  if (!metrics) return;
-
-  const overflowX = Math.max(0, metrics.scaledWidth - metrics.viewportRect.width);
-  const overflowY = Math.max(0, metrics.scaledHeight - metrics.viewportRect.height);
-
-  const minX = -overflowX;
-  const maxX = 0;
-  const minY = -overflowY;
-  const maxY = 0;
-
-  app.view.x = Math.min(maxX, Math.max(minX, app.view.x));
-  app.view.y = Math.min(maxY, Math.max(minY, app.view.y));
-}
-
-function queueBoardTransform() {
-  if (app.view.raf) return;
-  app.view.raf = requestAnimationFrame(() => {
-    app.view.raf = 0;
-    applyBoardTransform();
-  });
-}
-
-function applyBoardTransform() {
-  const metrics = getBoardViewportMetrics();
-  if (!metrics) return;
-
-  clampViewState();
-
-  metrics.host.style.width = `${metrics.boardWidth}px`;
-  metrics.host.style.height = `${metrics.boardHeight}px`;
-  metrics.host.style.transform = `translate3d(${app.view.x}px, ${app.view.y}px, 0) scale(${app.view.scale})`;
-  metrics.host.dataset.scale = String(app.view.scale);
-}
-
-function centerBoardForMobile(force = false) {
-  const metrics = getBoardViewportMetrics();
-  if (!metrics) return;
-
-  app.view.minScale = 1;
-  app.view.maxScale = 3.2;
-
-  if (!app.view.initialized || force) {
-    app.view.scale = 1;
-    app.view.x = Math.min(0, (metrics.viewportRect.width - metrics.boardWidth) / 2);
-    app.view.y = Math.min(0, (metrics.viewportRect.height - metrics.boardHeight) / 2);
-    app.view.initialized = true;
-  }
-
-  queueBoardTransform();
-}
-
-function getPinchDistance(a, b) {
-  return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
-}
-
-function getPinchCenter(a, b) {
-  return {
-    x: (a.clientX + b.clientX) / 2,
-    y: (a.clientY + b.clientY) / 2
-  };
-}
-
-function setScaleAroundViewportPoint(newScale, viewportClientX, viewportClientY) {
-  const metrics = getBoardViewportMetrics();
-  if (!metrics) return;
-
-  const clampedScale = Math.min(app.view.maxScale, Math.max(app.view.minScale, newScale));
-  const localX = viewportClientX - metrics.viewportRect.left;
-  const localY = viewportClientY - metrics.viewportRect.top;
-  const worldX = (localX - app.view.x) / app.view.scale;
-  const worldY = (localY - app.view.y) / app.view.scale;
-
-  app.view.scale = clampedScale;
-  app.view.x = localX - worldX * app.view.scale;
-  app.view.y = localY - worldY * app.view.scale;
-  queueBoardTransform();
-}
-
-function setupBoardPanZoom() {
-  const viewport = document.getElementById("board-wrap");
-  const resetBtn = document.getElementById("mobile-reset-view-btn");
-  if (!viewport) return;
-
-  const onPointerDown = event => {
-    if (!isMobileViewport()) return;
-    viewport.setPointerCapture?.(event.pointerId);
-    app.view.pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
-
-    if (app.view.pointers.size === 1) {
-      app.view.dragStartX = event.clientX;
-      app.view.dragStartY = event.clientY;
-      app.view.startX = app.view.x;
-      app.view.startY = app.view.y;
-    }
-
-    if (app.view.pointers.size === 2) {
-      const [a, b] = [...app.view.pointers.values()];
-      const center = getPinchCenter(a, b);
-      const metrics = getBoardViewportMetrics();
-      app.view.pinchStartScale = app.view.scale;
-      app.view.pinchStartDistance = getPinchDistance(a, b);
-      if (metrics) {
-        const localX = center.x - metrics.viewportRect.left;
-        const localY = center.y - metrics.viewportRect.top;
-        app.view.pinchWorldX = (localX - app.view.x) / app.view.scale;
-        app.view.pinchWorldY = (localY - app.view.y) / app.view.scale;
-      }
-    }
-  };
-
-  const onPointerMove = event => {
-    if (!app.view.pointers.has(event.pointerId)) return;
-    app.view.pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
-
-    if (app.view.pointers.size === 1) {
-      app.view.x = app.view.startX + (event.clientX - app.view.dragStartX);
-      app.view.y = app.view.startY + (event.clientY - app.view.dragStartY);
-      queueBoardTransform();
-      return;
-    }
-
-    if (app.view.pointers.size === 2) {
-      const [a, b] = [...app.view.pointers.values()];
-      const center = getPinchCenter(a, b);
-      const distance = getPinchDistance(a, b);
-      const metrics = getBoardViewportMetrics();
-      if (!metrics || !app.view.pinchStartDistance) return;
-
-      app.view.scale = Math.min(app.view.maxScale, Math.max(app.view.minScale, app.view.pinchStartScale * (distance / app.view.pinchStartDistance)));
-      const localX = center.x - metrics.viewportRect.left;
-      const localY = center.y - metrics.viewportRect.top;
-      app.view.x = localX - app.view.pinchWorldX * app.view.scale;
-      app.view.y = localY - app.view.pinchWorldY * app.view.scale;
-      queueBoardTransform();
-    }
-  };
-
-  const onPointerUp = event => {
-    app.view.pointers.delete(event.pointerId);
-    if (app.view.pointers.size === 1) {
-      const [remaining] = [...app.view.pointers.values()];
-      app.view.dragStartX = remaining.clientX;
-      app.view.dragStartY = remaining.clientY;
-      app.view.startX = app.view.x;
-      app.view.startY = app.view.y;
-    }
-  };
-
-  viewport.addEventListener("pointerdown", onPointerDown);
-  viewport.addEventListener("pointermove", onPointerMove);
-  viewport.addEventListener("pointerup", onPointerUp);
-  viewport.addEventListener("pointercancel", onPointerUp);
-  viewport.addEventListener("lostpointercapture", onPointerUp);
-
-  viewport.addEventListener("wheel", event => {
-    if (!isMobileViewport()) return;
-    event.preventDefault();
-    const zoomFactor = event.deltaY < 0 ? 1.12 : 0.9;
-    setScaleAroundViewportPoint(app.view.scale * zoomFactor, event.clientX, event.clientY);
-  }, { passive: false });
-
-  viewport.addEventListener("dblclick", event => {
-    if (!isMobileViewport()) return;
-    event.preventDefault();
-    const nextScale = app.view.scale < 1.6 ? 1.8 : 1;
-    setScaleAroundViewportPoint(nextScale, event.clientX, event.clientY);
-  });
-
-  resetBtn?.addEventListener("dblclick", event => {
-    event.preventDefault();
-    centerBoardForMobile(true);
-  });
-
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", () => queueBoardTransform());
-  }
-
-  if (typeof ResizeObserver === "function") {
-    app.view.resizeObserver?.disconnect?.();
-    app.view.resizeObserver = new ResizeObserver(() => {
-      centerBoardForMobile(!isMobileViewport());
-      queueBoardTransform();
-    });
-    app.view.resizeObserver.observe(viewport);
-  }
 }
 
 function setupFullscreenButton() {
@@ -324,43 +83,19 @@ function setupFullscreenButton() {
 
   btn.addEventListener("click", async () => {
     const el = document.documentElement;
-    if (!document.fullscreenElement) await el.requestFullscreen?.();
-    else await document.exitFullscreen?.();
+    if (!document.fullscreenElement) await el.requestFullscreen();
+    else await document.exitFullscreen();
   });
-}
-
-function normalizeName(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function normalizeSvgNodeAliases(svg, rulesData) {
-  const nodeIds = Object.keys(rulesData.nodes || {});
-  nodeIds.forEach(nodeId => {
-    const normalized = normalizeName(nodeId);
-    const exact = svg.querySelector(`#${CSS.escape(nodeId)}`);
-    if (exact) exact.dataset.nodeId = nodeId;
-
-    const byData = svg.querySelector(`[data-node-id="${CSS.escape(nodeId)}"]`);
-    if (byData) return;
-
-    const candidates = [...svg.querySelectorAll("[id]")].filter(el => normalizeName(el.id) === normalized);
-    if (candidates[0]) candidates[0].dataset.nodeId = nodeId;
+  const aliases = rulesData.svgNodeIdAliases || {};
+  Object.entries(aliases).forEach(([fromId, toId]) => {
+    const node = svg.querySelector(`#${CSS.escape(fromId)}`);
+    if (!node) return;
+    node.setAttribute("data-original-id", fromId);
+    node.setAttribute("id", toId);
   });
-}
-
-function tightenSvgViewBox(svg) {
-  try {
-    const bbox = svg.getBBox();
-    const pad = 24;
-    svg.setAttribute("viewBox", `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
-  } catch (error) {
-    console.warn("Could not tighten SVG viewBox", error);
-  }
 }
 
 function ensureSvgDefs(svg) {
@@ -370,651 +105,892 @@ function ensureSvgDefs(svg) {
     svg.insertBefore(defs, svg.firstChild);
   }
 
-  if (!svg.querySelector("#claim-gradient")) {
+  if (!svg.querySelector("#wild-route-gradient")) {
     const gradient = createSvgEl("linearGradient", {
-      id: "claim-gradient",
+      id: "wild-route-gradient",
       x1: "0%",
       y1: "0%",
       x2: "100%",
       y2: "0%"
     });
 
-    const stop1 = createSvgEl("stop", { offset: "0%", "stop-color": "#ffffff", "stop-opacity": "0.2" });
-    const stop2 = createSvgEl("stop", { offset: "50%", "stop-color": "#ffffff", "stop-opacity": "0.9" });
-    const stop3 = createSvgEl("stop", { offset: "100%", "stop-color": "#ffffff", "stop-opacity": "0.2" });
+    [
+      ["0%", "#ff4d4d"],
+      ["18%", "#ff9f1c"],
+      ["36%", "#ffe600"],
+      ["54%", "#2ec27e"],
+      ["72%", "#2f6edb"],
+      ["90%", "#c64f8e"],
+      ["100%", "#ff4d4d"]
+    ].forEach(([offset, color]) => {
+      const stop = createSvgEl("stop", { offset, "stop-color": color });
+      gradient.appendChild(stop);
+    });
 
-    gradient.appendChild(stop1);
-    gradient.appendChild(stop2);
-    gradient.appendChild(stop3);
     defs.appendChild(gradient);
+  }
+
+  if (!svg.querySelector("#claim-gradient-eric")) {
+    const claimEric = createSvgEl("linearGradient", {
+      id: "claim-gradient-eric",
+      gradientUnits: "userSpaceOnUse",
+      spreadMethod: "repeat",
+      x1: "0",
+      y1: "0",
+      x2: "40",
+      y2: "0"
+    });
+
+    [
+      ["0%", "#19a7ff"],
+      ["90%", "#19a7ff"],
+      ["90%", "#ffffff"],
+      ["100%", "#ffffff"]
+    ].forEach(([offset, color]) => {
+      const stop = createSvgEl("stop", { offset, "stop-color": color });
+      claimEric.appendChild(stop);
+    });
+
+    defs.appendChild(claimEric);
+  }
+
+  if (!svg.querySelector("#claim-gradient-tango")) {
+    const claimTango = createSvgEl("linearGradient", {
+      id: "claim-gradient-tango",
+      gradientUnits: "userSpaceOnUse",
+      spreadMethod: "repeat",
+      x1: "0",
+      y1: "0",
+      x2: "40",
+      y2: "0"
+    });
+
+    [
+      ["0%", "#ffe600"],
+      ["90%", "#ffe600"],
+      ["90%", "#ffffff"],
+      ["100%", "#ffffff"]
+    ].forEach(([offset, color]) => {
+      const stop = createSvgEl("stop", { offset, "stop-color": color });
+      claimTango.appendChild(stop);
+    });
+
+    defs.appendChild(claimTango);
   }
 }
 
-function startClaimGradientAnimation(svg) {
-  const gradient = svg.querySelector("#claim-gradient");
-  if (!gradient) return;
+let __claimGradientAnimationHandle = null;
 
-  let offset = 0;
-  function step() {
-    offset = (offset + 0.8) % 100;
-    gradient.setAttribute("x1", `${offset - 100}%`);
-    gradient.setAttribute("x2", `${offset}%`);
-    requestAnimationFrame(step);
+function startClaimGradientAnimation(svg) {
+  if (__claimGradientAnimationHandle) return;
+
+  const ericGradient = svg.querySelector("#claim-gradient-eric");
+  const tangoGradient = svg.querySelector("#claim-gradient-tango");
+  if (!ericGradient || !tangoGradient) return;
+
+  const tick = (now) => {
+    const shift = -((now / 18) % 40);
+    ericGradient.setAttribute("gradientTransform", `translate(${shift} 0)`);
+    tangoGradient.setAttribute("gradientTransform", `translate(${shift} 0)`);
+    __claimGradientAnimationHandle = requestAnimationFrame(tick);
+  };
+
+  __claimGradientAnimationHandle = requestAnimationFrame(tick);
+}
+
+function getGroupBBox(group) {
+  if (!group || typeof group.getBBox !== "function") return null;
+  const bbox = group.getBBox();
+  if (!Number.isFinite(bbox.x) || !Number.isFinite(bbox.y) || !Number.isFinite(bbox.width) || !Number.isFinite(bbox.height)) {
+    return null;
   }
-  requestAnimationFrame(step);
+  return bbox;
+}
+
+function unionBBoxes(boxes) {
+  const valid = boxes.filter(Boolean);
+  if (!valid.length) return null;
+
+  let minX = valid[0].x;
+  let minY = valid[0].y;
+  let maxX = valid[0].x + valid[0].width;
+  let maxY = valid[0].y + valid[0].height;
+
+  for (let i = 1; i < valid.length; i += 1) {
+    const box = valid[i];
+    minX = Math.min(minX, box.x);
+    minY = Math.min(minY, box.y);
+    maxX = Math.max(maxX, box.x + box.width);
+    maxY = Math.max(maxY, box.y + box.height);
+  }
+
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function tightenSvgViewBox(svg) {
+  const routesGroup = svg.querySelector("#Routes");
+  const labelsGroup = svg.querySelector("#Labels");
+  const nodesGroup = svg.querySelector("#Nodes");
+
+  const contentBox = unionBBoxes([
+    getGroupBBox(routesGroup),
+    getGroupBBox(labelsGroup),
+    getGroupBBox(nodesGroup)
+  ]);
+
+  if (!contentBox) return;
+
+  const paddingX = 68;
+  const paddingY = 60;
+  const x = contentBox.x - paddingX;
+  const y = contentBox.y - paddingY;
+  const width = contentBox.width + paddingX * 2;
+  const height = contentBox.height + paddingY * 2;
+
+  svg.setAttribute("viewBox", `${x} ${y} ${width} ${height}`);
 }
 
 function getSvgAudit(svg, rulesData) {
-  const svgIds = new Set([...svg.querySelectorAll("[id]")].map(el => el.id));
-  const ruleNodeIds = Object.keys(rulesData.nodes || {});
-  const ruleRouteIds = Object.keys(rulesData.routes || {});
+  const routesGroup = svg.querySelector("#Routes");
+  const nodesGroup = svg.querySelector("#Nodes");
+
+  const routeElements = routesGroup ? Array.from(routesGroup.querySelectorAll("[id]")) : [];
+  const nodeElements = nodesGroup ? Array.from(nodesGroup.querySelectorAll("[id]")) : [];
+
+  const routeIds = routeElements.map(el => el.id).filter(Boolean);
+  const nodeIds = nodeElements.map(el => el.id).filter(Boolean);
 
   return {
-    nodeCount: ruleNodeIds.length,
-    routeCount: ruleRouteIds.length,
-    missingRuleNodes: ruleNodeIds.filter(id => !svgIds.has(id) && !svg.querySelector(`[data-node-id="${CSS.escape(id)}"]`)),
-    missingRuleRoutes: ruleRouteIds.filter(id => !svgIds.has(id))
+    routeIds,
+    nodeIds,
+    routeCount: routeIds.length,
+    nodeCount: nodeIds.length,
+    missingRuleRoutes: Object.keys(rulesData.routes || {}).filter(routeId => !routeIds.includes(routeId)),
+    missingRuleNodes: (rulesData.nodes || []).filter(nodeId => !nodeIds.includes(nodeId))
   };
 }
 
-function deepClone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function randomItem(list) {
-  return list[Math.floor(Math.random() * list.length)];
-}
-
-function shuffle(list) {
-  const copy = [...list];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
+function shuffle(array) {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  return copy;
+  return arr;
 }
 
-function createRouteColourPool() {
-  return [
-    ...Array(10).fill("red"),
-    ...Array(10).fill("orange"),
-    ...Array(10).fill("blue"),
-    ...Array(10).fill("green"),
-    ...Array(10).fill("black"),
-    ...Array(8).fill("pink"),
-    ...Array(8).fill("yellow"),
-    ...Array(10).fill("grey")
-  ];
+function parseRouteId(routeId) {
+  const parts = routeId.split("_to_");
+  if (parts.length !== 2) throw new Error(`Could not parse route ID: ${routeId}`);
+  return { a: parts[0], b: parts[1] };
 }
 
-function assignRandomRouteColours(routes) {
-  const pool = shuffle(createRouteColourPool());
-  const routeIds = Object.keys(routes);
+function formatNodeName(nodeId) {
+  return String(nodeId).replaceAll("_", " ");
+}
+
+function formatRouteName(routeId) {
+  const { a, b } = parseRouteId(routeId);
+  return `${formatNodeName(a)} — ${formatNodeName(b)}`;
+}
+
+function routesShareNode(routeIdA, routeIdB) {
+  const a = parseRouteId(routeIdA);
+  const b = parseRouteId(routeIdB);
+  return a.a === b.a || a.a === b.b || a.b === b.a || a.b === b.b;
+}
+
+function assignRouteColours(routeIds, palette) {
   const assigned = {};
+  const shuffledRoutes = shuffle(routeIds);
 
-  routeIds.forEach((routeId, index) => {
-    const preferred = routes[routeId].colour;
-    assigned[routeId] = {
-      ...routes[routeId],
-      colour: preferred === "grey" ? "grey" : (pool[index % pool.length] || preferred || "grey"),
-      claimedBy: null
-    };
+  shuffledRoutes.forEach(routeId => {
+    const blocked = Object.keys(assigned)
+      .filter(otherId => routesShareNode(routeId, otherId))
+      .map(otherId => assigned[otherId]);
+
+    const options = shuffle(palette.filter(color => !blocked.includes(color)));
+    const fallback = shuffle(palette);
+    assigned[routeId] = options[0] || fallback[0];
   });
 
   return assigned;
 }
 
-function buildDrawPileDeck() {
-  const colours = [
-    ...Array(12).fill("red"),
-    ...Array(12).fill("orange"),
-    ...Array(12).fill("blue"),
-    ...Array(12).fill("green"),
-    ...Array(12).fill("black"),
-    ...Array(10).fill("pink"),
-    ...Array(10).fill("yellow"),
-    ...Array(12).fill("rainbow")
-  ];
-  return shuffle(colours);
+function rerollSpecificRouteColours(routeIdsToReroll) {
+  const palette = app.rulesData.routeColours || [];
+  routeIdsToReroll.forEach(routeId => {
+    const blocked = Object.keys(app.state.routes)
+      .filter(otherId => otherId !== routeId && routesShareNode(routeId, otherId))
+      .map(otherId => app.state.routes[otherId].colour);
+
+    const options = shuffle(palette.filter(color => !blocked.includes(color)));
+    const fallback = shuffle(palette);
+    app.state.routes[routeId].colour = options[0] || fallback[0];
+  });
 }
 
-function getStartNodeForPlayer(playerName) {
-  return playerName === "Eric" ? "didcot-parkway" : "didcot-parkway";
+function buildDeck(rulesData) {
+  const drawColours = rulesData.drawColours || [];
+  const copiesPerColour = rulesData.deck?.copiesPerColour ?? 8;
+  const rainbowCount = rulesData.deck?.rainbowCount ?? 4;
+
+  const deck = [];
+  drawColours.forEach(color => {
+    for (let i = 0; i < copiesPerColour; i += 1) deck.push(color);
+  });
+  for (let i = 0; i < rainbowCount; i += 1) deck.push("rainbow");
+  return shuffle(deck);
 }
 
-function getDefaultDestinationSequence(destinationData) {
-  return destinationData.order?.slice(0, 5) || Object.keys(destinationData.destinations || {}).slice(0, 5);
-}
-
-function createPlayerState(playerName, destinationData) {
+function createPlayerState(startNode) {
   return {
-    name: playerName,
-    hand: [],
-    currentNode: getStartNodeForPlayer(playerName),
+    currentNode: startNode,
     previousNode: null,
+    hand: [],
+    journeyRouteIds: [],
+    destinationQueue: [],
     completedDestinations: [],
     completedCount: 0,
-    destinationSequence: getDefaultDestinationSequence(destinationData),
-    journeyRouteIds: [],
     lastDrawColor: null
   };
 }
 
 function createInitialLocalState(rulesData, controlledHero = null) {
+  const routeIds = Object.keys(rulesData.routes || {});
+  const routeColours = assignRouteColours(routeIds, rulesData.routeColours || []);
+  const shuffledDestinations = shuffle(rulesData.destinationPool || []);
+  const ericQueue = shuffledDestinations.slice(0, 5);
+  const tangoQueue = shuffledDestinations.slice(5, 10);
+
+  const routes = {};
+  routeIds.forEach(routeId => {
+    routes[routeId] = { colour: routeColours[routeId], claimedBy: null };
+  });
+
   return {
-    currentPlayer: "Eric",
+    currentPlayer: controlledHero || "Eric",
     controlledHero,
+    gameStarted: Boolean(controlledHero),
     selectedRouteId: null,
-    drawPile: buildDrawPileDeck(),
+    drawPile: buildDeck(rulesData),
     discardPile: [],
     justCompleted: null,
-    routes: assignRandomRouteColours(deepClone(rulesData.routes || {})),
+    routes,
     players: {
-      Eric: createPlayerState("Eric", app.destinationData || { destinations: {}, order: [] }),
-      Tango: createPlayerState("Tango", app.destinationData || { destinations: {}, order: [] })
+      Eric: { ...createPlayerState(rulesData.startNode), destinationQueue: ericQueue },
+      Tango: { ...createPlayerState(rulesData.startNode), destinationQueue: tangoQueue }
     }
   };
 }
 
-function formatNodeName(value) {
-  return String(value || "")
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, char => char.toUpperCase());
-}
-
-function formatRouteName(routeId) {
-  const route = app.rulesData.routes[routeId];
-  if (!route) return formatNodeName(routeId);
-  return `${formatNodeName(route.from)} → ${formatNodeName(route.to)}`;
-}
-
-function getDisplayRouteColor(color) {
-  return color === "grey" ? "wild" : color;
-}
-
 function getCurrentTargetForPlayer(player) {
-  return player.destinationSequence[player.completedCount] || "didcot-parkway";
+  if (player.completedCount < 5) return player.destinationQueue[player.completedCount] || null;
+  return app.rulesData.winCondition?.finalDestinationAfterFive || "Didcot";
+}
+
+function getNodeElement(svg, nodeId) {
+  return svg.querySelector(`#${CSS.escape(nodeId)}`);
+}
+
+function getNodeCenter(svg, nodeId) {
+  const el = getNodeElement(svg, nodeId);
+  if (!el) throw new Error(`Node not found in SVG: ${nodeId}`);
+
+  if (el.tagName.toLowerCase() === "circle") {
+    return { x: Number(el.getAttribute("cx")), y: Number(el.getAttribute("cy")) };
+  }
+
+  const box = el.getBBox();
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+function ensureLayer(svg, layerId) {
+  let layer = svg.querySelector(`#${CSS.escape(layerId)}`);
+  if (layer) return layer;
+  layer = createSvgEl("g", { id: layerId });
+  svg.appendChild(layer);
+  return layer;
+}
+
+function ensureTokenDefs(svg) {
+  let defs = svg.querySelector("defs");
+  if (!defs) {
+    defs = createSvgEl("defs");
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  ["Eric", "Tango"].forEach(playerName => {
+    const clipId = `token-clip-${playerName}`;
+    if (!svg.querySelector(`#${CSS.escape(clipId)}`)) {
+      const clipPath = createSvgEl("clipPath", { id: clipId });
+      const clipCircle = createSvgEl("circle", { cx: "0", cy: "0", r: "20" });
+      clipPath.appendChild(clipCircle);
+      defs.appendChild(clipPath);
+    }
+  });
+}
+
+function ensurePlayerToken(svg, playerName) {
+  ensureTokenDefs(svg);
+  const layer = ensureLayer(svg, "token-layer");
+  let group = svg.querySelector(`#token-${CSS.escape(playerName)}`);
+  if (group) return group;
+
+  group = createSvgEl("g", {
+    id: `token-${playerName}`,
+    class: `token-group ${PLAYER_CONFIG[playerName].tokenClass}`
+  });
+
+  const wobble = createSvgEl("g", {
+    class: "token-wobble"
+  });
+
+  const circle = createSvgEl("circle", {
+    class: "token-circle",
+    r: "24",
+    fill: "#ffffff"
+  });
+
+  const image = createSvgEl("image", {
+    x: "-20",
+    y: "-20",
+    width: "40",
+    height: "40",
+    preserveAspectRatio: "xMidYMid meet",
+    "clip-path": `url(#token-clip-${playerName})`
+  });
+  image.setAttributeNS(XLINK_NS, "xlink:href", PLAYER_CONFIG[playerName].image);
+  image.setAttribute("href", PLAYER_CONFIG[playerName].image);
+
+  wobble.appendChild(circle);
+  wobble.appendChild(image);
+  group.appendChild(wobble);
+  layer.appendChild(group);
+  return group;
+}
+
+function setTokenPosition(svg, playerName, x, y) {
+  const token = ensurePlayerToken(svg, playerName);
+  token.setAttribute("transform", `translate(${x}, ${y})`);
+}
+
+function getPlayerTokenAnchor(playerName, nodeId) {
+  const center = getNodeCenter(app.svg, nodeId);
+  const ericNode = app.state.players.Eric.currentNode;
+  const tangoNode = app.state.players.Tango.currentNode;
+
+  if (ericNode === tangoNode && nodeId === ericNode) {
+    const sideGap = 18;
+    return playerName === "Eric"
+      ? { x: center.x - sideGap, y: center.y }
+      : { x: center.x + sideGap, y: center.y };
+  }
+
+  return { x: center.x, y: center.y };
+}
+
+function renderTokens() {
+  Object.keys(app.state.players).forEach(playerName => {
+    const player = app.state.players[playerName];
+    const anchor = getPlayerTokenAnchor(playerName, player.currentNode);
+    setTokenPosition(app.svg, playerName, anchor.x, anchor.y);
+  });
+}
+
+function getConnectedNode(routeId, fromNode) {
+  const { a, b } = parseRouteId(routeId);
+  if (a === fromNode) return b;
+  if (b === fromNode) return a;
+  return null;
 }
 
 function countCards(hand) {
-  return hand.reduce((acc, color) => {
-    acc[color] = (acc[color] || 0) + 1;
+  return hand.reduce((acc, card) => {
+    acc[card] = (acc[card] || 0) + 1;
     return acc;
   }, {});
 }
 
-function drawCard() {
-  if (!app.state.drawPile.length && app.state.discardPile.length) {
-    app.state.drawPile = shuffle(app.state.discardPile);
-    app.state.discardPile = [];
-  }
-  return app.state.drawPile.pop() || null;
+function getDisplayRouteColor(routeColor) {
+  return routeColor === "grey" ? "wild" : routeColor;
 }
 
-function endTurn() {
-  const previous = app.state.currentPlayer;
-  app.state.currentPlayer = previous === "Eric" ? "Tango" : "Eric";
-  renderAll();
-}
-
-function getNodeElement(svg, nodeId) {
-  return svg.querySelector(`[data-node-id="${CSS.escape(nodeId)}"]`) || svg.querySelector(`#${CSS.escape(nodeId)}`);
-}
-
-function getConnectedNode(routeId, fromNode) {
-  const route = app.rulesData.routes[routeId];
-  if (!route) return fromNode;
-  if (route.from === fromNode) return route.to;
-  if (route.to === fromNode) return route.from;
-  return fromNode;
-}
-
-function getAdjacentRoutesForNode(nodeId) {
-  return Object.entries(app.rulesData.routes || {})
-    .filter(([, route]) => route.from === nodeId || route.to === nodeId)
-    .map(([routeId]) => routeId);
-}
-
-function getPaymentOptionsForColor(routeId, playerName, chosenColour = null) {
-  const route = app.state.routes[routeId];
-  const length = route.length;
+function getPaymentOptionsForColor(routeId, playerName, chosenColor = null) {
   const player = app.state.players[playerName];
-  const counts = countCards(player.hand);
-  const availableColors = ["red", "orange", "blue", "green", "black", "pink", "yellow"]
-    .filter(color => (counts[color] || 0) + (counts.rainbow || 0) >= length);
+  const handCounts = countCards(player.hand);
+  const rainbowCount = handCounts.rainbow || 0;
+  const routeColour = app.state.routes[routeId].colour;
+  const cost = app.rulesData.routes[routeId].length;
 
-  const coloursToCheck = chosenColour ? [chosenColour] : (route.colour === "grey" ? availableColors : [route.colour]);
+  const effectiveColor = chosenColor || routeColour;
+  const owned = handCounts[effectiveColor] || 0;
+  const minRainbow = Math.max(0, cost - owned);
+  const maxRainbow = Math.min(rainbowCount, cost);
+
   const options = [];
-
-  coloursToCheck.forEach(color => {
-    const colourCount = counts[color] || 0;
-    const rainbowCount = counts.rainbow || 0;
-    const maxColourUse = Math.min(length, colourCount);
-
-    for (let useColourCount = maxColourUse; useColourCount >= 0; useColourCount -= 1) {
-      const useRainbowCount = length - useColourCount;
-      if (useRainbowCount <= rainbowCount) {
-        options.push({ colourChoice: color, useColourCount, useRainbowCount });
-      }
+  for (let rainbowUse = minRainbow; rainbowUse <= maxRainbow; rainbowUse += 1) {
+    const useColourCount = cost - rainbowUse;
+    if (useColourCount <= owned) {
+      options.push({
+        colourChoice: effectiveColor,
+        useColourCount,
+        useRainbowCount: rainbowUse
+      });
     }
-  });
+  }
 
-  return { availableColors, options };
+  if (routeColour === "grey") {
+    const availableColors = (app.rulesData.drawColours || []).filter(color => {
+      const count = handCounts[color] || 0;
+      return count + rainbowCount >= cost;
+    });
+
+    return {
+      affordable: availableColors.length > 0,
+      isWild: true,
+      availableColors,
+      options
+    };
+  }
+
+  return {
+    affordable: options.length > 0,
+    isWild: false,
+    availableColors: [routeColour],
+    options
+  };
 }
 
 function getRoutePlayability(routeId) {
-  const playerName = app.state.currentPlayer;
-  const player = app.state.players[playerName];
-  const route = app.state.routes[routeId];
-  const baseRoute = app.rulesData.routes[routeId];
+  const currentPlayerName = app.state.currentPlayer;
+  const currentPlayer = app.state.players[currentPlayerName];
+  const routeState = app.state.routes[routeId];
+  const connectedNode = getConnectedNode(routeId, currentPlayer.currentNode);
 
-  if (!route || !baseRoute) return { playable: false, reason: "Unknown route." };
-  if (route.claimedBy) return { playable: false, reason: "Already claimed." };
-
-  const isAdjacent = baseRoute.from === player.currentNode || baseRoute.to === player.currentNode;
-  if (!isAdjacent) return { playable: false, reason: "Route is not adjacent to your current stop." };
-
-  const destinationTarget = getCurrentTargetForPlayer(player);
-  if (destinationTarget && player.currentNode === destinationTarget) return { playable: false, reason: "Reveal your next destination first." };
-
-  const payment = getPaymentOptionsForColor(routeId, playerName);
-  if (route.colour === "grey") {
-    if (!payment.availableColors.length) return { playable: false, reason: "Not enough matching cards for this wild route." };
-    return { playable: true, reason: "Eligible" };
+  if (!connectedNode) return { playable: false, reason: "Route does not connect to current node." };
+  if (routeState.claimedBy) return { playable: false, reason: `Already claimed by ${routeState.claimedBy}.` };
+  if (currentPlayer.previousNode && connectedNode === currentPlayer.previousNode) {
+    return { playable: false, reason: "Cannot move straight back to previous node." };
   }
 
-  if (!payment.options.length) return { playable: false, reason: `Need ${route.length} ${route.colour} card(s), with rainbows as wild.` };
-  return { playable: true, reason: "Eligible" };
+  const payment = getPaymentOptionsForColor(routeId, currentPlayerName);
+  if (!payment.affordable) {
+    return { playable: false, reason: "Not enough matching cards.", targetNode: connectedNode };
+  }
+
+  return { playable: true, targetNode: connectedNode, payment };
 }
 
-function removeSpecificCardsFromHand(hand, colour, useColourCount, useRainbowCount) {
+function drawCard() {
+  if (!app.state.drawPile.length) {
+    if (!app.state.discardPile.length) return null;
+    app.state.drawPile = shuffle(app.state.discardPile);
+    app.state.discardPile = [];
+  }
+  return app.state.drawPile.pop();
+}
+
+function removeSpecificCardsFromHand(hand, colourChoice, useColourCount, useRainbowCount) {
+  const nextHand = [...hand];
+  let colourLeft = useColourCount;
+  let rainbowLeft = useRainbowCount;
   const spent = [];
-  const nextHand = [];
-  let colourNeeded = useColourCount;
-  let rainbowNeeded = useRainbowCount;
 
-  hand.forEach(card => {
-    if (card === colour && colourNeeded > 0) {
-      spent.push(card);
-      colourNeeded -= 1;
-      return;
+  for (let i = nextHand.length - 1; i >= 0 && colourLeft > 0; i -= 1) {
+    if (nextHand[i] === colourChoice) {
+      spent.push(nextHand[i]);
+      nextHand.splice(i, 1);
+      colourLeft -= 1;
     }
-    if (card === "rainbow" && rainbowNeeded > 0) {
-      spent.push(card);
-      rainbowNeeded -= 1;
-      return;
-    }
-    nextHand.push(card);
-  });
+  }
 
-  return { spent, nextHand };
+  for (let i = nextHand.length - 1; i >= 0 && rainbowLeft > 0; i -= 1) {
+    if (nextHand[i] === "rainbow") {
+      spent.push(nextHand[i]);
+      nextHand.splice(i, 1);
+      rainbowLeft -= 1;
+    }
+  }
+
+  return { nextHand, spent };
 }
 
-function rerollSpecificRouteColours(routeIds) {
-  const colours = shuffle(createRouteColourPool());
-  routeIds.forEach((routeId, index) => {
-    if (!app.state.routes[routeId]) return;
-    const original = app.rulesData.routes[routeId]?.colour;
-    app.state.routes[routeId].colour = original === "grey" ? "grey" : (colours[index % colours.length] || "grey");
+function endTurn() {
+  app.state.selectedRouteId = null;
+  closeRouteModal();
+  app.state.currentPlayer = app.state.currentPlayer === "Eric" ? "Tango" : "Eric";
+  renderAll();
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function getRouteTravelDirection(routeEl, fromNode, toNode, routeId) {
+  const total = routeEl.getTotalLength();
+  const startPoint = routeEl.getPointAtLength(0);
+  const endPoint = routeEl.getPointAtLength(total);
+
+  const fromCenter = getNodeCenter(app.svg, fromNode);
+  const toCenter = getNodeCenter(app.svg, toNode);
+
+  const startToFrom = Math.hypot(startPoint.x - fromCenter.x, startPoint.y - fromCenter.y);
+  const endToFrom = Math.hypot(endPoint.x - fromCenter.x, endPoint.y - fromCenter.y);
+  const startToTo = Math.hypot(startPoint.x - toCenter.x, startPoint.y - toCenter.y);
+  const endToTo = Math.hypot(endPoint.x - toCenter.x, endPoint.y - toCenter.y);
+
+  if (startToFrom <= endToFrom && endToTo <= startToTo) return true;
+  if (endToFrom < startToFrom && startToTo < endToTo) return false;
+
+  const parsed = parseRouteId(routeId);
+  return parsed.a === fromNode && parsed.b === toNode;
+}
+
+function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
+  return new Promise(resolve => {
+    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if (!routeEl || typeof routeEl.getTotalLength !== "function") {
+      renderTokens();
+      resolve();
+      return;
+    }
+
+    const token = ensurePlayerToken(app.svg, playerName);
+    const total = routeEl.getTotalLength();
+    const duration = 900;
+    const forward = getRouteTravelDirection(routeEl, fromNode, toNode, routeId);
+    const start = performance.now();
+
+    function step(now) {
+      const elapsed = now - start;
+      const progress = Math.min(1, elapsed / duration);
+      const eased = easeInOutCubic(progress);
+      const routeProgress = forward ? eased : 1 - eased;
+      const point = routeEl.getPointAtLength(total * routeProgress);
+
+      let x = point.x;
+      let y = point.y;
+
+      const otherPlayer = playerName === "Eric" ? "Tango" : "Eric";
+      if (app.state.players[otherPlayer].currentNode === toNode) {
+        if (playerName === "Eric") x -= 18;
+        if (playerName === "Tango") x += 18;
+      }
+
+      token.setAttribute("transform", `translate(${x}, ${y})`);
+
+      if (progress < 1) requestAnimationFrame(step);
+      else resolve();
+    }
+
+    requestAnimationFrame(step);
   });
 }
 
-function updateStatus(message) {
+function updateStatus(text) {
   const chip = document.getElementById("status-chip");
-  if (chip) chip.textContent = message;
+  if (chip) chip.textContent = text;
+}
+
+function ensureRouteCostLayer() {
+  return ensureLayer(app.svg, "route-cost-layer");
+}
+
+function handleRouteSelection(routeId) {
+  app.state.selectedRouteId = routeId;
+  renderAll();
+  handleRouteHover(routeId);
+  openRouteModal(routeId);
+}
+
+function renderRouteCostBadges() {
+  const layer = ensureRouteCostLayer();
+  layer.innerHTML = "";
+
+  Object.keys(app.rulesData.routes || {}).forEach(routeId => {
+    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if (!routeEl || app.state.routes[routeId].claimedBy) return;
+    if (typeof routeEl.getTotalLength !== "function") return;
+
+    const len = routeEl.getTotalLength();
+    const mid = routeEl.getPointAtLength(len / 2);
+    const routeColour = app.state.routes[routeId].colour;
+    const isWild = routeColour === "grey";
+    const hex = ROUTE_COLOUR_HEX[routeColour] || "#7a7a7a";
+    const cost = app.rulesData.routes[routeId].length;
+
+    const group = createSvgEl("g", {
+      class: "route-cost-badge",
+      transform: `translate(${mid.x}, ${mid.y})`,
+      "data-route-id": routeId
+    });
+    group.style.cursor = "pointer";
+
+    const circle = createSvgEl("circle", {
+      r: "12",
+      fill: "#ffffff",
+      stroke: isWild ? "#c64f8e" : hex
+    });
+
+    const text = createSvgEl("text", {
+      x: "0",
+      y: "0",
+      fill: isWild ? "#c64f8e" : hex,
+      "text-anchor": "middle",
+      "dominant-baseline": "middle",
+      "alignment-baseline": "middle"
+    });
+    text.textContent = String(cost);
+    text.setAttribute("dy", "0.02em");
+
+    group.appendChild(circle);
+    group.appendChild(text);
+
+    group.addEventListener("click", evt => {
+      evt.stopPropagation();
+      handleRouteSelection(routeId);
+    });
+
+    group.addEventListener("mouseenter", evt => {
+      evt.stopPropagation();
+      handleRouteHover(routeId);
+    });
+
+    group.addEventListener("mouseleave", () => {
+      updateStatus("Choose one action: draw a card or click a route to play it.");
+    });
+
+    layer.appendChild(group);
+  });
+}
+
+function renderRoutes() {
+  const routeIds = Object.keys(app.rulesData.routes || {});
+  const selectedRouteId = app.state.selectedRouteId;
+
+  routeIds.forEach(routeId => {
+    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
+    if (!routeEl) return;
+
+    routeEl.classList.remove("route-claimed-eric", "route-claimed-tango", "route-eligible", "route-selected", "route-blocked");
+
+    const routeState = app.state.routes[routeId];
+    const routeColor = routeState.colour;
+    const baseColour = ROUTE_COLOUR_HEX[routeColor] || "#7a7a7a";
+
+    routeEl.style.strokeWidth = "8";
+    routeEl.style.cursor = "pointer";
+    routeEl.style.stroke = routeColor === "grey" ? "url(#wild-route-gradient)" : baseColour;
+
+    if (routeState.claimedBy) {
+      routeEl.classList.add(PLAYER_CONFIG[routeState.claimedBy].routeClass);
+      return;
+    }
+
+    const playability = getRoutePlayability(routeId);
+
+    if (playability.playable) {
+      routeEl.classList.add("route-eligible");
+    } else if (
+      playability.reason !== "Route does not connect to current node." &&
+      !getConnectedNode(routeId, app.state.players[app.state.currentPlayer].currentNode)
+    ) {
+      routeEl.classList.add("route-blocked");
+    }
+
+    if (selectedRouteId === routeId) {
+      routeEl.classList.add("route-selected");
+    }
+  });
+
+  renderRouteCostBadges();
 }
 
 function renderTurnBadge() {
-  const turnBadge = document.getElementById("turn-badge");
-  if (!turnBadge) return;
-  turnBadge.textContent = `${app.state.currentPlayer} turn`;
-  turnBadge.className = `turn-badge ${PLAYER_CONFIG[app.state.currentPlayer]?.badgeClass || ""}`;
+  const badge = document.getElementById("turn-player-badge");
+  if (!badge) return;
+  badge.className = `player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
+  badge.textContent = `${app.state.currentPlayer} to play`;
 }
 
 function renderCounts() {
-  const drawCount = document.getElementById("draw-count");
-  const discardCount = document.getElementById("discard-count");
-  if (drawCount) drawCount.textContent = app.state.drawPile.length;
-  if (discardCount) discardCount.textContent = app.state.discardPile.length;
-
-  const mobileDrawPile = document.getElementById("mobile-draw-pile");
-  const mobileDiscardPile = document.getElementById("mobile-discard-pile");
-
-  if (mobileDrawPile) {
-    mobileDrawPile.innerHTML = "";
-    const visible = Math.min(6, Math.max(1, Math.ceil(app.state.drawPile.length / 12)));
-    for (let i = 0; i < visible; i += 1) {
-      const card = document.createElement("div");
-      card.className = "mobile-pile-card draw-back";
-      card.style.transform = `translate(${i * 2}px, ${i * -2}px)`;
-      mobileDrawPile.appendChild(card);
-    }
-    const count = document.createElement("div");
-    count.className = "mobile-pile-count";
-    count.textContent = app.state.drawPile.length;
-    mobileDrawPile.appendChild(count);
-  }
-
-  if (mobileDiscardPile) {
-    mobileDiscardPile.innerHTML = "";
-    const topCards = app.state.discardPile.slice(-5);
-    topCards.forEach((color, index) => {
-      const card = document.createElement("div");
-      card.className = `mobile-pile-card discard-face ${color}`;
-      const rotation = -8 + index * 4;
-      card.style.transform = `translate(${index * 3}px, ${index * -2}px) rotate(${rotation}deg)`;
-      card.textContent = color === "rainbow" ? "★" : color;
-      mobileDiscardPile.appendChild(card);
-    });
-    const count = document.createElement("div");
-    count.className = "mobile-pile-count";
-    count.textContent = app.state.discardPile.length;
-    mobileDiscardPile.appendChild(count);
-  }
-}
-
-function buildRoutePreview(routeId) {
-  const route = app.state.routes[routeId];
-  const baseRoute = app.rulesData.routes[routeId];
-  if (!route || !baseRoute) return null;
-
-  const card = document.createElement("div");
-  card.className = "selected-route-card-inner";
-  card.innerHTML = `
-    <div class="selected-route-title">${formatRouteName(routeId)}</div>
-    <div class="selected-route-meta">
-      Colour: ${getDisplayRouteColor(route.colour)}<br>
-      Length: ${baseRoute.length}<br>
-      Claimed: ${route.claimedBy || "No"}
-    </div>
-  `;
-  return card;
+  const drawEl = document.getElementById("draw-pile-count");
+  const discardEl = document.getElementById("discard-pile-count");
+  if (drawEl) drawEl.textContent = app.state.drawPile.length;
+  if (discardEl) discardEl.textContent = app.state.discardPile.length;
 }
 
 function renderSelectedRouteCard() {
-  const slot = document.getElementById("selected-route-card");
-  if (!slot) return;
-  slot.innerHTML = "";
+  const card = document.getElementById("selected-route-card");
+  if (!card) return;
 
-  if (!app.state.selectedRouteId) {
-    slot.innerHTML = `<div class="selected-route-card-inner empty">Tap a route to inspect it.</div>`;
+  const routeId = app.state.selectedRouteId;
+  card.className = "selected-route-card";
+
+  if (!routeId) {
+    card.textContent = "No route selected.";
     return;
   }
 
-  const preview = buildRoutePreview(app.state.selectedRouteId);
-  if (preview) slot.appendChild(preview);
+  const routeColour = getDisplayRouteColor(app.state.routes[routeId].colour);
+  const cost = app.rulesData.routes[routeId].length;
+  const playability = getRoutePlayability(routeId);
+
+  if (playability.playable) {
+    card.classList.add("valid");
+    card.innerHTML = `
+      <strong>${formatRouteName(routeId)}</strong><br>
+      Colour: ${routeColour}<br>
+      Cost: ${cost}<br>
+      Destination node if played: ${formatNodeName(playability.targetNode)}
+    `;
+  } else {
+    card.classList.add("invalid");
+    card.innerHTML = `
+      <strong>${formatRouteName(routeId)}</strong><br>
+      Colour: ${routeColour}<br>
+      Cost: ${cost}<br>
+      ${playability.reason}
+    `;
+  }
 }
 
-function buildHandCard(color, extraClass = "") {
-  const card = document.createElement("div");
-  card.className = `hand-card ${color} ${extraClass}`.trim();
-  card.textContent = color === "rainbow" ? "★" : color;
-  return card;
-}
-
-function renderHandInto(container, player, cardClass = "") {
-  const counts = countCards(player.hand);
+function getHandStacks(hand) {
+  const counts = countCards(hand);
   const order = ["red", "orange", "blue", "green", "black", "pink", "yellow", "rainbow"];
+  return order
+    .filter(color => (counts[color] || 0) > 0)
+    .map(color => ({ color, count: counts[color] }));
+}
 
-  order.forEach(color => {
-    const count = counts[color] || 0;
-    const stack = document.createElement("div");
-    stack.className = `mobile-hand-stack ${color}`;
-    stack.dataset.color = color;
+function renderHandInto(container, player, cls = "hand-card") {
+  container.innerHTML = "";
+  const stacks = getHandStacks(player.hand);
 
-    const visible = Math.min(Math.max(count, 1), 6);
-    for (let i = 0; i < visible; i += 1) {
-      const card = document.createElement("div");
-      card.className = `mobile-hand-peek-card ${color} ${cardClass}`.trim();
-      card.style.transform = `translateY(${i * -7}px)`;
-      stack.appendChild(card);
+  if (!stacks.length) {
+    const empty = document.createElement("div");
+    empty.className = "panel-copy";
+    empty.textContent = "No cards yet.";
+    container.appendChild(empty);
+    return;
+  }
+
+  stacks.forEach(stack => {
+    const el = document.createElement("div");
+    el.className = `${cls} ${stack.color}`;
+    if (player.lastDrawColor === stack.color && cls === "hand-card") {
+      el.classList.add("draw-in");
     }
-
-    const label = document.createElement("div");
-    label.className = "mobile-hand-stack-label";
-    label.textContent = `${color === "rainbow" ? "★" : color} ${count}`;
-    stack.appendChild(label);
-
-    container.appendChild(stack);
+    el.innerHTML = `
+      <div class="card-name">${stack.color}</div>
+      <div class="card-count">${stack.count}</div>
+    `;
+    container.appendChild(el);
   });
 }
 
 function renderActiveHand() {
   const wrap = document.getElementById("active-hand");
   if (!wrap) return;
-  wrap.innerHTML = "";
-
   const player = app.state.players[app.state.currentPlayer];
-  player.hand.forEach(color => {
-    wrap.appendChild(buildHandCard(color));
-  });
-}
-
-function buildPlayerSummaryCard(playerName) {
-  const player = app.state.players[playerName];
-  const currentTargetId = getCurrentTargetForPlayer(player);
-  const destinationTitle = currentTargetId
-    ? (app.destinationData.destinations[currentTargetId]?.title || formatNodeName(currentTargetId))
-    : "Return to Didcot Parkway";
-
-  const card = document.createElement("div");
-  card.className = `player-summary-card${app.state.currentPlayer === playerName ? " active" : ""}`;
-  card.innerHTML = `
-    <div class="player-summary-name">${playerName}</div>
-    <div class="player-summary-meta">
-      Current: ${formatNodeName(player.currentNode)}<br>
-      Previous: ${player.previousNode ? formatNodeName(player.previousNode) : "—"}<br>
-      Target: ${destinationTitle}<br>
-      Completed: ${Math.min(player.completedCount, 5)}/5
-    </div>
-  `;
-  return card;
+  renderHandInto(wrap, player, "hand-card");
+  player.lastDrawColor = null;
 }
 
 function renderPlayerSummary() {
-  const wrap = document.getElementById("player-summary");
+  const wrap = document.getElementById("player-summary-wrap");
   if (!wrap) return;
+
   wrap.innerHTML = "";
-  wrap.appendChild(buildPlayerSummaryCard("Eric"));
-  wrap.appendChild(buildPlayerSummaryCard("Tango"));
-}
-
-function buildDestinationSequenceElement(playerName, compact = false) {
-  const player = app.state.players[playerName];
-  const wrap = document.createElement("div");
-  wrap.className = `destination-sequence${compact ? " compact" : ""}`;
-
-  player.destinationSequence.forEach((destinationId, index) => {
-    const item = document.createElement("div");
-    const completed = index < player.completedCount;
-    const current = index === player.completedCount;
-    item.className = `destination-pill${completed ? " completed" : ""}${current ? " current" : ""}`;
-    item.textContent = `${index + 1}. ${app.destinationData.destinations[destinationId]?.title || formatNodeName(destinationId)}`;
-    wrap.appendChild(item);
-  });
-
-  return wrap;
-}
-
-function renderDestinationSequences() {
-  const eric = document.getElementById("eric-destinations");
-  const tango = document.getElementById("tango-destinations");
-  if (eric) {
-    eric.innerHTML = "";
-    eric.appendChild(buildDestinationSequenceElement("Eric"));
-  }
-  if (tango) {
-    tango.innerHTML = "";
-    tango.appendChild(buildDestinationSequenceElement("Tango"));
-  }
-}
-
-function clearRouteClasses(routeEl) {
-  routeEl.classList.remove(
-    "route-claimed-eric",
-    "route-claimed-tango",
-    "route-hover-playable",
-    "route-hover-blocked",
-    "route-selected"
-  );
-  routeEl.style.stroke = "";
-  routeEl.style.strokeWidth = "";
-  routeEl.style.filter = "";
-}
-
-function renderRoutes() {
-  Object.keys(app.rulesData.routes || {}).forEach(routeId => {
-    const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
-    if (!routeEl) return;
-
-    clearRouteClasses(routeEl);
-
-    const routeState = app.state.routes[routeId];
-    routeEl.dataset.routeId = routeId;
-    routeEl.style.cursor = "pointer";
-
-    if (routeState.claimedBy) {
-      const config = PLAYER_CONFIG[routeState.claimedBy];
-      if (config?.routeClass) routeEl.classList.add(config.routeClass);
-      routeEl.style.stroke = `url(#claim-gradient)`;
-      routeEl.style.strokeWidth = "12";
-      routeEl.style.filter = "drop-shadow(0 0 6px rgba(255,255,255,0.55))";
-    } else {
-      routeEl.style.stroke = ROUTE_COLOUR_HEX[routeState.colour] || ROUTE_COLOUR_HEX.grey;
-      routeEl.style.strokeWidth = "10";
-      routeEl.style.filter = "drop-shadow(0 0 3px rgba(0,0,0,0.25))";
-    }
-
-    if (app.state.selectedRouteId === routeId) {
-      routeEl.classList.add("route-selected");
-    }
-  });
-}
-
-function findRouteMidpoint(routeEl) {
-  try {
-    const length = routeEl.getTotalLength();
-    return routeEl.getPointAtLength(length / 2);
-  } catch (error) {
-    const bbox = routeEl.getBBox();
-    return { x: bbox.x + bbox.width / 2, y: bbox.y + bbox.height / 2 };
-  }
-}
-
-function ensureTokenLayer() {
-  let layer = app.svg.querySelector("#token-layer");
-  if (!layer) {
-    layer = createSvgEl("g", { id: "token-layer" });
-    app.svg.appendChild(layer);
-  }
-  return layer;
-}
-
-function buildToken(playerName) {
-  const player = PLAYER_CONFIG[playerName];
-  const token = createSvgEl("g", { class: `map-token ${player.tokenClass}` });
-
-  const circle = createSvgEl("circle", { cx: "0", cy: "0", r: "15" });
-  token.appendChild(circle);
-
-  const image = createSvgEl("image", {
-    x: "-12",
-    y: "-12",
-    width: "24",
-    height: "24",
-    preserveAspectRatio: "xMidYMid slice"
-  });
-  image.setAttributeNS(XLINK_NS, "href", player.image);
-  token.appendChild(image);
-
-  return token;
-}
-
-function getNodeCenter(nodeEl) {
-  try {
-    const bbox = nodeEl.getBBox();
-    return {
-      x: bbox.x + bbox.width / 2,
-      y: bbox.y + bbox.height / 2
-    };
-  } catch (error) {
-    return { x: 0, y: 0 };
-  }
-}
-
-function renderTokens() {
-  const layer = ensureTokenLayer();
-  layer.innerHTML = "";
 
   ["Eric", "Tango"].forEach(playerName => {
     const player = app.state.players[playerName];
-    const nodeEl = getNodeElement(app.svg, player.currentNode);
-    if (!nodeEl) return;
-
-    const token = buildToken(playerName);
-    const point = getNodeCenter(nodeEl);
-    token.setAttribute("transform", `translate(${point.x}, ${point.y})`);
-    layer.appendChild(token);
+    const target = getCurrentTargetForPlayer(player);
+    const card = document.createElement("div");
+    card.className = `player-summary-card${app.state.currentPlayer === playerName ? " active" : ""}`;
+    card.innerHTML = `
+      <div class="player-summary-name">${playerName}</div>
+      <div class="player-summary-meta">
+        Current node: ${formatNodeName(player.currentNode)}<br>
+        Previous node: ${player.previousNode ? formatNodeName(player.previousNode) : "—"}<br>
+        Hand size: ${player.hand.length}<br>
+        Completed: ${Math.min(player.completedCount, 5)}/5<br>
+        Active target: ${target ? formatNodeName(target) : "—"}
+      </div>
+    `;
+    wrap.appendChild(card);
   });
 }
 
-async function animateTokenAlongRoute(playerName, routeId, fromNode, toNode) {
-  const layer = ensureTokenLayer();
-  const routeEl = app.svg.querySelector(`#${CSS.escape(routeId)}`);
-  const token = [...layer.querySelectorAll(".map-token")].find(el => el.classList.contains(PLAYER_CONFIG[playerName].tokenClass));
-  const fromEl = getNodeElement(app.svg, fromNode);
-  const toEl = getNodeElement(app.svg, toNode);
-
-  if (!routeEl || !token || !fromEl || !toEl) {
-    renderTokens();
-    return;
-  }
-
-  const start = getNodeCenter(fromEl);
-  const end = getNodeCenter(toEl);
-
-  let pathStartAtEnd = false;
-  try {
-    const pointAtStart = routeEl.getPointAtLength(0);
-    const pointAtEnd = routeEl.getPointAtLength(routeEl.getTotalLength());
-    const distStart = Math.hypot(pointAtStart.x - start.x, pointAtStart.y - start.y);
-    const distEnd = Math.hypot(pointAtEnd.x - start.x, pointAtEnd.y - start.y);
-    pathStartAtEnd = distEnd < distStart;
-  } catch (error) {
-    pathStartAtEnd = false;
-  }
-
-  const animation = token.animate([
-    { offsetDistance: pathStartAtEnd ? "100%" : "0%" },
-    { offsetDistance: pathStartAtEnd ? "0%" : "100%" }
-  ], {
-    duration: 900,
-    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-    fill: "forwards"
-  });
-
-  token.style.offsetPath = `path('${routeEl.getAttribute("d") || ""}')`;
-  token.style.offsetRotate = "0deg";
-
-  await animation.finished.catch(() => null);
-  token.style.offsetPath = "none";
-  token.style.transform = `translate(${end.x}px, ${end.y}px)`;
-  renderTokens();
+function createDestinationActiveCard(title, body, flip = false) {
+  const el = document.createElement("div");
+  el.className = "destination-card active-card";
+  if (flip) el.classList.add("flip-in");
+  el.innerHTML = `
+    <div class="destination-title">${title}</div>
+    <div class="destination-body">${body}</div>
+  `;
+  return el;
 }
 
-function handleRouteSelection(routeId) {
-  app.state.selectedRouteId = routeId;
-  renderSelectedRouteCard();
-  renderRoutes();
-  handleRouteHover(routeId);
+function createDestinationQuestionCard() {
+  const el = document.createElement("div");
+  el.className = "destination-card hidden-card";
+  el.textContent = "?";
+  return el;
+}
 
-  if (getRoutePlayability(routeId).playable) {
-    openRouteModal(routeId);
+function createDestinationCompletedCard(title) {
+  const el = document.createElement("div");
+  el.className = "destination-card completed-card";
+  el.innerHTML = `<div class="destination-title">✓ ${title}</div>`;
+  return el;
+}
+
+function buildDestinationSequenceElement(playerName, showFlip = true) {
+  const player = app.state.players[playerName];
+  const sequence = document.createElement("div");
+  sequence.className = "destination-sequence";
+
+  const title = document.createElement("div");
+  title.className = "sequence-title";
+  title.textContent = `${playerName} routes`;
+
+  const grid = document.createElement("div");
+  grid.className = "destination-card-grid";
+
+  for (let i = 0; i < 5; i += 1) {
+    const destinationId = player.destinationQueue[i];
+    const destination = app.destinationData.destinations[destinationId];
+    const label = destination ? destination.title : formatNodeName(destinationId);
+    const body = destination?.description || "";
+
+    if (i < player.completedCount) {
+      grid.appendChild(createDestinationCompletedCard(label));
+    } else if (i === player.completedCount && player.completedCount < 5) {
+      const shouldFlip = showFlip && app.state.justCompleted?.playerName === playerName;
+      grid.appendChild(createDestinationActiveCard(label, body, shouldFlip));
+    } else {
+      grid.appendChild(createDestinationQuestionCard());
+    }
   }
+
+  sequence.appendChild(title);
+  sequence.appendChild(grid);
+  return sequence;
+}
+
+function renderDestinationSequences() {
+  const wrap = document.getElementById("destination-sequences");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  wrap.appendChild(buildDestinationSequenceElement(app.state.currentPlayer, true));
 }
 
 function renderTargetPulse() {
   app.svg.querySelectorAll(".target-node-pulse").forEach(el => el.classList.remove("target-node-pulse"));
+
   const targetNodeId = getCurrentTargetForPlayer(app.state.players[app.state.currentPlayer]);
   if (!targetNodeId) return;
 
@@ -1134,8 +1110,6 @@ function renderAll() {
   renderDebug(app.audit);
   renderButtons();
   renderMobileRoutesPanel();
-  applyBoardTransform();
-  app.state.players[app.state.currentPlayer].lastDrawColor = null;
 }
 
 function buildCardChoiceEl(color, active = false) {
@@ -1333,7 +1307,6 @@ function startGameAs(playerName) {
   app.state = createInitialLocalState(app.rulesData, playerName);
   document.getElementById("hero-overlay").classList.remove("active");
   showStartToast(playerName);
-  centerBoardForMobile(true);
   renderAll();
   showCurrentDestinationReveal(playerName);
   updateStatus(`${playerName} begins. Choose one action: draw a card or click a route to play it.`);
@@ -1386,45 +1359,7 @@ function completeDestinationIfNeeded(playerName) {
   return true;
 }
 
-async function animateMobileDrawToHand(cardColor) {
-  const drawPile = document.getElementById("mobile-draw-pile");
-  const handStack = document.querySelector(`#mobile-hand-peek .mobile-hand-stack.${cardColor}`) || document.querySelector("#mobile-hand-peek .mobile-hand-stack:last-child");
-  const boardWrap = document.getElementById("board-wrap");
-
-  if (!isMobileViewport() || !drawPile || !handStack || !boardWrap) return;
-
-  const boardRect = boardWrap.getBoundingClientRect();
-  const drawRect = drawPile.getBoundingClientRect();
-  const targetRect = handStack.getBoundingClientRect();
-  const ghost = document.createElement("div");
-  ghost.className = `mobile-flying-card ${cardColor}`;
-  ghost.innerHTML = `<div class="mobile-flying-card-face mobile-flying-card-back"></div><div class="mobile-flying-card-face mobile-flying-card-front">${cardColor === "rainbow" ? "★" : cardColor}</div>`;
-  document.body.appendChild(ghost);
-
-  const startX = drawRect.left + drawRect.width / 2;
-  const startY = drawRect.top + drawRect.height / 2;
-  const endX = targetRect.left + targetRect.width / 2;
-  const endY = targetRect.top + Math.max(18, targetRect.height * 0.35);
-  const liftY = Math.min(drawRect.top - 60, boardRect.top + 70);
-
-  ghost.style.left = `${startX - 26}px`;
-  ghost.style.top = `${startY - 36}px`;
-
-  await ghost.animate([
-    { transform: "translate3d(0,0,0) rotateY(0deg) scale(1)", offset: 0 },
-    { transform: `translate3d(${(endX - startX) * 0.22}px, ${liftY - startY}px, 0) rotateY(0deg) scale(1.05)`, offset: 0.3 },
-    { transform: `translate3d(${(endX - startX) * 0.6}px, ${(endY - startY) * 0.55 + (liftY - startY) * 0.25}px, 0) rotateY(90deg) scale(1.08)`, offset: 0.55 },
-    { transform: `translate3d(${endX - startX}px, ${endY - startY}px, 0) rotateY(180deg) scale(0.92)`, offset: 1 }
-  ], {
-    duration: 760,
-    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-    fill: "forwards"
-  }).finished.catch(() => null);
-
-  ghost.remove();
-}
-
-async function drawCardForCurrentPlayer() {
+function drawCardForCurrentPlayer() {
   const currentPlayerName = app.state.currentPlayer;
   const card = drawCard();
 
@@ -1478,7 +1413,6 @@ function resetLocalGame() {
   closeRouteModal();
   closeDestinationReveal();
   closeMobileSheet();
-  centerBoardForMobile(true);
   renderAll();
   if (app.state.controlledHero) showCurrentDestinationReveal(app.state.controlledHero);
   updateStatus("Local game reset.");
@@ -1493,14 +1427,14 @@ function injectMobileBottomBar() {
 
   const wrap = document.createElement("div");
   wrap.id = "mobile-bottom-bar";
-  wrap.innerHTML = "";
+  wrap.innerHTML = `<div id="mobile-hand-peek"></div>`;
 
   gameShell.insertBefore(wrap, statusChip);
 }
 
 function wireControlButtons() {
-  document.getElementById("draw-card-btn").addEventListener("click", async () => {
-    await drawCardForCurrentPlayer();
+  document.getElementById("draw-card-btn").addEventListener("click", () => {
+    drawCardForCurrentPlayer();
   });
 
   document.getElementById("reset-local-btn").addEventListener("click", () => {
@@ -1515,8 +1449,8 @@ function wireControlButtons() {
     startGameAs("Tango");
   });
 
-  document.getElementById("mobile-open-sheet-btn").addEventListener("click", async () => {
-    await drawCardForCurrentPlayer();
+  document.getElementById("mobile-open-sheet-btn").addEventListener("click", () => {
+    drawCardForCurrentPlayer();
   });
 
   document.getElementById("mobile-reset-view-btn").addEventListener("click", () => {
@@ -1572,14 +1506,11 @@ async function init() {
         chosenColor: null,
         selectedOptionIndex: null,
         options: []
-      },
-      view: app.view
+      }
     };
 
     wireRouteInteractions();
     wireControlButtons();
-    setupBoardPanZoom();
-    centerBoardForMobile(true);
     renderAll();
     updateStatus("Pick your hero to begin.");
   } catch (error) {
