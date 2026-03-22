@@ -6,7 +6,7 @@
  *   Single file = no module resolution failures.
  */
 
-console.log("Didcot Dogs app.v2.js loaded");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.9.9 — room screen should show on load");
 
 const APP_VERSION = "v2.9.9";
 const DEV_AUTO_SIM = false;
@@ -593,6 +593,8 @@ function showScreen(id){ const e=document.getElementById(id); if(e) e.classList.
 function hideScreen(id){ const e=document.getElementById(id); if(e) e.classList.remove("active"); }
 
 async function initRoomFlow() {
+  // HARD GUARD: ensure board is not visible, room screen will take over
+  console.log("[DD] initRoomFlow called");
   const savedCode=sessionStorage.getItem("dd_room_code");
   const savedHero=sessionStorage.getItem("dd_hero");
 
