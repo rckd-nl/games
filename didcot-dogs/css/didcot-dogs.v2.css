@@ -2,17 +2,17 @@
  * didcot-dogs.v2.css
  *
  * CHANGELOG
- * v2.0.0
- *   - FIXED: Pan/zoom now uses SVG viewBox — no more pixellation.
- *   - FIXED: #mobile-hud shown via .visible class (was broken by display:none conflict).
- *   - FIXED: HUD hidden during hero-pick screen, shown only after hero chosen.
- *   - FIXED: Desktop panels (#left-panel, #right-panel, #top-bar) properly hidden
- *     on mobile — were bleeding through due to #game-shell size issue.
- *   - FIXED: #game-shell on mobile correctly sized to viewport, not 1920×1080.
- *   - FIXED: Pay modal (route-modal) on mobile is now centred vertically in safe
- *     zone between HUD and hand strip, scrollable, never hidden behind cards.
- *   - FIXED: Status chip z-index raised above bottom bar.
- *   - FIXED: Board viewport top/bottom derived from CSS vars matching HUD/bar heights.
+ * v2.0.1
+ *   - FIXED: hero-overlay z-index raised to 4000 (was 80, behind mobile HUD at 2000).
+ *     This is the root cause of the overlap — hero pick screen was behind the HUD.
+ *   - FIXED: #mobile-bottom-bar and #mobile-sheet also hidden until hero chosen
+ *     (same pattern as HUD — shown via .visible class added by JS).
+ *   - FIXED: All display conflicts for #mobile-hud resolved — v1 CSS has three
+ *     competing rules (none, grid, flex); all overridden with !important here.
+ *   - FIXED: Pan/zoom uses SVG viewBox — no pixellation.
+ *   - FIXED: Desktop panels hidden on mobile with belt-and-braces !important.
+ *   - FIXED: Pay modal centred in safe zone between HUD and hand strip, scrollable.
+ *   - FIXED: Board viewport derived from CSS vars for HUD/bar heights.
  *   - FIXED: SVG has no CSS transform — viewBox only.
  */
 
@@ -22,12 +22,37 @@
   --mobile-bar-height: 88px;
 }
 
-/* ─── Mobile HUD — hidden until JS adds .visible after hero pick ─────────── */
+/* ─── Hero overlay must sit above ALL mobile chrome ─────────────────────── */
+/* v1 sets .hero-overlay to z-index:80, but #mobile-hud is 2000,              */
+/* #mobile-bottom-bar is 2001. Raise hero overlay above everything.            */
+.hero-overlay {
+  z-index: 4000 !important;
+}
+
+/* ─── Mobile HUD — hidden until JS adds .visible ────────────────────────── */
+/* v1 CSS has display:none then display:grid in same rule block (grid wins),  */
+/* PLUS display:flex inside @media (767px). Squash all with !important.        */
 #mobile-hud {
   display: none !important;
 }
 #mobile-hud.visible {
   display: grid !important;
+}
+
+/* ─── Bottom bar — also hidden until hero chosen ────────────────────────── */
+#mobile-bottom-bar {
+  display: none !important;
+}
+#mobile-bottom-bar.visible {
+  display: block !important;
+}
+
+/* ─── Mobile sheet — hidden until hero chosen ───────────────────────────── */
+#mobile-sheet {
+  display: none !important;
+}
+#mobile-sheet.visible-shell {
+  display: block !important;
 }
 
 /* ─── Desktop UI hidden on mobile (belt-and-braces) ─────────────────────── */
@@ -79,7 +104,6 @@
   /* ─── Route / pay modal — centred in safe zone, scrollable ───────────── */
   .route-modal-overlay,
   .destination-reveal-overlay {
-    /* Cover only the board area — between HUD and hand strip */
     position: fixed !important;
     top: var(--mobile-hud-height) !important;
     bottom: var(--mobile-bar-height) !important;
@@ -89,7 +113,6 @@
     align-items: center !important;
     justify-content: center !important;
     padding: 12px !important;
-    /* Backdrop still covers behind the modal */
     background: rgba(9, 12, 17, 0.72) !important;
     backdrop-filter: blur(4px) !important;
   }
@@ -104,12 +127,10 @@
     overflow-x: hidden !important;
     -webkit-overflow-scrolling: touch !important;
     padding: 18px !important;
-    /* Reset the bottom-sheet shape from v1 */
-    border-radius: 20px !important;
   }
 
   .route-modal-body {
-    max-height: none !important;       /* let the modal itself scroll */
+    max-height: none !important;
     overflow: visible !important;
   }
 
@@ -118,7 +139,6 @@
     font-size: 26px !important;
   }
 
-  /* Slightly smaller spend cards so they fit without scrolling */
   .route-spend-card,
   .route-colour-choice-card {
     width: 48px !important;
@@ -126,13 +146,13 @@
     font-size: 10px !important;
   }
 
-  /* ─── Bottom bar ──────────────────────────────────────────────────────── */
-  #mobile-bottom-bar {
+  /* ─── Bottom bar z-index ─────────────────────────────────────────────── */
+  #mobile-bottom-bar.visible {
     z-index: 2001 !important;
   }
 
   /* ─── Mobile sheet sits between HUD and bottom bar ───────────────────── */
-  #mobile-sheet {
+  #mobile-sheet.visible-shell {
     top: calc(var(--mobile-hud-height) + 4px) !important;
     bottom: calc(var(--mobile-bar-height) + 4px) !important;
   }
