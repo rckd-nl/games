@@ -51,7 +51,13 @@
 
 console.log("Didcot Dogs app.v2.js loaded");
 
-const APP_VERSION = "v2.4.1";
+const APP_VERSION = "v2.5.0";
+
+// ─── DEV: Auto-sim for player 2 ──────────────────────────────────────────────
+// Set to true to have the non-controlled player auto-act after ~10s.
+// Useful for observing one player's full flow without manually switching.
+// Set to false for normal pass-and-play or before Firebase multiplayer.
+const DEV_AUTO_SIM = true;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 
@@ -916,6 +922,7 @@ function endTurn() {
   }
 
   renderAll();
+  scheduleAutoSim();
 }
 
 function easeInOutCubic(t) {
@@ -1722,6 +1729,7 @@ function closeRouteModal() {
 }
 
 async function confirmRouteModalPlay() {
+  cancelAutoSim();
   if (!app.modal.routeId || app.modal.selectedOptionIndex === null) return;
 
   const routeId = app.modal.routeId;
@@ -2023,6 +2031,7 @@ function triggerCardGlow(colour) {
 }
 
 async function drawCardForCurrentPlayer() {
+  cancelAutoSim();
   const currentPlayerName = app.state.currentPlayer;
   const card = drawCard();
 
@@ -2089,6 +2098,7 @@ function wireRouteInteractions() {
 }
 
 function resetLocalGame() {
+  cancelAutoSim();
   app.state = createInitialLocalState(app.rulesData, app.state.controlledHero || "Eric");
   closeRouteModal();
   closeDestinationReveal();
@@ -2180,6 +2190,109 @@ function showEndScreen(winnerName) {
 function hideEndScreen() {
   const overlay = document.getElementById("end-screen-overlay");
   if (overlay) overlay.className = "end-screen-overlay";
+}
+
+
+// ─── AUTO-SIM (player 2 bot) ──────────────────────────────────────────────────
+
+let __autoSimTimer = null;
+
+function cancelAutoSim() {
+  if (__autoSimTimer) {
+    clearTimeout(__autoSimTimer);
+    __autoSimTimer = null;
+  }
+}
+
+function scheduleAutoSim() {
+  if (!DEV_AUTO_SIM) return;
+  if (!app.state.controlledHero) return;
+  if (app.state.currentPlayer === app.state.controlledHero) return;
+
+  cancelAutoSim();
+
+  // Random delay 8–12s so it feels less robotic
+  const delay = 8000 + Math.random() * 4000;
+
+  __autoSimTimer = setTimeout(() => {
+    __autoSimTimer = null;
+    runAutoSimTurn();
+  }, delay);
+}
+
+function runAutoSimTurn() {
+  if (!app.state.controlledHero) return;
+  if (app.state.currentPlayer === app.state.controlledHero) return;
+
+  const botName = app.state.currentPlayer;
+  const bot = app.state.players[botName];
+
+  // 30% chance to attempt a route claim if one is affordable and connected
+  const tryRoute = Math.random() < 0.30;
+
+  if (tryRoute) {
+    const claimable = Object.keys(app.state.routes).filter(routeId => {
+      const play = getRoutePlayability(routeId);
+      return play.playable;
+    });
+
+    if (claimable.length > 0) {
+      // Pick a random claimable route
+      const routeId = claimable[Math.floor(Math.random() * claimable.length)];
+      const play = getRoutePlayability(routeId);
+      const payment = play.payment;
+
+      // Pick the option that uses fewest rainbow cards
+      const options = getPaymentOptionsForColor(
+        routeId, botName,
+        payment.isWild ? payment.availableColors[0] : null
+      ).options;
+
+      if (options.length > 0) {
+        const chosenOption = options[0];
+        const handResult = removeSpecificCardsFromHand(
+          bot.hand,
+          chosenOption.colourChoice,
+          chosenOption.useColourCount,
+          chosenOption.useRainbowCount
+        );
+
+        bot.hand = handResult.nextHand;
+        app.state.discardPile.push(...handResult.spent);
+
+        const fromNode = bot.currentNode;
+        const toNode = getConnectedNode(routeId, fromNode);
+
+        app.state.routes[routeId].claimedBy = botName;
+        bot.previousNode = fromNode;
+        bot.currentNode = toNode;
+        bot.journeyRouteIds.push(routeId);
+
+        app.state.selectedRouteId = null;
+        renderAll();
+        updateStatus(`${botName} → ${formatNodeName(toNode)}`, TOAST_NOTABLE);
+
+        animateTokenAlongRoute(botName, routeId, fromNode, toNode).then(() => {
+          completeDestinationIfNeeded(botName);
+          renderAll();
+          // Hand back to controlled hero
+          app.state.currentPlayer = app.state.controlledHero;
+          renderAll();
+        });
+        return;
+      }
+    }
+  }
+
+  // Default: draw a card
+  const card = drawCard();
+  if (card) {
+    bot.hand.push(card);
+    bot.lastDrawColor = card;
+  }
+
+  app.state.currentPlayer = app.state.controlledHero;
+  renderAll();
 }
 
 function wireControlButtons() {
