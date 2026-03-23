@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.17.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.17.1");
 
-const APP_VERSION = "v2.17.0";
+const APP_VERSION = "v2.17.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1350,6 +1350,8 @@ function startCarousel(code, myCharacter) {
         app.state = { ...restoreArrays({...remoteState}), controlledHero: myCharacter };
         renderAll(); updateRoomHud();
       });
+      // Watch for opponents quitting
+      watchForPlayerDepartures(code);
     }
     waitForGameState();
   });
@@ -1521,7 +1523,143 @@ function launchGame(hero, firebaseState){
 }
 
 // ─── Return to menu ───────────────────────────────────────────────────────────
+
+// ─── Quit confirmation & opponent notification ────────────────────────────────
+
+function showQuitConfirmation() {
+  // Always show confirmation before quitting
+  let overlay = document.getElementById("mystery-modal-overlay");
+  if(!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "mystery-modal-overlay";
+    overlay.className = "mystery-modal-overlay";
+    document.getElementById("game-shell").appendChild(overlay);
+  }
+  const inGame = gameIsRunning() && app.roomCode;
+  overlay.innerHTML = `
+    <div class="mystery-modal">
+      <div class="mystery-modal-emoji">🚪</div>
+      <div class="mystery-modal-title">QUIT TO MENU?</div>
+      <div class="mystery-modal-body">${
+        inGame
+          ? "This will remove you from the game. Your opponents will be notified and the game will pause until a replacement joins."
+          : "Return to the main menu?"
+      }</div>
+      <div class="mystery-modal-actions">
+        <button id="quit-cancel-btn" class="action-btn subtle" type="button">Keep playing</button>
+        <button id="quit-confirm-btn" class="action-btn primary" type="button">Quit to menu</button>
+      </div>
+    </div>`;
+  overlay.classList.add("open");
+
+  document.getElementById("quit-cancel-btn").onclick = () => overlay.classList.remove("open");
+  document.getElementById("quit-confirm-btn").onclick = async () => {
+    overlay.classList.remove("open");
+    if(inGame) await notifyPlayerLeft();
+    doReturnToMenu();
+  };
+}
+
+async function notifyPlayerLeft() {
+  if(!app.roomCode || !app.localHero || !_db) return;
+  try {
+    // Write departure to Firebase — remaining players will see this
+    await _firebaseSet(dbRef(`rooms/${app.roomCode}/state/playerLeft`), {
+      character: app.localHero,
+      leftAt: Date.now(),
+    });
+    // Remove from characterSelections so slot is free
+    await _firebaseSet(dbRef(`rooms/${app.roomCode}/state/characterSelections/${app.localHero}`), null);
+    // Remove presence
+    await _firebaseSet(dbRef(`rooms/${app.roomCode}/presence/${app.localHero}`), null);
+  } catch(e) { console.warn("[DD] notifyPlayerLeft failed:", e); }
+}
+
+function doReturnToMenu() {
+  sessionStorage.removeItem("dd_room_code");
+  sessionStorage.removeItem("dd_hero");
+  sessionStorage.removeItem("dd_colour");
+  app.roomCode=null; app.localHero=null;
+  cancelAutoSim(); closeRouteModal(); closeDestinationReveal(); closeMobileSheet();
+
+  // Reset to a clean pre-game state — DO NOT call createInitialLocalState here
+  // as it generates a new game. Just null out the state so renderAll bails early.
+  app.state = null;
+
+  ["mobile-hud","mobile-bottom-bar"].forEach(id=>{
+    const e=document.getElementById(id);if(e)e.classList.remove("visible");
+  });
+  const sh=document.getElementById("mobile-sheet");
+  if(sh) sh.classList.remove("visible-shell","expanded");
+  ["waiting-screen","resuming-screen"].forEach(hideScreen);
+  hideEndScreen();
+  document.getElementById("hero-overlay")?.classList.remove("active");
+
+  // Hide lobby/carousel overlays
+  ["mystery-modal-overlay","journey-picker-overlay","lobby-overlay","carousel-overlay"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.classList.remove("open");
+  });
+
+  const di=document.getElementById("desktop-identity");
+  if(di) di.innerHTML="";
+  const ti=document.getElementById("desktop-turn-indicator");
+  if(ti) ti.textContent="";
+
+  // Show room screen — renderAll is guarded so blank state won't render
+  showScreen("room-screen");
+  startFallingDogs();
+  wireRoomButtons();
+}
+
+// Watch for opponents leaving — show notification to remaining players
+function watchForPlayerDepartures(code) {
+  fbSubscribeRoom(code, remoteState => {
+    if(!remoteState || !app.localHero) return;
+    const left = remoteState.playerLeft;
+    if(!left || left.character === app.localHero) return;
+    if(Date.now() - left.leftAt > 30000) return; // ignore stale
+    // Someone just left
+    showPlayerLeftNotification(left.character, remoteState, code);
+  });
+}
+
+function showPlayerLeftNotification(whoLeft, remoteState, code) {
+  let overlay = document.getElementById("mystery-modal-overlay");
+  if(!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "mystery-modal-overlay";
+    overlay.className = "mystery-modal-overlay";
+    document.getElementById("game-shell").appendChild(overlay);
+  }
+  const remaining = Object.keys(remoteState.characterSelections||{}).length;
+  const total = remoteState.playerCount;
+  overlay.innerHTML = `
+    <div class="mystery-modal">
+      <div class="mystery-modal-emoji">😢</div>
+      <div class="mystery-modal-title">${whoLeft.toUpperCase()} LEFT</div>
+      <div class="mystery-modal-body">
+        ${whoLeft} has quit the game. The room now has ${remaining}/${total} players.
+        A new player can join with code <strong>${code}</strong>, or you can quit too.
+      </div>
+      <div class="mystery-modal-actions">
+        <button id="player-left-stay-btn" class="action-btn subtle" type="button">Keep playing</button>
+        <button id="player-left-quit-btn" class="action-btn primary" type="button">Quit to menu</button>
+      </div>
+    </div>`;
+  overlay.classList.add("open");
+  document.getElementById("player-left-stay-btn").onclick = () => overlay.classList.remove("open");
+  document.getElementById("player-left-quit-btn").onclick = () => {
+    overlay.classList.remove("open");
+    showQuitConfirmation();
+  };
+}
+
 function returnToMenu(){
+  showQuitConfirmation();
+}
+
+function _legacyReturnToMenu(){
   sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero"); sessionStorage.removeItem("dd_colour");
   app.roomCode=null; app.localHero=null;
   cancelAutoSim(); closeRouteModal(); closeDestinationReveal(); closeMobileSheet();
@@ -1588,7 +1726,7 @@ function renderRouteCostBadges(){
   const layer=ensureRouteCostLayer(); layer.innerHTML="";
   Object.keys(app.rulesData.routes||{}).forEach(routeId=>{
     const el=app.svg.querySelector(`#${CSS.escape(routeId)}`);
-    if(!el||app.state.routes[routeId].claimedBy) return;
+    if(!el||!app.state.routes[routeId]||app.state.routes[routeId].claimedBy) return;
     if(!el.getTotalLength) return;
     const len=el.getTotalLength(), mid=el.getPointAtLength(len/2);
     const rc=app.state.routes[routeId].colour;
@@ -1736,7 +1874,8 @@ function renderPlayerSummary(){
 
 // Only render the VIEW HERO's destination sequence
 function buildDestinationSequenceElement(playerName,showFlip=true){
-  const player=app.state.players[playerName];
+  const player=getPlayerByChar(playerName)||app.state.players?.[playerName];
+  if(!player) return document.createElement("div");
   const N=getJourneyTarget();
   const seq=document.createElement("div"); seq.className="destination-sequence";
   const title=document.createElement("div"); title.className="sequence-title"; title.textContent="Your routes";
@@ -1877,10 +2016,10 @@ function renderMobileRoutesPanel(){
 function renderButtons(){
   const b=document.getElementById("draw-card-btn");
   if(!b) return;
-  const mine=isMyTurn();
+  const mine=gameIsRunning()&&isMyTurn();
   b.disabled=!mine;
-  b.textContent=mine?"Draw card":"Waaaaiit…";
-  b.classList.toggle("btn-waiting",!mine);
+  b.textContent=mine?"Draw card":(gameIsRunning()?"Waaaaiit…":"—");
+  b.classList.toggle("btn-waiting",gameIsRunning()&&!mine);
 }
 
 function renderDesktopPiles(){
@@ -2630,7 +2769,21 @@ function renderDestinationNodes() {
   });
 }
 
+function gameIsRunning() {
+  // Game is running when we have characterSelections, a currentPlayer, playerOrder,
+  // and the SVG is loaded. Without these, rendering will produce a blank board.
+  return !!(
+    app.svg &&
+    app.rulesData &&
+    app.state?.routes &&
+    app.state?.currentPlayer &&
+    app.state?.playerOrder?.length &&
+    Object.keys(app.state?.characterSelections||{}).length > 0
+  );
+}
+
 function renderAll(){
+  if(!app.svg || !app.rulesData || !app.state?.routes) return; // SVG not ready
   renderTurnBadge(); renderCounts(); renderSelectedRouteCard(); renderActiveHand();
   renderPlayerSummary(); renderDestinationSequences(); renderRoutes(); renderTokens();
   renderTargetPulse(); renderDebug(app.audit); renderButtons(); renderMobileRoutesPanel();
@@ -2641,8 +2794,8 @@ function renderAll(){
 
 function renderInventoryBadge() {
   const hero = getViewHero();
-  if(!app.state) return;
-  const player = app.state.players[hero];
+  if(!app.state||!hero) return;
+  const player = getPlayerByChar(hero);
   if(!player) return;
   const inv = player.inventory || [];
   // Show in left panel below draw button
