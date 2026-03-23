@@ -3121,3 +3121,65 @@ html, body {
     font-size: 10px !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.16.0  MYSTERY EVENT UI FIXES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Oh Whups / Bin Dipper card grid — inline-styled cards ─────────────── */
+.whups-card-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0 8px;
+  /* Cards use inline styles for reliable hit targets */
+}
+
+/* ── Nowhere to Poo countdown modal ──────────────────────────────────────── */
+.nowhere-modal {
+  text-align: center;
+}
+.nowhere-message {
+  font-size: 22px !important;
+  font-family: var(--header-font) !important;
+  color: #fff !important;
+  margin: 8px 0 !important;
+}
+.nowhere-countdown {
+  font-family: var(--header-font);
+  font-size: 56px;
+  color: rgba(255,255,255,0.3);
+  line-height: 1;
+  margin-top: 4px;
+}
+
+/* ── Gimme Gimme opponent picker ─────────────────────────────────────────── */
+.gimme-opponent-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+.gimme-opponent-btn {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  cursor: pointer;
+  font-family: var(--ui-font);
+  transition: border-color 100ms ease, background 100ms ease;
+  text-align: left;
+}
+.gimme-opponent-btn:hover {
+  background: rgba(255,255,255,0.09);
+}
+
+/* ── Hitch a Lift trail layer ────────────────────────────────────────────── */
+#hitch-trail-layer circle {
+  pointer-events: none;
+}
