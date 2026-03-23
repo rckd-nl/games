@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.11.1");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.12.0");
 
-const APP_VERSION = "v2.11.1";
+const APP_VERSION = "v2.12.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -2071,8 +2071,12 @@ async function init(){
   wireRoomButtons();
 
   try {
-    const rulesData = {"version":"v1.1","game":"didcot-dogs","startNode":"Didcot","characters":["Eric","Tango"],"routeColours":["red","orange","blue","green","black","pink","yellow","grey"],"drawColours":["red","orange","blue","green","black","pink","yellow"],"deck":{"copiesPerColour":8,"rainbowCount":4},"winCondition":{"targetJourneysBeforeReturn":5,"finalDestinationAfterFive":"Didcot"},"svgNodeIdAliases":{"Clifton_Hampden1":"Clifton_Hampden"},"destinationPool":["Chilton","Abingdon","Clifton_Hampden","Dorchester","Blewbury","Wittenham_Clumps","Wallingford","East_Hagbourne","Brightwell-cum-Sotwell","Milton_Interchange"],"nodes":["Steventon","Drayton","Abingdon","Culham","Sutton_Courtenay","Clifton_Hampden","Didcot","Milton_Interchange","Appleford","Berinsfield","Dorchester","Wittenham_Clumps","Brightwell-cum-Sotwell","Wallingford","Benson","Cholsey","South_Moreton","Aston_Upthorpe","Blewbury","Upton","Chilton","Harwell","West_Hagbourne","East_Hagbourne","North_Moreton","Fulscot","Long_Wittenham","Shillingford"],"routes":{"Didcot_to_Fulscot":{"length":2},"Abingdon_to_Culham":{"length":3},"Harwell_to_Chilton":{"length":4},"South_Moreton_to_Wallingford":{"length":5},"North_Moreton_to_South_Moreton":{"length":1},"Fulscot_to_South_Moreton":{"length":2},"Didcot_to_North_Moreton":{"length":3},"Didcot_to_Milton_Interchange":{"length":6},"South_Moreton_to_Cholsey":{"length":3},"Aston_Upthorpe_to_South_Moreton":{"length":3},"East_Hagbourne_to_Blewbury":{"length":3},"Abingdon_to_Clifton_Hampden":{"length":6},"Aston_Upthorpe_to_Cholsey":{"length":4},"Didcot_to_Appleford":{"length":4},"Sutton_Courtenay_to_Culham":{"length":1},"Drayton_to_Milton_Interchange":{"length":3},"Drayton_to_Abingdon":{"length":4},"Appleford_to_Sutton_Courtenay":{"length":2},"Culham_to_Clifton_Hampden":{"length":5},"Clifton_Hampden_to_Berinsfield":{"length":3},"Milton_Interchange_to_Harwell":{"length":3},"Didcot_to_Long_Wittenham":{"length":4},"Wittenham_Clumps_to_Brightwell-cum-Sotwell":{"length":4},"Clifton_Hampden_to_Wittenham_Clumps":{"length":4},"Drayton_to_Sutton_Courtenay":{"length":3},"Sutton_Courtenay_to_Milton_Interchange":{"length":4},"Didcot_to_Brightwell-cum-Sotwell":{"length":6},"Berinsfield_to_Dorchester":{"length":3},"Dorchester_to_Shillingford":{"length":3},"Benson_to_Wallingford":{"length":3},"Drayton_to_Steventon":{"length":3},"Steventon_to_Milton_Interchange":{"length":1},"Didcot_to_Harwell":{"length":5},"Milton_Interchange_to_Chilton":{"length":6},"Chilton_to_Upton":{"length":3},"Blewbury_to_Aston_Upthorpe":{"length":3},"Upton_to_West_Hagbourne":{"length":1},"Didcot_to_East_Hagbourne":{"length":2},"Long_Wittenham_to_Clifton_Hampden":{"length":3},"West_Hagbourne_to_East_Hagbourne":{"length":2},"Brightwell-cum-Sotwell_to_Wallingford":{"length":3},"Long_Wittenham_to_Wittenham_Clumps":{"length":2},"Upton_to_Blewbury":{"length":3},"Steventon_to_Chilton":{"length":6},"Shillingford_to_Benson":{"length":2},"Cholsey_to_Wallingford":{"length":4},"Shillingford_to_Wallingford":{"length":4}}};
-    const destinationData = await loadJson("./data/didcot-dogs-destinations.v1.json?v=4");
+    // Single source of truth — all game data lives in this JSON.
+    // Edit didcot-dogs-game.v1.json to change route lengths, destinations, deck etc.
+    const gameData = await loadJson("./data/didcot-dogs-game.v1.json?v=1");
+    const rulesData = gameData;           // routes, nodes, deck, win condition etc.
+    const destinationData = { destinations: gameData.destinations }; // keep same shape
+
     const svg=await injectBoardSvg();
     ensureSvgDefs(svg); startClaimGradientAnimation(svg);
     normalizeSvgNodeAliases(svg,rulesData); tightenSvgViewBox(svg);
@@ -2102,7 +2106,7 @@ async function init(){
         showScreen("room-screen");
       }
     }
-    console.log("[DD] Game data loaded. Routes:",Object.keys(rulesData.routes||{}).length);
+    console.log("[DD] Game data loaded v"+gameData.version+". Routes:",Object.keys(rulesData.routes||{}).length);
   } catch(err){
     console.error("[DD] Data load error:",err);
     const errEl=document.getElementById("room-error");
