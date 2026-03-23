@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.12.1");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.12.2");
 
-const APP_VERSION = "v2.12.1";
+const APP_VERSION = "v2.12.2";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -181,7 +181,7 @@ function routesShareNode(a,b) {
 function countCards(hand) {
   return hand.reduce((acc,c)=>{ acc[c]=(acc[c]||0)+1; return acc; },{});
 }
-function getDisplayRouteColor(c) { return c==="grey"?"wild":c; }
+function getDisplayRouteColor(c) { return c; }
 
 // Returns the hero whose perspective we're rendering from.
 // In solo play this is controlledHero; in multiplayer it's localHero.
@@ -511,14 +511,11 @@ function getPaymentOptionsForColor(routeId,playerName,chosenColor=null) {
   const rc=hc.rainbow||0, routeColour=app.state.routes[routeId].colour;
   const baseCost=app.rulesData.routes[routeId].length;
   const cost=baseCost+(player.routeCostBonus||0); // JUST SNIFFIN' penalty
+  // All routes are a named colour. Rainbow cards act as wildcards for any colour.
   const ec=chosenColor||routeColour, owned=hc[ec]||0;
   const minR=Math.max(0,cost-owned), maxR=Math.min(rc,cost);
   const options=[];
   for(let r=minR;r<=maxR;r++){const uc=cost-r;if(uc<=owned)options.push({colourChoice:ec,useColourCount:uc,useRainbowCount:r});}
-  if(routeColour==="grey"){
-    const av=(app.rulesData.drawColours||[]).filter(c=>(hc[c]||0)+rc>=cost);
-    return {affordable:av.length>0,isWild:true,availableColors:av,options};
-  }
   return {affordable:options.length>0,isWild:false,availableColors:[routeColour],options};
 }
 
@@ -890,12 +887,12 @@ function renderRouteCostBadges(){
     if(!el||app.state.routes[routeId].claimedBy) return;
     if(!el.getTotalLength) return;
     const len=el.getTotalLength(), mid=el.getPointAtLength(len/2);
-    const rc=app.state.routes[routeId].colour, wild=rc==="grey";
+    const rc=app.state.routes[routeId].colour;
     const hex=ROUTE_COLOUR_HEX[rc]||"#7a7a7a", cost=app.rulesData.routes[routeId].length;
     const g=createSvgEl("g",{class:"route-cost-badge",transform:`translate(${mid.x},${mid.y})`,"data-route-id":routeId});
     g.style.cursor="pointer";
-    g.appendChild(createSvgEl("circle",{r:"12",fill:"#ffffff",stroke:wild?"#c64f8e":hex}));
-    const txt=createSvgEl("text",{x:"0",y:"0",fill:wild?"#c64f8e":hex,"text-anchor":"middle","dominant-baseline":"middle"});
+    g.appendChild(createSvgEl("circle",{r:"12",fill:"#ffffff",stroke:hex}));
+    const txt=createSvgEl("text",{x:"0",y:"0",fill:hex,"text-anchor":"middle","dominant-baseline":"middle"});
     txt.textContent=String(cost); txt.setAttribute("dy","0.02em"); g.appendChild(txt);
     g.addEventListener("click",evt=>{evt.stopPropagation();handleRouteSelection(routeId);});
     g.addEventListener("mouseenter",evt=>{evt.stopPropagation();handleRouteHover(routeId);});
@@ -910,7 +907,7 @@ function renderRoutes(){
     el.classList.remove("route-claimed-eric","route-claimed-tango","route-eligible","route-selected","route-blocked");
     const rs=app.state.routes[routeId], rc=rs.colour;
     el.style.strokeWidth="8"; el.style.cursor="pointer";
-    el.style.stroke=rc==="grey"?"url(#wild-route-gradient)":ROUTE_COLOUR_HEX[rc]||"#7a7a7a";
+    el.style.stroke=ROUTE_COLOUR_HEX[rc]||"#7a7a7a";
     if(rs.claimedBy){el.classList.add(PLAYER_CONFIG[rs.claimedBy].routeClass);return;}
     const play=getRoutePlayability(routeId);
     if(play.playable) el.classList.add("route-eligible");
@@ -1770,23 +1767,12 @@ function openRouteModal(routeId){
   document.getElementById("route-modal-confirm").disabled=true;
   const rc=app.state.routes[routeId].colour,cost=app.rulesData.routes[routeId].length;
   const banner=document.createElement("div");banner.className="route-modal-cost-banner";
-  banner.innerHTML=`<span><strong>${formatRouteName(routeId)}</strong><br><span style="font-size:13px;opacity:0.7">${rc==="grey"?"wild":rc} route</span></span><span class="route-modal-cost-pip">${cost}</span>`;
+  banner.innerHTML=`<span><strong>${formatRouteName(routeId)}</strong><br><span style="font-size:13px;opacity:0.7">${rc} route</span></span><span class="route-modal-cost-pip">${cost}</span>`;
   body.appendChild(banner);
-  if(rc==="grey"){
-    const pay=getPaymentOptionsForColor(routeId,app.state.currentPlayer);
-    document.getElementById("route-modal-subtitle").textContent="Wild route. Choose a colour.";
-    const row=document.createElement("div");row.className="route-colour-card-row";
-    pay.availableColors.forEach(color=>{
-      const card=buildCardChoiceEl(color,app.modal.chosenColor===color);
-      card.addEventListener("click",()=>{app.modal.chosenColor=color;app.modal.options=getPaymentOptionsForColor(routeId,app.state.currentPlayer,color).options;app.modal.selectedOptionIndex=null;renderRouteModalOptionStage();});
-      row.appendChild(card);
-    });
-    body.appendChild(row);
-  } else {
-    app.modal.chosenColor=rc;
-    app.modal.options=getPaymentOptionsForColor(routeId,app.state.currentPlayer,rc).options;
-    renderRouteModalOptionStage();
-  }
+  // All routes are a named colour — go straight to payment options.
+  app.modal.chosenColor=rc;
+  app.modal.options=getPaymentOptionsForColor(routeId,app.state.currentPlayer,rc).options;
+  renderRouteModalOptionStage();
   overlay.classList.add("open");
 }
 
@@ -2074,7 +2060,7 @@ async function init(){
   try {
     // Single source of truth — all game data lives in this JSON.
     // Edit didcot-dogs-game.v1.json to change route lengths, destinations, deck etc.
-    const gameData = await loadJson("./data/didcot-dogs-game.v1.json?v=1");
+    const gameData = await loadJson("./data/didcot-dogs-game.v1.json?v=2");
     const rulesData = gameData;           // routes, nodes, deck, win condition etc.
     const destinationData = { destinations: gameData.destinations }; // keep same shape
 
