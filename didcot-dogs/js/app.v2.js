@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.15.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.16.0");
 
-const APP_VERSION = "v2.15.0";
+const APP_VERSION = "v2.16.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -715,15 +715,20 @@ function endTurn() {
   const nextPlayerSlot = getSlotForCharacter(next);
   const nextPlayer = nextPlayerSlot ? app.state.players[nextPlayerSlot] : null;
   if(nextPlayer && nextPlayer.skipTurns > 0){
+    const skipsLeft = nextPlayer.skipTurns;
     nextPlayer.skipTurns--;
     console.log("[DD] Skipping",next,"— turns left:",nextPlayer.skipTurns);
-    if(next===getViewHero()){
-      showMobileToast("Skipping your turn…");
-      updateStatus("Your turn is being skipped!");
-    }
     renderAll();
     if(app.roomCode) fbPushState(app.roomCode, app.state).then(()=>updateRoomHud());
-    setTimeout(endTurn, 1200);
+    // Show skip modal if this player is local viewer, or a brief toast for others
+    if(next === getViewHero()){
+      const msgs = nextPlayer.skipMessages || ["Maybe here? 🤔","Or perhaps here? 🧐","Or I could go here? 🚶"];
+      const msgIdx = Math.max(0, 3 - skipsLeft); // 0,1,2 as turns tick down
+      showNowhereToPoModal(msgs[msgIdx] || msgs[0], ()=>{ setTimeout(endTurn, 200); });
+    } else {
+      showMobileToast(`${next} is looking for a spot… (${skipsLeft} turn${skipsLeft!==1?"s":""} skipped)`);
+      setTimeout(endTurn, 5200);
+    }
     return;
   }
   console.log("[DD] endTurn → now",app.state.currentPlayer);
@@ -2034,6 +2039,12 @@ function showMysteryEventModal(event, playerName, onDone) {
     case "bright_brown":
       buildBrightBrownUI(content, playerName, okBtn, overlay, onDone);
       break;
+    case "gimme_gimme":
+      buildGimmeGimmeUI(content, playerName, okBtn, overlay, onDone);
+      break;
+    case "bin_dipper":
+      buildBinDipperUI(content, playerName, okBtn, overlay, onDone);
+      break;
     default:
       okBtn.onclick = () => {
         overlay.classList.remove("open");
@@ -2048,14 +2059,49 @@ function closeMysteryModal() {
   if(o) o.classList.remove("open");
 }
 
+function showNowhereToPoModal(message, onDone) {
+  let overlay = document.getElementById("mystery-modal-overlay");
+  if(!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "mystery-modal-overlay";
+    overlay.className = "mystery-modal-overlay";
+    document.getElementById("game-shell").appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="mystery-modal nowhere-modal">
+      <div class="mystery-modal-emoji">🐾</div>
+      <div class="mystery-modal-title">NOWHERE TO POO</div>
+      <div class="mystery-modal-body nowhere-message">${message}</div>
+      <div class="nowhere-countdown" id="nowhere-countdown">5</div>
+    </div>`;
+  overlay.classList.add("open");
+  let secs = 5;
+  const countEl = document.getElementById("nowhere-countdown");
+  const timer = setInterval(() => {
+    secs--;
+    if(countEl) countEl.textContent = secs;
+    if(secs <= 0) {
+      clearInterval(timer);
+      overlay.classList.remove("open");
+      onDone();
+    }
+  }, 1000);
+}
+
 // ── OH WHUPS ──────────────────────────────────────────────────────────────
 function buildOhWhupsUI(content, playerName, okBtn, overlay, onDone) {
   const player = getPlayerByChar(playerName)||app.state.players?.[playerName];
   if(!player) return;
   const hand = [...player.hand];
+  if(!hand.length) {
+    content.innerHTML = `<div class="mystery-card-select-label">No cards to discard!</div>`;
+    okBtn.textContent = "OK!"; okBtn.disabled = false;
+    okBtn.onclick = () => { overlay.classList.remove("open"); onDone(); };
+    return;
+  }
   const mustDiscard = Math.ceil(hand.length / 2);
-  const counts = countCards(hand);
-  const selected = {}; // colour -> count selected
+  // Expand hand to individual cards (not stacked) for per-card selection
+  const cards = hand.map((colour, idx) => ({ colour, idx, selected: false }));
   let totalSelected = 0;
 
   okBtn.disabled = true;
@@ -2063,50 +2109,55 @@ function buildOhWhupsUI(content, playerName, okBtn, overlay, onDone) {
 
   function renderCards() {
     content.innerHTML = `<div class="mystery-card-select-label">Select ${mustDiscard} cards to discard (${totalSelected}/${mustDiscard})</div>
-      <div class="mystery-card-select-grid"></div>`;
-    const grid = content.querySelector(".mystery-card-select-grid");
-    Object.entries(counts).forEach(([colour, count]) => {
-      for(let i = 0; i < count; i++) {
-        const idx = i;
-        const sel = (selected[colour] || 0) > idx;
-        const card = document.createElement("button");
-        card.type = "button";
-        card.className = `hand-card ${colour}${sel?" mystery-card-selected":""}`;
-        card.innerHTML = `<div class="card-name">${colour}</div>`;
-        card.onclick = () => {
-          const cur = selected[colour] || 0;
-          if(sel) {
-            selected[colour] = Math.max(0, cur-1);
-            totalSelected--;
-          } else if(totalSelected < mustDiscard) {
-            selected[colour] = cur+1;
-            totalSelected++;
-          }
-          renderCards();
-          okBtn.disabled = totalSelected < mustDiscard;
-        };
-        grid.appendChild(card);
-      }
+      <div class="whups-card-grid"></div>`;
+    const grid = content.querySelector(".whups-card-grid");
+    cards.forEach((c, i) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      // Use inline styles for reliable sizing — avoids .hand-card CSS conflicts
+      btn.style.cssText = `
+        width:54px;height:76px;border-radius:10px;padding:6px;
+        position:relative;flex-shrink:0;cursor:pointer;
+        border:${c.selected?"3px solid #ffe600":"2px solid rgba(0,0,0,0.18)"};
+        box-shadow:${c.selected?"0 0 12px rgba(255,230,0,0.6)":"0 4px 10px rgba(0,0,0,0.25)"};
+        transform:${c.selected?"translateY(-6px)":"none"};
+        transition:transform 80ms ease,box-shadow 80ms ease;
+        display:flex;align-items:flex-end;font-size:10px;font-weight:700;
+        text-transform:capitalize;color:${["yellow"].includes(c.colour)?"#222":"#fff"};
+        font-family:var(--ui-font);
+      `;
+      // Colour gradient background
+      const gradMap = {
+        red:"#f3a3a3,#d74b4b", orange:"#f2bf95,#db7f2f", blue:"#8ab5ff,#2f6edb",
+        green:"#72c78e,#1e8b4c", black:"#5b5b5b,#1d1d1d", pink:"#ef9cc3,#c64f8e",
+        yellow:"#f0dd67,#d6b300",
+        rainbow:"#f3a3a3 0%,#f0dd67 24%,#72c78e 48%,#8ab5ff 72%,#ef9cc3 100%"
+      };
+      const grad = gradMap[c.colour] || "gray,gray";
+      btn.style.background = c.colour==="rainbow"
+        ? `linear-gradient(135deg,${grad})`
+        : `linear-gradient(180deg,${grad})`;
+      btn.textContent = c.colour;
+      btn.onclick = () => {
+        if(c.selected) { c.selected=false; totalSelected--; }
+        else if(totalSelected < mustDiscard) { c.selected=true; totalSelected++; }
+        renderCards();
+        okBtn.disabled = totalSelected < mustDiscard;
+      };
+      grid.appendChild(btn);
     });
   }
   renderCards();
 
   okBtn.onclick = () => {
     if(totalSelected < mustDiscard) return;
-    // Remove selected cards from hand
-    let h = [...player.hand];
-    Object.entries(selected).forEach(([colour, n]) => {
-      let removed = 0;
-      h = h.filter(c => {
-        if(c === colour && removed < n) { removed++; return false; }
-        return true;
-      });
-    });
-    const discarded = hand.length - h.length;
-    player.hand = h;
-    app.state.discardPile.push(...Object.entries(selected).flatMap(([c,n])=>Array(n).fill(c)));
+    const toDiscard = cards.filter(c=>c.selected).map(c=>c.colour);
+    // Remove from player hand by index
+    const selectedIndices = new Set(cards.filter(c=>c.selected).map(c=>c.idx));
+    player.hand = player.hand.filter((_,i) => !selectedIndices.has(i));
+    app.state.discardPile.push(...toDiscard);
     overlay.classList.remove("open");
-    updateStatus(`Oh Whups! Discarded ${discarded} cards.`, TOAST_NOTABLE);
+    updateStatus(`Oh Whups! Discarded ${toDiscard.length} cards.`, TOAST_NOTABLE);
     onDone();
   };
 }
@@ -2118,7 +2169,7 @@ function buildBrightBrownUI(content, playerName, okBtn, overlay, onDone) {
   okBtn.disabled = true;
   okBtn.textContent = "Steal cards";
 
-  content.innerHTML = `<div class="mystery-card-select-label">Choose a colour to steal from opponent:</div>
+  content.innerHTML = `<div class="mystery-card-select-label">Choose a colour to steal from ALL opponents:</div>
     <div class="mystery-colour-grid"></div>`;
   const grid = content.querySelector(".mystery-colour-grid");
   colours.forEach(colour => {
@@ -2137,13 +2188,150 @@ function buildBrightBrownUI(content, playerName, okBtn, overlay, onDone) {
 
   okBtn.onclick = () => {
     if(!chosenColour) return;
-    const opponent = playerName === "Eric" ? "Tango" : "Eric";
-    const oppPlayer = app.state.players[opponent];
-    const stolen = oppPlayer.hand.filter(c => c === chosenColour);
-    oppPlayer.hand = oppPlayer.hand.filter(c => c !== chosenColour);
-    app.state.players[playerName].hand.push(...stolen);
+    const myPlayer = getPlayerByChar(playerName)||app.state.players[playerName];
+    const opponents = getActivePlayers().filter(n => n !== playerName);
+    let totalStolen = 0;
+    opponents.forEach(oppName => {
+      const opp = getPlayerByChar(oppName)||app.state.players[oppName];
+      if(!opp) return;
+      const stolen = opp.hand.filter(c => c === chosenColour);
+      opp.hand = opp.hand.filter(c => c !== chosenColour);
+      myPlayer.hand.push(...stolen);
+      totalStolen += stolen.length;
+    });
     overlay.classList.remove("open");
-    updateStatus(`Bright Brown! Stole ${stolen.length} ${chosenColour} card(s).`, TOAST_NOTABLE);
+    updateStatus(`Bright Brown! Stole ${totalStolen} ${chosenColour} card(s) from all opponents.`, TOAST_NOTABLE);
+    onDone();
+  };
+}
+
+// ── GIMME GIMME — pick opponent to steal from ────────────────────────────
+function buildGimmeGimmeUI(content, playerName, okBtn, overlay, onDone) {
+  const opponents = getActivePlayers().filter(n => n !== playerName);
+  if(!opponents.length) {
+    content.innerHTML = `<div class="mystery-card-select-label">No opponents to steal from!</div>`;
+    okBtn.textContent = "OK!"; okBtn.disabled = false;
+    okBtn.onclick = () => { overlay.classList.remove("open"); onDone(); };
+    return;
+  }
+  let chosen = null;
+  okBtn.disabled = true;
+  okBtn.textContent = "Steal 3 cards";
+
+  content.innerHTML = `<div class="mystery-card-select-label">Pick an opponent to steal from:</div>
+    <div class="gimme-opponent-grid"></div>`;
+  const grid = content.querySelector(".gimme-opponent-grid");
+  opponents.forEach(oppName => {
+    const opp = getPlayerByChar(oppName)||app.state.players[oppName];
+    const cardCount = opp?.hand?.length || 0;
+    const col = getPlayerColour(oppName);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "gimme-opponent-btn";
+    btn.style.borderColor = chosen===oppName ? "#ffe600" : "rgba(255,255,255,0.16)";
+    btn.style.background = chosen===oppName ? `${col}33` : "rgba(255,255,255,0.05)";
+    btn.innerHTML = `
+      <img src="./assets/${oppName.toLowerCase()}.png" style="width:40px;height:40px;border-radius:50%;border:2px solid ${col};background:rgba(255,255,255,0.9)">
+      <span style="color:${col};font-family:var(--header-font);font-size:16px">${oppName}</span>
+      <span style="opacity:0.55;font-size:12px">${cardCount} card${cardCount!==1?"s":""}</span>`;
+    btn.onclick = () => {
+      chosen = oppName;
+      grid.querySelectorAll(".gimme-opponent-btn").forEach(b => {
+        b.style.borderColor = "rgba(255,255,255,0.16)";
+        b.style.background = "rgba(255,255,255,0.05)";
+      });
+      btn.style.borderColor = "#ffe600";
+      btn.style.background = `${col}33`;
+      okBtn.disabled = false;
+    };
+    grid.appendChild(btn);
+  });
+
+  okBtn.onclick = () => {
+    if(!chosen) return;
+    const myPlayer = getPlayerByChar(playerName)||app.state.players[playerName];
+    const oppPlayer = getPlayerByChar(chosen)||app.state.players[chosen];
+    if(!oppPlayer) { overlay.classList.remove("open"); onDone(); return; }
+    const n = Math.min(3, oppPlayer.hand.length);
+    const stolen = shuffle([...oppPlayer.hand]).slice(0, n);
+    stolen.forEach(c => {
+      const i = oppPlayer.hand.indexOf(c);
+      if(i !== -1) oppPlayer.hand.splice(i, 1);
+      myPlayer.hand.push(c);
+    });
+    overlay.classList.remove("open");
+    updateStatus(`Gimme Gimme! Stole ${n} card(s) from ${chosen}.`, TOAST_NOTABLE);
+    onDone();
+  };
+}
+
+// ── BIN DIPPER — pick 5 from discard pile ────────────────────────────────
+function buildBinDipperUI(content, playerName, okBtn, overlay, onDone) {
+  const myPlayer = getPlayerByChar(playerName)||app.state.players[playerName];
+  const pile = [...(app.state.discardPile||[])];
+  if(!pile.length) {
+    content.innerHTML = `<div class="mystery-card-select-label">Oh no, it's bin day! The binman has thrown away all the treats.</div>`;
+    okBtn.textContent = "Continue"; okBtn.disabled = false;
+    okBtn.onclick = () => { overlay.classList.remove("open"); onDone(); };
+    return;
+  }
+  const maxPick = Math.min(5, pile.length);
+  // Show all cards in discard pile, expanded
+  const cards = pile.map((colour, idx) => ({ colour, idx, selected: false }));
+  let totalSelected = 0;
+  okBtn.disabled = true;
+  okBtn.textContent = `Pick ${maxPick} card${maxPick!==1?"s":""}`;
+
+  function renderCards() {
+    content.innerHTML = `
+      <div class="mystery-card-select-label">Pick ${maxPick} card${maxPick!==1?"s":""} from the discard pile (${totalSelected}/${maxPick})</div>
+      <div class="whups-card-grid"></div>`;
+    const grid = content.querySelector(".whups-card-grid");
+    cards.forEach((c, i) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.style.cssText = `
+        width:54px;height:76px;border-radius:10px;padding:6px;
+        position:relative;flex-shrink:0;cursor:pointer;
+        border:${c.selected?"3px solid #ffe600":"2px solid rgba(0,0,0,0.18)"};
+        box-shadow:${c.selected?"0 0 12px rgba(255,230,0,0.6)":"0 4px 10px rgba(0,0,0,0.25)"};
+        transform:${c.selected?"translateY(-6px)":"none"};
+        transition:transform 80ms ease;
+        display:flex;align-items:flex-end;font-size:10px;font-weight:700;
+        text-transform:capitalize;color:${["yellow"].includes(c.colour)?"#222":"#fff"};
+        font-family:var(--ui-font);
+      `;
+      const gradMap = {
+        red:"#f3a3a3,#d74b4b", orange:"#f2bf95,#db7f2f", blue:"#8ab5ff,#2f6edb",
+        green:"#72c78e,#1e8b4c", black:"#5b5b5b,#1d1d1d", pink:"#ef9cc3,#c64f8e",
+        yellow:"#f0dd67,#d6b300",
+        rainbow:"#f3a3a3 0%,#f0dd67 24%,#72c78e 48%,#8ab5ff 72%,#ef9cc3 100%"
+      };
+      const grad = gradMap[c.colour] || "gray,gray";
+      btn.style.background = c.colour==="rainbow"
+        ? `linear-gradient(135deg,${grad})`
+        : `linear-gradient(180deg,${grad})`;
+      btn.textContent = c.colour;
+      btn.onclick = () => {
+        if(c.selected) { c.selected=false; totalSelected--; }
+        else if(totalSelected < maxPick) { c.selected=true; totalSelected++; }
+        renderCards();
+        okBtn.disabled = totalSelected < maxPick;
+      };
+      grid.appendChild(btn);
+    });
+  }
+  renderCards();
+
+  okBtn.onclick = () => {
+    if(totalSelected < maxPick) return;
+    const picked = cards.filter(c=>c.selected).map(c=>c.colour);
+    // Remove picked from discard pile
+    const pickedIndices = new Set(cards.filter(c=>c.selected).map(c=>c.idx));
+    app.state.discardPile = app.state.discardPile.filter((_,i) => !pickedIndices.has(i));
+    myPlayer.hand.push(...picked);
+    overlay.classList.remove("open");
+    updateStatus(`Bin Dipper! Grabbed ${picked.length} tasty treat${picked.length!==1?"s":""} from the bin.`, TOAST_NOTABLE);
     onDone();
   };
 }
@@ -2158,6 +2346,12 @@ function applyMysteryEffect(eventId, playerName) {
     case "nowhere_to_poo":
       player.skipTurns += 3;
       updateStatus("Nowhere to Poo! Skipping 3 turns.", TOAST_NOTABLE);
+      // Store messages for the skip turn modal
+      player.skipMessages = [
+        "Maybe here? 🤔",
+        "Or perhaps here? 🧐",
+        "Or I could go here? 🚶"
+      ];
       break;
 
     case "just_sniffin":
@@ -2165,17 +2359,9 @@ function applyMysteryEffect(eventId, playerName) {
       updateStatus("Just Sniffin'! Routes cost +1 card.", TOAST_NOTABLE);
       break;
 
-    case "gimme_gimme": {
-      const n = Math.min(3, oppPlayer.hand.length);
-      const stolen = shuffle([...oppPlayer.hand]).slice(0, n);
-      stolen.forEach(c => {
-        const i = oppPlayer.hand.indexOf(c);
-        if(i !== -1) oppPlayer.hand.splice(i, 1);
-        player.hand.push(c);
-      });
-      updateStatus(`Gimme Gimme! Stole ${n} card(s) from ${opponent}.`, TOAST_NOTABLE);
+    case "gimme_gimme":
+      // Handled via modal — see showMysteryEventModal switch
       break;
-    }
 
     case "zoomies":
       player.inventory = [...(player.inventory||[]), "zoom"];
@@ -2191,6 +2377,22 @@ function applyMysteryEffect(eventId, playerName) {
     case "hitch_a_lift":
       applyHitchALift(playerName);
       break;
+
+    case "rainbow_warrior": {
+      const myPl = getPlayerByChar(playerName)||app.state.players[playerName];
+      const opps = getActivePlayers().filter(n => n !== playerName);
+      let total = 0;
+      opps.forEach(oppName => {
+        const opp = getPlayerByChar(oppName)||app.state.players[oppName];
+        if(!opp) return;
+        const rainbows = opp.hand.filter(c => c === "rainbow");
+        opp.hand = opp.hand.filter(c => c !== "rainbow");
+        myPl.hand.push(...rainbows);
+        total += rainbows.length;
+      });
+      updateStatus(`🌈 Rainbow Warrior! Swiped ${total} rainbow card(s) from all opponents.`, TOAST_NOTABLE);
+      break;
+    }
 
     default:
       break;
@@ -2256,12 +2458,14 @@ function checkPoopTrap(playerName, nodeId) {
   if(!app.state.poopedNodes) return false;
   const placedBy = app.state.poopedNodes[nodeId];
   if(!placedBy || placedBy === playerName) return false;
-  // Stepped in poop!
+  // Stepped in poop! Wipe the node immediately — only first victim
   delete app.state.poopedNodes[nodeId];
-  app.state.players[playerName].skipTurns += 3;
+  const victim = getPlayerByChar(playerName)||app.state.players?.[playerName];
+  if(victim) victim.skipTurns += 3;
   if(playerName === getViewHero()) {
     showPoopTrapModal();
   } else {
+    showMobileToast(`${playerName} stepped in poop! 3 turns skipped.`);
     updateStatus(`${playerName} stepped in poop! 3 turns skipped.`, TOAST_NOTABLE);
   }
   return true;
