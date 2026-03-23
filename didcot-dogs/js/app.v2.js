@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.14.1");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.15.0");
 
-const APP_VERSION = "v2.14.1";
+const APP_VERSION = "v2.15.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -84,9 +84,10 @@ async function fbJoinRoom(code, character=null) {
   const snap = await _firebaseGet(dbRef(`rooms/${code}/state`));
   if (!snap.exists()) throw new Error(`Room ${code} not found.`);
   const state = snap.val();
-  // Register presence with chosen character (or "joining" if not yet chosen)
-  const presKey = character || "__joining__";
-  await _firebaseSet(dbRef(`rooms/${code}/presence/${presKey}`), { connected: true, lastSeen: Date.now() });
+  // Only register presence once a character is actually chosen
+  if(character) {
+    await _firebaseSet(dbRef(`rooms/${code}/presence/${character}`), { connected: true, lastSeen: Date.now() });
+  }
   console.log("[DD] Room joined:", code, "playerCount:", state.playerCount);
   return state;
 }
@@ -95,8 +96,7 @@ async function fbUpdatePresence(code, character) {
   if(!code||!_db) return;
   // Atomically update presence key to chosen character
   await _firebaseSet(dbRef(`rooms/${code}/presence/${character}`), { connected: true, lastSeen: Date.now() });
-  // Remove placeholder if it was there
-  try { await _firebaseSet(dbRef(`rooms/${code}/presence/__joining__`), null); } catch(e){}
+  // (no placeholder to clean up)
 }
 
 async function fbStartHeartbeat(code, character) {
@@ -692,6 +692,10 @@ function removeSpecificCardsFromHand(hand,colour,useCol,useRain) {
 }
 
 // ─── Turn management ──────────────────────────────────────────────────────────
+function isHost() {
+  return app.state?.createdBy === app.localHero;
+}
+
 function isMyTurn() {
   if(!app.roomCode) return true;
   if(!app.localHero) return true;
@@ -797,7 +801,7 @@ function updateRoomHud(){
              src="${cfg.image}" alt="${hero}"
              style="border-color:${hero==="Eric"?"rgba(25,167,255,0.6)":"rgba(255,230,0,0.6)"}">
         <div class="desktop-identity-text">
-          <div class="desktop-identity-label">YOU ARE</div>
+          <div class="desktop-identity-label">${isHost()?"HOST · YOU ARE":"YOU ARE"}</div>
           <div class="desktop-identity-name">${hero.toUpperCase()}</div>
           <div class="desktop-identity-room">Room: <strong>${app.roomCode}</strong></div>
         </div>
@@ -920,6 +924,15 @@ function hideLobby() {
 }
 
 // ── CREATE FLOW ──────────────────────────────────────────────────────────────
+
+// Contrast helper — returns "black" or "white" for text on a given hex background
+function contrastText(hex) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  // Relative luminance (WCAG formula)
+  const lum = 0.2126*(r/255) + 0.7152*(g/255) + 0.0722*(b/255);
+  return lum > 0.45 ? "#111111" : "#ffffff";
+}
+
 function showCreateLobby() {
   const finalDestKey = app.rulesData.winCondition?.finalDestination || "Didcot";
   const pool = app.rulesData.destinationPool || [];
@@ -970,11 +983,12 @@ function showCreateLobby() {
           <div class="lobby-section">
             <div class="lobby-section-label">Pick your colour</div>
             <div class="lobby-colour-grid">
-              ${colourNames.map(name => `
-                <button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}" data-colour="${name}" style="--pc:${PLAYER_COLOURS[name]}">
-                  <div class="lobby-colour-swatch" style="background:${PLAYER_COLOURS[name]}"></div>
-                  <div class="lobby-colour-name">${name}</div>
-                </button>`).join("")}
+              ${colourNames.map(name => {
+                const hex=PLAYER_COLOURS[name], fg=contrastText(hex);
+                return `<button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}" data-colour="${name}" style="background:${hex};color:${fg};border-color:${sel.colour===name?"rgba(255,230,0,0.8)":"transparent"}">
+                  ${name}
+                </button>`;
+              }).join("")}
             </div>
           </div>
 
@@ -989,8 +1003,12 @@ function showCreateLobby() {
             <div class="lobby-section lobby-section-half">
               <div class="lobby-section-label">Destinations each</div>
               <div class="lobby-num-grid">
-                ${journeyOptions.map(n=>`
-                  <button type="button" class="lobby-num-btn${sel.journeyTarget===n?" active":""}" data-val="${n}">${n}</button>`).join("")}
+                ${journeyOptions.map(n=>{
+                  const maxForCount = sel.playerCount ? Math.floor(pool.length / sel.playerCount) : maxJ;
+                  const tooHigh = n > maxForCount;
+                  if(sel.journeyTarget && sel.journeyTarget > maxForCount) sel.journeyTarget = null;
+                  return `<button type="button" class="lobby-num-btn${sel.journeyTarget===n?" active":""}${tooHigh?" greyed":""}" data-val="${n}" ${tooHigh?"disabled":""}>${n}</button>`;
+                }).join("")}
               </div>
             </div>
           </div>
@@ -1048,6 +1066,7 @@ function showCreateLobby() {
           const state = createInitialLocalState(app.rulesData, sel.journeyTarget, sel.playerCount, sel.mysteryCount);
           // Register creator character selection
           state.characterSelections[sel.character] = { colour: sel.colour, slotIndex: 0 };
+          state.createdBy = sel.character;  // host identity
           const code = await fbCreateRoom(state, sel.character);
           app.roomCode = code;
           app.localHero = sel.character;
@@ -1107,10 +1126,15 @@ function updateWaitingLobby(code, myCharacter, state) {
             const entry = entries[i];
             if(entry) {
               const [char, data] = entry;
-              const col = PLAYER_COLOURS[data.colour]||"#fff";
-              return `<div class="lobby-waiting-slot lobby-waiting-slot-filled" style="border-color:${col}">
-                <img src="./assets/${char.toLowerCase()}.png" alt="${char}" style="width:36px;height:36px;border-radius:50%;border:2px solid ${col}">
-                <span style="color:${col}">${char}</span>
+              const col = PLAYER_COLOURS[data.colour]||"#888";
+              const fg = contrastText(col);
+              const isHost = data.slotIndex === 0;
+              const isMe = char === myCharacter;
+              return `<div class="lobby-waiting-slot lobby-waiting-slot-filled" style="background:${col};border-color:${col}">
+                <img src="./assets/${char.toLowerCase()}.png" alt="${char}" style="width:40px;height:40px;border-radius:50%;border:3px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.9)">
+                <span style="color:${fg};font-weight:700">${char}</span>
+                ${isHost?`<span class="lobby-host-badge" style="color:${fg}">HOST</span>`:""}
+                ${isMe&&!isHost?`<span class="lobby-host-badge" style="color:${fg}">YOU</span>`:""}
               </div>`;
             }
             return `<div class="lobby-waiting-slot lobby-waiting-slot-empty">
@@ -1127,7 +1151,21 @@ function updateWaitingLobby(code, myCharacter, state) {
       </div>
     </div>`);
 
-  document.getElementById("waiting-back-btn").onclick = () => { hideLobby(); returnToMenu(); };
+  document.getElementById("waiting-back-btn").onclick = () => {
+    hideLobby();
+    // Full reset to clean room screen state
+    app.roomCode=null; app.localHero=null;
+    sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero"); sessionStorage.removeItem("dd_colour");
+    // Reset state to initial so board renders correctly
+    if(app.rulesData) app.state=createInitialLocalState(app.rulesData);
+    ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
+    const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
+    hideEndScreen();
+    if(app.svg) { closeRouteModal(); renderAll(); }
+    showScreen("room-screen");
+    startFallingDogs();
+    wireRoomButtons();
+  };
 }
 
 // ── JOIN FLOW ────────────────────────────────────────────────────────────────
@@ -1175,9 +1213,9 @@ function showJoinLobby(code, remoteState) {
             <div class="lobby-colour-grid">
               ${colourNames.map(name => {
                 const isTaken = takenColours.includes(name);
-                return `<button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}${isTaken?" taken":""}" data-colour="${name}" ${isTaken?"disabled":""} style="--pc:${PLAYER_COLOURS[name]}">
-                  <div class="lobby-colour-swatch" style="background:${PLAYER_COLOURS[name]}"></div>
-                  <div class="lobby-colour-name">${name}</div>
+                const hex=PLAYER_COLOURS[name], fg=contrastText(hex);
+                return `<button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}${isTaken?" taken":""}" data-colour="${name}" ${isTaken?"disabled":""} style="background:${isTaken?"#1a1a2e":hex};color:${isTaken?"rgba(255,255,255,0.25)":fg};border-color:${sel.colour===name?"rgba(255,230,0,0.8)":"transparent"};${isTaken?"text-decoration:line-through":""}">
+                  ${name}
                 </button>`;
               }).join("")}
             </div>
@@ -1831,56 +1869,33 @@ function renderDesktopPiles(){
 // MYSTERY NODE SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════
 
-const MYSTERY_EVENTS = [
-  {
-    id:"oh_whups",
-    title:"OH WHUPS",
-    body:"Oopadays. You've lost half your cards.",
-    emoji:"😬"
-  },
-  {
-    id:"nowhere_to_poo",
-    title:"NOWHERE TO POO",
-    body:"Can't seem to find the right spot… just gonna look around for 3 turns.",
-    emoji:"🔍"
-  },
-  {
-    id:"just_sniffin",
-    title:"JUST SNIFFIN'",
-    body:"Slow progress. Routes require an extra card.",
-    emoji:"👃"
-  },
-  {
-    id:"gimme_gimme",
-    title:"GIMME GIMME",
-    body:"Nabbed! Take 3 of your opponent's cards and run away.",
-    emoji:"🐾"
-  },
-  {
-    id:"bright_brown",
-    title:"BRIGHT BROWN",
-    body:"Choose a colour. Opponent will give you all cards of that colour.",
-    emoji:"💩"
-  },
-  {
-    id:"zoomies",
-    title:"ZOOMIES",
-    body:"Zoom zoom zoom. Next time you move, make a second move for free.",
-    emoji:"⚡"
-  },
-  {
-    id:"poop",
-    title:"POOP",
-    body:"Drop a log, slow down your opponent!",
-    emoji:"💩"
-  },
-  {
-    id:"hitch_a_lift",
-    title:"HITCH A LIFT",
-    body:"Dad's here to give a ride! Travel immediately to the next destination.",
-    emoji:"🚗"
+// ─── Mystery events — loaded from JSON at init, editable separately ─────────
+// Populated by loadMysteryEvents() in init(). Edit didcot-dogs-events.v1.json.
+let MYSTERY_EVENTS = [];
+
+async function loadMysteryEvents() {
+  try {
+    const data = await loadJson("./data/didcot-dogs-events.v1.json?v=1");
+    MYSTERY_EVENTS = data.events || [];
+    console.log("[DD] Mystery events loaded:", MYSTERY_EVENTS.length);
+  } catch(e) {
+    console.warn("[DD] Events JSON failed, using built-in defaults:", e.message);
+    MYSTERY_EVENTS = _defaultMysteryEvents();
   }
-];
+}
+
+function _defaultMysteryEvents() {
+  return [
+    { id:"oh_whups",      title:"OH WHUPS",        body:"Oopadays. You've lost half your cards.",                                           emoji:"😬" },
+    { id:"nowhere_to_poo",title:"NOWHERE TO POO",  body:"Can't seem to find the right spot… just gonna look around for 3 turns.",          emoji:"🔍" },
+    { id:"just_sniffin",  title:"JUST SNIFFIN'",  body:"Slow progress. Routes require an extra card.",                                      emoji:"👃" },
+    { id:"gimme_gimme",   title:"GIMME GIMME",     body:"Nabbed! Take 3 of your opponent's cards and run away.",                           emoji:"🐾" },
+    { id:"bright_brown",  title:"BRIGHT BROWN",    body:"Choose a colour. Opponent will give you all cards of that colour.",                 emoji:"💩" },
+    { id:"zoomies",       title:"ZOOMIES",         body:"Zoom zoom zoom. Next time you move, make a second move for free.",                  emoji:"⚡" },
+    { id:"poop",          title:"POOP",            body:"Drop a log, slow down your opponent!",                                             emoji:"💩" },
+    { id:"hitch_a_lift",  title:"HITCH A LIFT",    body:"Dad's here to give a ride! Travel immediately to the next destination.",          emoji:"🚗" },
+  ];
+}
 
 function pickMysteryNodes(allNodes, startNode, exclude=[], destinationPool=[], count=3) {
   // Mystery nodes can only appear on nodes NOT in the destinationPool
@@ -2755,23 +2770,26 @@ function wireControlButtons(){
 function startFallingDogs() {
   const container = document.getElementById("room-screen");
   if(!container) return;
-  // Remove any existing falling dogs
   container.querySelectorAll(".room-dog").forEach(e=>e.remove());
-  ALL_CHARACTERS.forEach((char, i) => {
+  // Spawn 18 dogs — each character appears 3 times, fully randomised
+  const dogPool = [...ALL_CHARACTERS, ...ALL_CHARACTERS, ...ALL_CHARACTERS];
+  shuffle(dogPool).forEach((char, i) => {
     const el = document.createElement("div");
     el.className = "room-dog";
     el.innerHTML = `<img src="./assets/${char.toLowerCase()}.png" alt="${char}">`;
-    // Random horizontal position
-    const leftPct = 5 + Math.random() * 85;
-    const delay = i * 0.8 + Math.random() * 1.2;
-    const duration = 4 + Math.random() * 3;
-    const rotStart = -20 + Math.random() * 40;
-    const rotEnd = rotStart + (-30 + Math.random() * 60);
+    const leftPct = 2 + Math.random() * 92;          // fully random x
+    const delay = Math.random() * 10;                 // spread over 10s window
+    const duration = 3.5 + Math.random() * 4;         // 3.5–7.5s fall
+    const size = 40 + Math.floor(Math.random() * 40); // 40–80px
+    const rotStart = -25 + Math.random() * 50;
+    const rotEnd = rotStart + (-40 + Math.random() * 80);
     el.style.left = `${leftPct}%`;
     el.style.setProperty("--dog-rot-start", `${rotStart}deg`);
     el.style.setProperty("--dog-rot-end", `${rotEnd}deg`);
     el.style.animationDelay = `${delay}s`;
     el.style.animationDuration = `${duration}s`;
+    el.querySelector("img").style.width = `${size}px`;
+    el.querySelector("img").style.height = `${size}px`;
     container.appendChild(el);
   });
 }
@@ -2784,6 +2802,9 @@ async function init(){
 
   try { await initFirebase(); }
   catch(err){ console.error("[DD] Firebase failed:",err); }
+
+  // Load mystery events from JSON (falls back to built-in if missing)
+  await loadMysteryEvents();
 
   document.getElementById("hero-overlay").classList.remove("active");
   showScreen("room-screen");
