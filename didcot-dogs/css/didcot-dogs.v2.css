@@ -2541,3 +2541,484 @@ html, body {
   }
   .journey-picker-num { font-size: 26px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.14.0  LOBBY SYSTEM + CAROUSEL + FALLING DOGS + DESTINATION NODES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Lobby overlay ────────────────────────────────────────────────────────── */
+.lobby-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4600;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  background: #090c11;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.lobby-overlay.open { display: flex; }
+
+.lobby-inner {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Wipe effects — reuse hero keyframes */
+.lobby-wipe {
+  position: fixed;
+  inset: -10%;
+  transform: skewX(-18deg) translateX(-140%);
+  opacity: 0.6;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+.lobby-wipe-a {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(229,57,53,0.6) 45%, rgba(255,196,0,0.7) 100%);
+  animation: heroLoopA 5.5s linear infinite;
+}
+.lobby-wipe-b {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(47,110,219,0.5) 45%, rgba(255,255,255,0.15) 100%);
+  animation: heroLoopB 6.8s linear infinite;
+}
+.lobby-noise {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 15% 30%, rgba(255,255,255,0.06) 0%, transparent 30%),
+    radial-gradient(circle at 80% 70%, rgba(229,57,53,0.08) 0%, transparent 30%);
+  pointer-events: none;
+}
+
+.lobby-content {
+  position: relative;
+  z-index: 3;
+  width: min(780px, 96vw);
+  padding: 32px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.lobby-kicker {
+  font-family: var(--header-font);
+  font-size: 22px;
+  color: rgba(255,255,255,0.6);
+  text-align: center;
+}
+
+.lobby-title {
+  font-family: var(--header-font);
+  font-size: 64px;
+  line-height: 0.95;
+  color: #fff;
+  text-align: center;
+  text-shadow: 0 0 30px rgba(141,18,24,0.4);
+  margin-bottom: 4px;
+}
+
+.lobby-game-info {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  font-size: 15px;
+  color: rgba(255,255,255,0.55);
+}
+
+.lobby-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lobby-section-half {
+  flex: 1;
+}
+
+.lobby-row-pickers {
+  display: flex;
+  gap: 16px;
+}
+
+.lobby-section-label {
+  font-family: var(--ui-font);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.4);
+}
+
+/* Character grid */
+.lobby-char-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lobby-char-btn {
+  appearance: none;
+  width: 108px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  cursor: pointer;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+.lobby-char-btn:hover:not(:disabled):not(.taken) {
+  background: rgba(255,255,255,0.10);
+  transform: translateY(-2px);
+}
+.lobby-char-btn.active {
+  border-color: rgba(255,230,0,0.7);
+  background: rgba(255,230,0,0.12);
+}
+.lobby-char-btn.taken {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.lobby-char-frame {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.lobby-char-frame img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+.lobby-char-name {
+  font-family: var(--header-font);
+  font-size: 14px;
+  color: #fff;
+}
+
+/* Colour grid */
+.lobby-colour-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lobby-colour-btn {
+  appearance: none;
+  width: 80px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: #fff;
+  cursor: pointer;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.lobby-colour-btn:hover:not(:disabled):not(.taken) {
+  background: rgba(255,255,255,0.09);
+}
+.lobby-colour-btn.active {
+  border-color: rgba(255,230,0,0.7);
+  background: rgba(255,230,0,0.10);
+  box-shadow: 0 0 0 1px rgba(255,230,0,0.2);
+}
+.lobby-colour-btn.taken {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.lobby-colour-swatch {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.2);
+}
+.lobby-colour-name {
+  font-family: var(--ui-font);
+  font-size: 10px;
+  color: rgba(255,255,255,0.7);
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* Number picker */
+.lobby-num-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lobby-num-btn {
+  appearance: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  font-family: var(--header-font);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 100ms ease;
+}
+.lobby-num-btn:hover { background: rgba(255,255,255,0.10); }
+.lobby-num-btn.active {
+  border-color: rgba(255,230,0,0.7);
+  background: rgba(255,230,0,0.14);
+  color: #ffe600;
+}
+
+/* Actions */
+.lobby-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* ── Waiting lobby ────────────────────────────────────────────────────────── */
+.lobby-waiting-code-wrap {
+  text-align: center;
+}
+.lobby-waiting-code-label {
+  font-size: 13px;
+  color: rgba(255,255,255,0.45);
+  margin-bottom: 6px;
+}
+.lobby-waiting-code {
+  font-family: var(--header-font);
+  font-size: 64px;
+  color: #ffe600;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 20px rgba(255,230,0,0.4);
+}
+.lobby-waiting-players {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.lobby-waiting-slot {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-family: var(--ui-font);
+}
+.lobby-waiting-slot-filled {
+  border: 2px solid;
+  background: rgba(255,255,255,0.05);
+}
+.lobby-waiting-slot-empty {
+  border: 1px dashed rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.02);
+}
+.lobby-waiting-sub {
+  text-align: center;
+  font-size: 14px;
+  color: rgba(255,255,255,0.45);
+}
+
+/* Mobile lobby */
+@media (max-width: 767px) {
+  .lobby-title { font-size: 44px; }
+  .lobby-char-btn { width: calc(33.33% - 8px); min-width: 80px; }
+  .lobby-colour-btn { width: calc(25% - 7px); }
+  .lobby-row-pickers { flex-direction: column; }
+}
+
+/* ── Carousel overlay ─────────────────────────────────────────────────────── */
+.carousel-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9,12,17,0.97);
+  overflow: hidden;
+}
+.carousel-overlay.open { display: flex; }
+
+.carousel-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: min(700px, 96vw);
+  padding: 32px 20px;
+  text-align: center;
+}
+
+.carousel-kicker {
+  font-family: var(--ui-font);
+  font-size: 16px;
+  color: rgba(255,255,255,0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.carousel-title {
+  font-family: var(--header-font);
+  font-size: 60px;
+  color: #ffe600;
+  text-shadow: 0 0 24px rgba(255,230,0,0.4);
+  line-height: 1;
+}
+
+.carousel-reel-wrap {
+  width: 120px;
+  height: 120px;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 2px solid rgba(255,230,0,0.4);
+  box-shadow: 0 0 20px rgba(255,230,0,0.2);
+}
+
+.carousel-reel {
+  display: flex;
+  will-change: transform;
+}
+
+.carousel-portrait {
+  flex: 0 0 120px;
+  width: 120px;
+  height: 120px;
+  background: rgba(255,255,255,0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.carousel-portrait img {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+}
+.carousel-portrait-name {
+  font-family: var(--header-font);
+  font-size: 13px;
+  color: #111;
+}
+
+.carousel-result {
+  transition: opacity 300ms ease;
+}
+
+.carousel-order {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.carousel-order-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  animation: identityIn 400ms ease both;
+}
+.carousel-order-num {
+  font-family: var(--header-font);
+  font-size: 28px;
+  width: 32px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.carousel-order-item img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid;
+  object-fit: contain;
+  background: rgba(255,255,255,0.9);
+}
+.carousel-order-name {
+  font-family: var(--header-font);
+  font-size: 20px;
+}
+
+.carousel-btn {
+  font-family: var(--header-font);
+  font-size: 24px;
+  min-height: 60px;
+  padding: 0 40px;
+  border-radius: 18px;
+  transition: opacity 300ms ease;
+}
+
+/* ── Falling dogs on room screen ──────────────────────────────────────────── */
+.room-dog {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+  animation: dogFall linear infinite;
+  opacity: 0;
+}
+.room-dog img {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
+}
+@keyframes dogFall {
+  0%   { transform: translateY(-80px) rotate(var(--dog-rot-start)); opacity: 0; }
+  8%   { opacity: 0.85; }
+  88%  { opacity: 0.85; }
+  100% { transform: translateY(120vh) rotate(var(--dog-rot-end)); opacity: 0; }
+}
+
+/* ── Destination node red on board ────────────────────────────────────────── */
+/* Handled entirely via inline style in renderDestinationNodes() */
+/* .destination-node-indicator is a fallback class */
+.destination-node-indicator {
+  fill: #e53935 !important;
+  stroke: #b71c1c !important;
+}
+
+/* ── Route claimed — dynamic colour via inline style ─────────────────────── */
+.route-claimed {
+  stroke-width: 12 !important;
+  animation: claimedPulse 1.1s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(255,255,255,0.18));
+}
+
+/* Remove old Eric/Tango specific claim colours — now dynamic */
+.route-claimed-eric,
+.route-claimed-tango {
+  stroke-width: 13 !important;
+  animation: claimedPulse 1.1s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(255,255,255,0.22));
+}
