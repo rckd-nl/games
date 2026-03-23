@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.16.1");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.16.2");
 
-const APP_VERSION = "v2.16.1";
+const APP_VERSION = "v2.16.2";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1081,12 +1081,14 @@ function showCreateLobby() {
           sessionStorage.setItem("dd_colour", sel.colour);
           showWaitingLobby(code, sel.character, state.playerCount);
           // Subscribe to state changes so we see others joining
+          let carouselStarted = false;
           fbSubscribeRoom(code, remoteState => {
             if(!remoteState) return;
             app.state = { ...restoreArrays({...remoteState}), controlledHero: sel.character };
             // Check if lobby is full
             const joined = Object.keys(remoteState.characterSelections||{}).length;
-            if(joined >= remoteState.playerCount && remoteState.phase !== "playing") {
+            if(joined >= remoteState.playerCount && remoteState.phase !== "playing" && !carouselStarted) {
+              carouselStarted = true;
               startCarousel(code, sel.character);
             } else {
               updateWaitingLobby(code, sel.character, remoteState);
@@ -1256,14 +1258,13 @@ function showJoinLobby(code, remoteState) {
           sel.character = null;
           const takenNow = Object.values(freshState.characterSelections||{}).map(v=>v.colour);
           if(takenNow.includes(sel.colour)) sel.colour = null;
+          confirmBtn.disabled = false; confirmBtn.textContent = "Join room →";
           render();
-          // Show oops toast
           showMobileToast("Oops! That dog was just taken. Pick another.");
           return;
         }
-        // Register selection
+        // Single atomic write to characterSelections (removed duplicate fbSelectCharacter call)
         const slotIndex = nowTaken.length;
-        await fbSelectCharacter(code, sel.character, sel.colour);
         await _firebaseSet(dbRef(`rooms/${code}/state/characterSelections/${sel.character}`),
           { colour: sel.colour, slotIndex });
         await fbUpdatePresence(code, sel.character);
@@ -1273,16 +1274,18 @@ function showJoinLobby(code, remoteState) {
         sessionStorage.setItem("dd_hero", sel.character);
         sessionStorage.setItem("dd_colour", sel.colour);
         app.state = { ...restoreArrays({...freshState}), controlledHero: sel.character };
-        // Show waiting and subscribe
+        // Show waiting and subscribe — guard against carousel firing multiple times
         showWaitingLobby(code, sel.character, freshState.playerCount);
         fbStartHeartbeat(code, sel.character);
+        let carouselStarted = false;
         fbSubscribeRoom(code, liveState => {
           if(!liveState) return;
           app.state = { ...restoreArrays({...liveState}), controlledHero: sel.character };
           const joinedCount = Object.keys(liveState.characterSelections||{}).length;
-          if(joinedCount >= liveState.playerCount && liveState.phase !== "playing") {
+          if(joinedCount >= liveState.playerCount && liveState.phase !== "playing" && !carouselStarted) {
+            carouselStarted = true;
             startCarousel(code, sel.character);
-          } else {
+          } else if(!carouselStarted) {
             updateWaitingLobby(code, sel.character, liveState);
           }
         });
