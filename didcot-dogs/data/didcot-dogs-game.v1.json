@@ -1,5 +1,5 @@
 {
-  "version": "v1.3",
+  "version": "v1.4",
   "game": "didcot-dogs",
   "startNode": "Didcot",
   "characters": [
@@ -30,7 +30,7 @@
   },
   "winCondition": {
     "targetJourneysBeforeReturn": 5,
-    "finalDestinationAfterFive": "Didcot"
+    "finalDestination": "Didcot"
   },
   "svgNodeIdAliases": {
     "Clifton_Hampden1": "Clifton_Hampden"
@@ -260,6 +260,10 @@
     "Milton_Interchange": {
       "title": "Milton Interchange",
       "description": "Wander around the service station car park trying to find a place to poo."
+    },
+    "Didcot": {
+      "title": "Didcot",
+      "description": "Hurry! It's time for tea, don't be late. Get back to Didcot as fast as you can!"
     }
   }
 }
