@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.16.2");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.17.0");
 
-const APP_VERSION = "v2.16.2";
+const APP_VERSION = "v2.17.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -237,7 +237,7 @@ function getDisplayRouteColor(c) { return c; }
 
 // Returns the character name this client controls
 function getViewHero() {
-  return app.localHero || app.state?.controlledHero || app.state?.currentPlayer || null;
+  return app.localHero || app.state?.controlledHero || null;
 }
 
 // Returns array of character names of all joined players, in turn order
@@ -708,8 +708,10 @@ function endTurn() {
   closeRouteModal();
   // Advance to next player in order
   const order = app.state.playerOrder || getActivePlayers();
+  if(!order.length) { console.warn("[DD] endTurn: no playerOrder yet"); return; }
   const idx = order.indexOf(app.state.currentPlayer);
   const next = order[(idx+1) % order.length];
+  if(!next) { console.warn("[DD] endTurn: next is undefined, order:", order); return; }
   app.state.currentPlayer = next;
   // Check skip turns
   const nextPlayerSlot = getSlotForCharacter(next);
@@ -1325,10 +1327,15 @@ function startCarousel(code, myCharacter) {
 
   showCarousel(order, myCharacter, () => {
     hideLobby();
-    // Wait a moment for Firebase to propagate
-    setTimeout(async () => {
+    // Poll until Firebase has written playerOrder and currentPlayer (creator does this)
+    async function waitForGameState(attempts=0) {
       const freshSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
       const freshState = freshSnap.val();
+      // Ensure playerOrder and currentPlayer are present before launching
+      if((!freshState.playerOrder || !freshState.currentPlayer) && attempts < 10) {
+        setTimeout(() => waitForGameState(attempts+1), 300);
+        return;
+      }
       app.state = { ...restoreArrays({...freshState}), controlledHero: myCharacter };
       hideScreen("room-screen");
       showMobileHud();
@@ -1337,15 +1344,14 @@ function startCarousel(code, myCharacter) {
       renderAll();
       showCurrentDestinationReveal(myCharacter);
       updateRoomHud();
-      // Subscribe for ongoing updates
-      let skipFirst = true;
+      // Subscribe for ongoing updates — never skip first here
       fbSubscribeRoom(code, remoteState => {
         if(!remoteState||!remoteState.players) return;
-        if(skipFirst){ skipFirst=false; return; }
         app.state = { ...restoreArrays({...remoteState}), controlledHero: myCharacter };
         renderAll(); updateRoomHud();
       });
-    }, 800);
+    }
+    waitForGameState();
   });
 }
 
@@ -1474,7 +1480,9 @@ function restoreArrays(state) {
   state.drawPile    = toArr(state.drawPile);
   state.discardPile = toArr(state.discardPile);
   state.mysteryNodes = toArr(state.mysteryNodes);
+  state.playerOrder  = toArr(state.playerOrder);
   if(!state.poopedNodes) state.poopedNodes={};
+  if(!state.characterSelections) state.characterSelections={};
   if (state.players) {
     Object.keys(state.players).forEach(name => {
       const p = state.players[name];
@@ -1539,8 +1547,11 @@ function returnToMenu(){
   const rhud=document.getElementById("room-hud");
   if(rhud) rhud.style.display="none";
 
-  resetBoardView(); renderAll();
+  resetBoardView();
+  // Don't renderAll here — state has no characterSelections yet so board renders blank.
+  // Just show the room screen and re-init falling dogs.
   showScreen("room-screen");
+  startFallingDogs();
   wireRoomButtons();
 }
 
@@ -1595,10 +1606,12 @@ function renderRouteCostBadges(){
 }
 
 function renderRoutes(){
+  if(!app.state.routes) return;
   Object.keys(app.rulesData.routes||{}).forEach(routeId=>{
     const el=app.svg.querySelector(`#${CSS.escape(routeId)}`); if(!el) return;
-    el.classList.remove("route-claimed-eric","route-claimed-tango","route-eligible","route-selected","route-blocked");
-    const rs=app.state.routes[routeId], rc=rs.colour;
+    el.classList.remove("route-claimed-eric","route-claimed-tango","route-eligible","route-selected","route-blocked","route-claimed");
+    const rs=app.state.routes[routeId]; if(!rs) return;
+    const rc=rs.colour;
     el.style.strokeWidth="8"; el.style.cursor="pointer";
     el.style.stroke=ROUTE_COLOUR_HEX[rc]||"#7a7a7a";
     if(rs.claimedBy){
@@ -1617,8 +1630,13 @@ function renderRoutes(){
 
 function renderTurnBadge(){
   const b=document.getElementById("turn-player-badge"); if(!b) return;
-  b.className=`player-badge ${PLAYER_CONFIG[app.state.currentPlayer].badgeClass}`;
-  b.textContent=`${app.state.currentPlayer} to play`;
+  const cp=app.state.currentPlayer;
+  if(!cp){b.textContent="Waiting…";return;}
+  const colour=getPlayerColour(cp);
+  b.className="player-badge";
+  b.style.color=colour;
+  b.style.borderColor=`${colour}44`;
+  b.textContent=`${cp} to play`;
   const ti=document.getElementById("desktop-turn-indicator");
   if(ti){
     const mine=isMyTurn();
