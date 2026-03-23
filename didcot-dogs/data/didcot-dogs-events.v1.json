@@ -1,5 +1,5 @@
 {
-  "version": "v1.0",
+  "version": "v1.1",
   "game": "didcot-dogs",
   "events": [
     {
@@ -49,6 +49,18 @@
       "title": "HITCH A LIFT",
       "body": "Dad's here to give a ride! Travel immediately to the next destination.",
       "emoji": "🚗"
+    },
+    {
+      "id": "rainbow_warrior",
+      "title": "RAINBOW WARRIOR",
+      "body": "All rainbows are mine!",
+      "emoji": "🌈"
+    },
+    {
+      "id": "bin_dipper",
+      "title": "BIN DIPPER",
+      "body": "Have a rummage around and pick five tasty treats.",
+      "emoji": "🗑️"
     }
   ]
 }
