@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.19.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.19.1");
 
-const APP_VERSION = "v2.19.0";
+const APP_VERSION = "v2.19.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -116,13 +116,32 @@ async function fbPushState(code, state) {
   if (!code || !_db) return;
   const { controlledHero, ...firebaseState } = state;
   try {
-    await _firebaseSet(dbRef(`rooms/${code}/state`), firebaseState);
+    await _firebaseSet(dbRef(`rooms/${code}/state`), {
+      ...firebaseState,
+      updatedAt: Date.now(),
+    });
   } catch(e) { console.error("[DD] pushState failed:", e); }
 }
 
+// Active game subscriber — replaced on each new subscription to prevent stacking
+let _activeGameUnsubscribe = null;
+
 function fbSubscribeRoom(code, callback) {
-  _firebaseOnValue(dbRef(`rooms/${code}/state`), snap => {
+  // Only stack for the greyout subscriber in showJoinLobby (which manages its own lifecycle).
+  // For the main game subscriber, cancel any existing one first.
+  return _firebaseOnValue(dbRef(`rooms/${code}/state`), snap => {
     if (snap.exists()) callback(snap.val());
+  });
+}
+
+// Use this for the single canonical game state subscriber (carousel + gameplay)
+function fbSubscribeRoomExclusive(code, callback) {
+  if(_activeGameUnsubscribe) {
+    _activeGameUnsubscribe();
+    _activeGameUnsubscribe = null;
+  }
+  _activeGameUnsubscribe = _firebaseOnValue(dbRef(`rooms/${code}/state`), snap => {
+    if(snap.exists()) callback(snap.val());
   });
 }
 
@@ -136,6 +155,7 @@ function fbSubscribePresence(code, callback) {
 const app = {
   rulesData: null, destinationData: null, svg: null, audit: null, state: null,
   roomCode: null, localHero: null,
+  actionInProgress: false,  // prevents double-tap/double-click during async action
   boardView: { scale:1, panX:0, panY:0, minScale:1, maxScale:3, baseViewBox:null },
   modal: { routeId:null, chosenColor:null, selectedOptionIndex:null, options:[] }
 };
@@ -243,9 +263,12 @@ function getViewHero() {
 // Returns array of character names of all joined players, in turn order
 function getActivePlayers() {
   if(!app.state) return [];
-  const order = app.state.playerOrder || [];
-  if(order.length) return order;
-  // Fallback: keys from characterSelections
+  const order = app.state.playerOrder;
+  if(Array.isArray(order) && order.length) return order;
+  // Fallback: keys from players object (set when characters confirmed)
+  const playerKeys = Object.keys(app.state.players || {});
+  if(playerKeys.length) return playerKeys;
+  // Last resort: characterSelections keys
   return Object.keys(app.state.characterSelections || {});
 }
 
@@ -695,6 +718,7 @@ function isMyTurn() {
 }
 
 function endTurn() {
+  app.actionInProgress = false; // always release lock on turn end
   app.state.selectedRouteId=null;
   closeRouteModal();
   // Advance to next player in order
@@ -720,7 +744,8 @@ function endTurn() {
       showNowhereToPoModal(msgs[msgIdx] || msgs[0], ()=>{ setTimeout(endTurn, 200); });
     } else {
       showMobileToast(`${next} is looking for a spot… (${skipsLeft} turn${skipsLeft!==1?"s":""} skipped)`);
-      setTimeout(endTurn, 5200);
+      // Only the active player's client drives skip advancement to avoid conflicting pushes
+      // Other clients will receive the updated state via Firebase subscription
     }
     return;
   }
@@ -1086,7 +1111,7 @@ function showCreateLobby() {
           showWaitingLobby(code, sel.character, state.playerCount);
           // Subscribe to state changes so we see others joining
           let carouselStarted = false;
-          fbSubscribeRoom(code, remoteState => {
+          fbSubscribeRoomExclusive(code, remoteState => {
             if(!remoteState) return;
             app.localHero = sel.character;
             app.roomCode = code;
@@ -1291,7 +1316,7 @@ function showJoinLobby(code, remoteState) {
         showWaitingLobby(code, sel.character, freshState.playerCount);
         fbStartHeartbeat(code, sel.character);
         let carouselStarted = false;
-        fbSubscribeRoom(code, liveState => {
+        fbSubscribeRoomExclusive(code, liveState => {
           if(!liveState) return;
           // Always keep localHero set — never let it go null
           app.localHero = sel.character;
@@ -1396,8 +1421,8 @@ function runCarousel(code, myCharacter, order) {
       renderAll();
       showCurrentDestinationReveal(myCharacter);
       updateRoomHud();
-      // Subscribe for ongoing game updates
-      fbSubscribeRoom(code, remoteState => {
+      // Single canonical game subscriber — replaces any previous listeners
+      fbSubscribeRoomExclusive(code, remoteState => {
         if(!remoteState||!remoteState.players) return;
         app.state = { ...restoreArrays({...remoteState}), controlledHero: myCharacter };
         renderAll(); updateRoomHud();
@@ -1568,10 +1593,8 @@ function launchGame(hero, firebaseState){
   renderAll();
   showCurrentDestinationReveal(hero);
   updateRoomHud();
-  let skipFirst=true;
-  fbSubscribeRoom(app.roomCode, remoteState=>{
+  fbSubscribeRoomExclusive(app.roomCode, remoteState=>{
     if(!remoteState||!remoteState.players) return;
-    if(skipFirst){ skipFirst=false; return; }
     app.state={...restoreArrays({...remoteState}), controlledHero:hero};
     renderAll(); updateRoomHud();
   });
@@ -1641,6 +1664,8 @@ function doReturnToMenu() {
   app.state = null;
   app.localHero = null;
   app.roomCode = null;
+  app.actionInProgress = false;
+  if(_activeGameUnsubscribe) { _activeGameUnsubscribe(); _activeGameUnsubscribe = null; }
 
   ["mobile-hud","mobile-bottom-bar"].forEach(id=>{
     const e=document.getElementById(id);if(e)e.classList.remove("visible");
@@ -2943,14 +2968,15 @@ function closeRouteModal(){
 }
 
 async function confirmRouteModalPlay(){
-  if(!isMyTurn()) return;
+  if(!isMyTurn() || app.actionInProgress) return;
   if(!app.modal.routeId||app.modal.selectedOptionIndex===null) return;
+  app.actionInProgress = true;
   const routeId=app.modal.routeId, pay=app.modal.options[app.modal.selectedOptionIndex];
   const pn=app.state.currentPlayer;
   const player=getPlayerByChar(pn);
-  if(!player){closeRouteModal();return;}
+  if(!player){app.actionInProgress=false;closeRouteModal();return;}
   const play=getRoutePlayability(routeId);
-  if(!play.playable){closeRouteModal();renderAll();return;}
+  if(!play.playable){app.actionInProgress=false;closeRouteModal();renderAll();return;}
   const {nextHand,spent}=removeSpecificCardsFromHand(player.hand,pay.colourChoice,pay.useColourCount,pay.useRainbowCount);
   player.hand=nextHand; app.state.discardPile.push(...spent);
   const from=player.currentNode, to=getConnectedNode(routeId,from);
@@ -2979,6 +3005,7 @@ async function confirmRouteModalPlay(){
   }
 
   renderAll();
+  app.actionInProgress = false;
   endTurn();
 }
 
@@ -3129,7 +3156,8 @@ function triggerCardGlow(colour){
 
 // ─── Draw card action ─────────────────────────────────────────────────────────
 async function drawCardForCurrentPlayer(){
-  if(!isMyTurn()) return;
+  if(!isMyTurn() || app.actionInProgress) return;
+  app.actionInProgress = true;
   const pn=app.state.currentPlayer, card=drawCard();
   if(!card){updateStatus("No cards available.");renderAll();return;}
   const player=getPlayerByChar(pn);
@@ -3138,6 +3166,7 @@ async function drawCardForCurrentPlayer(){
   player.hand.push(card); player.lastDrawColor=card;
   closeMobileSheet(); renderAll();
   requestAnimationFrame(()=>triggerCardGlow(card));
+  app.actionInProgress = false;
   endTurn();
 }
 
