@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.12.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.12.1");
 
-const APP_VERSION = "v2.12.0";
+const APP_VERSION = "v2.12.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -454,9 +454,10 @@ function getNodeCenter(svg,nodeId) {
   if(el.tagName.toLowerCase()==="circle") return {x:+el.getAttribute("cx"),y:+el.getAttribute("cy")};
   const b=el.getBBox(); return {x:b.x+b.width/2,y:b.y+b.height/2};
 }
-function ensureLayer(svg,id) {
+function ensureLayer(svg,id,alwaysOnTop=false) {
   let l=svg.querySelector(`#${CSS.escape(id)}`);
   if(!l){l=createSvgEl("g",{id});svg.appendChild(l);}
+  else if(alwaysOnTop) svg.appendChild(l); // move to end = renders on top
   return l;
 }
 function ensureTokenDefs(svg) {
@@ -1244,7 +1245,7 @@ function rotateMysteryNode(triggeredNodeId) {
 function renderMysteryNodes() {
   if(!app.svg) return;
   app.svg.querySelectorAll(".mystery-node-marker").forEach(e=>e.remove());
-  const layer = ensureLayer(app.svg, "mystery-layer");
+  const layer = ensureLayer(app.svg, "mystery-layer", true);
   layer.innerHTML = "";
   const nodes = app.state.mysteryNodes || [];
   nodes.forEach(nodeId => {
@@ -1284,7 +1285,7 @@ function renderMysteryNodes() {
 function renderPoopNodes() {
   if(!app.svg) return;
   app.svg.querySelectorAll(".poop-node-marker").forEach(e=>e.remove());
-  const layer = ensureLayer(app.svg, "poop-layer");
+  const layer = ensureLayer(app.svg, "poop-layer", true);
   layer.innerHTML = "";
   const hero = getViewHero();
   const poops = app.state.poopedNodes || {};
