@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.13.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.14.0");
 
-const APP_VERSION = "v2.13.0";
+const APP_VERSION = "v2.14.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -66,7 +66,7 @@ function generateRoomCode() {
   return code;
 }
 
-async function fbCreateRoom(state) {
+async function fbCreateRoom(state, creatorCharacter) {
   let code, attempts = 0;
   while (attempts < 10) {
     code = generateRoomCode();
@@ -75,21 +75,41 @@ async function fbCreateRoom(state) {
     attempts++;
   }
   await _firebaseSet(dbRef(`rooms/${code}/state`), { ...state, phase: "waiting", createdAt: Date.now() });
-  await _firebaseSet(dbRef(`rooms/${code}/presence/Eric`), { connected: true, lastSeen: Date.now() });
+  await _firebaseSet(dbRef(`rooms/${code}/presence/${creatorCharacter}`), { connected: true, lastSeen: Date.now() });
   console.log("[DD] Room created:", code);
   return code;
 }
 
-async function fbJoinRoom(code) {
+async function fbJoinRoom(code, character=null) {
   const snap = await _firebaseGet(dbRef(`rooms/${code}/state`));
   if (!snap.exists()) throw new Error(`Room ${code} not found.`);
   const state = snap.val();
-  await _firebaseSet(dbRef(`rooms/${code}/presence/Tango`), { connected: true, lastSeen: Date.now() });
-  if (state.phase === "waiting") {
-    await _firebaseSet(dbRef(`rooms/${code}/state/phase`), "playing");
-  }
-  console.log("[DD] Room joined:", code, "state:", state.currentPlayer, "routes:", Object.keys(state.routes||{}).length);
+  // Register presence with chosen character (or "joining" if not yet chosen)
+  const presKey = character || "__joining__";
+  await _firebaseSet(dbRef(`rooms/${code}/presence/${presKey}`), { connected: true, lastSeen: Date.now() });
+  console.log("[DD] Room joined:", code, "playerCount:", state.playerCount);
   return state;
+}
+
+async function fbUpdatePresence(code, character) {
+  if(!code||!_db) return;
+  // Atomically update presence key to chosen character
+  await _firebaseSet(dbRef(`rooms/${code}/presence/${character}`), { connected: true, lastSeen: Date.now() });
+  // Remove placeholder if it was there
+  try { await _firebaseSet(dbRef(`rooms/${code}/presence/__joining__`), null); } catch(e){}
+}
+
+async function fbStartHeartbeat(code, character) {
+  // Update lastSeen every 20s so 60s timeout can detect disconnects
+  setInterval(async () => {
+    if(!code||!_db||!character) return;
+    try { await _firebaseSet(dbRef(`rooms/${code}/presence/${character}/lastSeen`), Date.now()); } catch(e){}
+  }, 20000);
+}
+
+async function fbSelectCharacter(code, character, colour) {
+  if(!code||!_db) return;
+  await _firebaseSet(dbRef(`rooms/${code}/state/characterSelections/${character}`), { colour, pickedAt: Date.now() });
 }
 
 async function fbPushState(code, state) {
@@ -120,10 +140,42 @@ const app = {
   modal: { routeId:null, chosenColor:null, selectedOptionIndex:null, options:[] }
 };
 
-const PLAYER_CONFIG = {
-  Eric:  { routeClass:"route-claimed-eric",  badgeClass:"eric",  image:"./assets/eric.png",  tokenClass:"eric-token" },
-  Tango: { routeClass:"route-claimed-tango", badgeClass:"tango", image:"./assets/tango.png", tokenClass:"tango-token" }
+// All 6 playable characters. routeClass/tokenClass are generated dynamically
+// from the character name so no hardcoding needed beyond this list.
+const ALL_CHARACTERS = ["Eric","Tango","Otis","Leroy","Sam","Rusty"];
+
+function getPlayerConfig(name) {
+  return {
+    image: `./assets/${name.toLowerCase()}.png`,
+    routeClass: `route-claimed-${name.toLowerCase()}`,
+    tokenClass: `${name.toLowerCase()}-token`,
+    badgeClass: name.toLowerCase(),
+  };
+}
+
+// PLAYER_CONFIG is now a live proxy — kept for legacy call sites
+const PLAYER_CONFIG = Object.fromEntries(
+  ALL_CHARACTERS.map(n => [n, getPlayerConfig(n)])
+);
+
+// Player colours — separate from route/card colours
+const PLAYER_COLOURS = {
+  Aquamarine: "#00C9B1",
+  Marigold:   "#FFAA00",
+  Cerise:     "#E91E8C",
+  Cobalt:     "#1565FF",
+  Vermilion:  "#FF3D00",
+  Chartreuse: "#8BC400",
+  Wisteria:   "#9B6BB5",
+  Tangerine:  "#FF6B00",
+  Viridian:   "#40826D",
+  Umber:      "#635147",
 };
+
+function getPlayerColour(playerName) {
+  if(!app.state||!app.state.characterSelections) return "#ffffff";
+  return PLAYER_COLOURS[app.state.characterSelections[playerName]?.colour] || "#ffffff";
+}
 
 const ROUTE_COLOUR_HEX = {
   red:"#d74b4b", orange:"#db7f2f", blue:"#2f6edb", green:"#1e8b4c",
@@ -183,10 +235,32 @@ function countCards(hand) {
 }
 function getDisplayRouteColor(c) { return c; }
 
-// Returns the hero whose perspective we're rendering from.
-// In solo play this is controlledHero; in multiplayer it's localHero.
+// Returns the character name this client controls
 function getViewHero() {
-  return app.localHero || app.state?.controlledHero || app.state?.currentPlayer || "Eric";
+  return app.localHero || app.state?.controlledHero || app.state?.currentPlayer || null;
+}
+
+// Returns array of character names of all joined players, in turn order
+function getActivePlayers() {
+  if(!app.state) return [];
+  const order = app.state.playerOrder || [];
+  if(order.length) return order;
+  // Fallback: keys from characterSelections
+  return Object.keys(app.state.characterSelections || {});
+}
+
+// Map character name to slot key
+function getSlotForCharacter(charName) {
+  const sel = app.state.characterSelections || {};
+  const entry = Object.entries(sel).find(([c]) => c === charName);
+  if(!entry) return null;
+  return `slot_${entry[1].slotIndex}`;
+}
+
+// Get player state object for a character name
+function getPlayerByChar(charName) {
+  const slot = getSlotForCharacter(charName);
+  return slot ? app.state.players[slot] : null;
 }
 
 // ─── Board view ───────────────────────────────────────────────────────────────
@@ -421,28 +495,46 @@ function createPlayerState(startNode) {
   };
 }
 
-function createInitialLocalState(rulesData, journeyTarget=null) {
+function createInitialLocalState(rulesData, journeyTarget=null, playerCount=2, mysteryNodeCount=3) {
   const routeIds=Object.keys(rulesData.routes||{});
   const colours=assignRouteColours(routeIds,rulesData.routeColours||[]);
   const dests=shuffle(rulesData.destinationPool||[]);
   const routes={};
   routeIds.forEach(id=>{routes[id]={colour:colours[id],claimedBy:null};});
   const allNodes = rulesData.nodes || [];
-  const mysteryNodes = pickMysteryNodes(allNodes, rulesData.startNode, []);
-  // journeyTarget: chosen by creator, or fall back to JSON default, or 5
-  const N = journeyTarget
-    || rulesData.winCondition?.targetJourneysBeforeReturn
-    || 5;
+  const N = journeyTarget || rulesData.winCondition?.targetJourneysBeforeReturn || 5;
+  const mCount = Math.min(mysteryNodeCount, 8);
+
+  // Build player states — one slot per player, keyed by index
+  // Character selection happens separately via characterSelections
+  const players = {};
+  for(let i=0;i<playerCount;i++){
+    players[`slot_${i}`] = {
+      ...createPlayerState(rulesData.startNode),
+      destinationQueue: dests.slice(i*N, (i+1)*N),
+      slotIndex: i,
+    };
+  }
+
+  const mysteryNodes = pickMysteryNodes(allNodes, rulesData.startNode, [], rulesData.destinationPool||[], mCount);
+
   return {
-    currentPlayer:"Eric", gameStarted:false, selectedRouteId:null,
-    journeyTarget: N,   // stored in state so Firebase syncs it to joiner
-    drawPile:buildDeck(rulesData), discardPile:[], justCompleted:null, routes,
+    phase: "waiting",
+    playerCount,
+    journeyTarget: N,
+    mysteryNodeCount: mCount,
+    currentPlayer: null,      // set after carousel
+    playerOrder: [],          // set after all players join
+    characterSelections: {},  // { characterName: { colour, slotIndex } }
+    gameStarted: false,
+    selectedRouteId: null,
+    drawPile: buildDeck(rulesData),
+    discardPile: [],
+    justCompleted: null,
+    routes,
     mysteryNodes,
-    poopedNodes:{},
-    players:{
-      Eric:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(0,N)},
-      Tango:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(N,N*2)}
-    }
+    poopedNodes: {},
+    players,
   };
 }
 
@@ -454,10 +546,13 @@ function getJourneyTarget() {
     || 5;
 }
 
-function getCurrentTargetForPlayer(player) {
+function getCurrentTargetForPlayer(playerOrName) {
+  const player = (typeof playerOrName === "string")
+    ? (getPlayerByChar(playerOrName) || app.state?.players?.[playerOrName])
+    : playerOrName;
+  if(!player) return null;
   const N = getJourneyTarget();
   if(player.completedCount < N) return player.destinationQueue[player.completedCount] || null;
-  // Final destination is always Didcot — comes from winCondition.finalDestination
   return app.rulesData.winCondition?.finalDestination
     || app.rulesData.winCondition?.finalDestinationAfterFive
     || "Didcot";
@@ -494,9 +589,13 @@ function ensurePlayerToken(svg,playerName) {
   const layer=ensureLayer(svg,"token-layer");
   let g=svg.querySelector(`#token-${CSS.escape(playerName)}`);
   if(g) return g;
-  g=createSvgEl("g",{id:`token-${playerName}`,class:`token-group ${PLAYER_CONFIG[playerName].tokenClass}`});
+  const cfg=getPlayerConfig(playerName);
+  g=createSvgEl("g",{id:`token-${playerName}`,class:`token-group ${cfg.tokenClass}`});
   const w=createSvgEl("g",{class:"token-wobble"});
-  w.appendChild(createSvgEl("circle",{class:"token-circle",r:"24",fill:"#ffffff"}));
+  const tokenColour = getPlayerColour(playerName);
+  const tc=createSvgEl("circle",{class:"token-circle",r:"24",fill:"#ffffff"});
+  tc.style.stroke=tokenColour; tc.style.strokeWidth="5";
+  w.appendChild(tc);
   const img=createSvgEl("image",{x:"-20",y:"-20",width:"40",height:"40",preserveAspectRatio:"xMidYMid meet","clip-path":`url(#token-clip-${playerName})`});
   img.setAttributeNS(XLINK_NS,"xlink:href",PLAYER_CONFIG[playerName].image);
   img.setAttribute("href",PLAYER_CONFIG[playerName].image);
@@ -504,16 +603,39 @@ function ensurePlayerToken(svg,playerName) {
   return g;
 }
 function setTokenPosition(svg,name,x,y) { ensurePlayerToken(svg,name).setAttribute("transform",`translate(${x},${y})`); }
-function getPlayerTokenAnchor(name,nodeId) {
-  const c=getNodeCenter(app.svg,nodeId);
-  const en=app.state.players.Eric.currentNode, tn=app.state.players.Tango.currentNode;
-  if(en===tn&&nodeId===en) return name==="Eric"?{x:c.x-18,y:c.y}:{x:c.x+18,y:c.y};
-  return {x:c.x,y:c.y};
+// Returns {x,y} offset for a token given how many tokens share its node
+// Players arranged in a geometric formation: 1=centre, 2=side-by-side,
+// 3=triangle, 4=square, 5=pentagon, 6=hexagon
+function getTokenFormationPosition(indexAmongShared, totalShared, cx, cy) {
+  if(totalShared === 1) return {x:cx, y:cy};
+  const radius = 22;
+  const angleOffset = -Math.PI/2; // start at top
+  const angle = angleOffset + (2*Math.PI * indexAmongShared / totalShared);
+  return {x: cx + radius*Math.cos(angle), y: cy + radius*Math.sin(angle)};
 }
+
 function renderTokens() {
-  Object.keys(app.state.players).forEach(n=>{
-    const a=getPlayerTokenAnchor(n,app.state.players[n].currentNode);
-    setTokenPosition(app.svg,n,a.x,a.y);
+  const activePlayers = getActivePlayers();
+  if(!activePlayers.length) return;
+  // Group players by current node
+  const byNode = {};
+  activePlayers.forEach(charName => {
+    const player = getPlayerByChar(charName);
+    if(!player) return;
+    const node = player.currentNode;
+    if(!byNode[node]) byNode[node] = [];
+    byNode[node].push(charName);
+  });
+  // Position each token
+  activePlayers.forEach(charName => {
+    const player = getPlayerByChar(charName);
+    if(!player) return;
+    const node = player.currentNode;
+    const c = getNodeCenter(app.svg, node);
+    const group = byNode[node];
+    const idx = group.indexOf(charName);
+    const pos = getTokenFormationPosition(idx, group.length, c.x, c.y);
+    setTokenPosition(app.svg, charName, pos.x, pos.y);
   });
 }
 
@@ -524,7 +646,7 @@ function getConnectedNode(routeId,fromNode) {
 
 // ─── Payment / playability ────────────────────────────────────────────────────
 function getPaymentOptionsForColor(routeId,playerName,chosenColor=null) {
-  const player=app.state.players[playerName], hc=countCards(player.hand);
+  const player=getPlayerByChar(playerName)||app.state.players[playerName], hc=countCards(player.hand);
   const rc=hc.rainbow||0, routeColour=app.state.routes[routeId].colour;
   const baseCost=app.rulesData.routes[routeId].length;
   const cost=baseCost+(player.routeCostBonus||0); // JUST SNIFFIN' penalty
@@ -537,10 +659,15 @@ function getPaymentOptionsForColor(routeId,playerName,chosenColor=null) {
 }
 
 function getRoutePlayability(routeId) {
-  const pn=app.state.currentPlayer, player=app.state.players[pn], rs=app.state.routes[routeId];
+  const pn=app.state.currentPlayer;
+  const player=getPlayerByChar(pn)||app.state.players[pn];
+  if(!player) return {playable:false,reason:"Waiting for game to start."};
+  const rs=app.state.routes[routeId];
   const cn=getConnectedNode(routeId,player.currentNode);
   if(!cn) return {playable:false,reason:"Route does not connect to current node."};
   if(rs.claimedBy) return {playable:false,reason:`Already claimed by ${rs.claimedBy}.`};
+  // Backtrack check: only block if the ROUTE leads back to previousNode AND
+  // it was the exact route used to arrive (prevent node-level blocking)
   if(player.previousNode&&cn===player.previousNode) return {playable:false,reason:"Cannot move straight back to previous node."};
   const pay=getPaymentOptionsForColor(routeId,pn);
   if(!pay.affordable) return {playable:false,reason:"Not enough matching cards.",targetNode:cn};
@@ -566,27 +693,30 @@ function removeSpecificCardsFromHand(hand,colour,useCol,useRain) {
 function isMyTurn() {
   if(!app.roomCode) return true;
   if(!app.localHero) return true;
+  if(!app.state.currentPlayer) return false;
   return app.state.currentPlayer===app.localHero;
 }
 
 function endTurn() {
   app.state.selectedRouteId=null;
   closeRouteModal();
-  const next=app.state.currentPlayer==="Eric"?"Tango":"Eric";
-  app.state.currentPlayer=next;
-  // Check if next player has skip turns (NOWHERE TO POO / POOP)
-  const nextPlayer=app.state.players[next];
-  if(nextPlayer.skipTurns>0){
+  // Advance to next player in order
+  const order = app.state.playerOrder || getActivePlayers();
+  const idx = order.indexOf(app.state.currentPlayer);
+  const next = order[(idx+1) % order.length];
+  app.state.currentPlayer = next;
+  // Check skip turns
+  const nextPlayerSlot = getSlotForCharacter(next);
+  const nextPlayer = nextPlayerSlot ? app.state.players[nextPlayerSlot] : null;
+  if(nextPlayer && nextPlayer.skipTurns > 0){
     nextPlayer.skipTurns--;
     console.log("[DD] Skipping",next,"— turns left:",nextPlayer.skipTurns);
-    // Show a toast to the skipped player if they are local
     if(next===getViewHero()){
       showMobileToast("Skipping your turn…");
       updateStatus("Your turn is being skipped!");
     }
     renderAll();
     if(app.roomCode) fbPushState(app.roomCode, app.state).then(()=>updateRoomHud());
-    // Auto-end this skipped turn after a short delay
     setTimeout(endTurn, 1200);
     return;
   }
@@ -653,7 +783,7 @@ function updateRoomHud(){
   if(!app.roomCode) return;
   const mine=app.state.currentPlayer===app.localHero;
   const hero=app.localHero||"?";
-  const cfg=PLAYER_CONFIG[hero];
+  const cfg=getPlayerConfig(hero);
 
   const identity=document.getElementById("desktop-identity");
   if(identity&&cfg){
@@ -760,6 +890,493 @@ function showJourneyPicker(onConfirm) {
 function showScreen(id){ const e=document.getElementById(id); if(e) e.classList.add("active"); }
 function hideScreen(id){ const e=document.getElementById(id); if(e) e.classList.remove("active"); }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOBBY SYSTEM — create / join / waiting / carousel
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getLobbyOverlay() {
+  let o = document.getElementById("lobby-overlay");
+  if(!o) {
+    o = document.createElement("div");
+    o.id = "lobby-overlay";
+    o.className = "lobby-overlay";
+    document.getElementById("game-shell").appendChild(o);
+  }
+  return o;
+}
+
+function showLobby(html) {
+  const o = getLobbyOverlay();
+  o.innerHTML = html;
+  o.classList.add("open");
+}
+
+function hideLobby() {
+  const o = document.getElementById("lobby-overlay");
+  if(o) o.classList.remove("open");
+}
+
+// ── CREATE FLOW ──────────────────────────────────────────────────────────────
+function showCreateLobby() {
+  const pool = app.rulesData.destinationPool || [];
+  const maxJ = Math.floor(pool.length / 2);
+  const nonDestNodes = (app.rulesData.nodes||[]).filter(n =>
+    n !== app.rulesData.startNode && !(pool.includes(n))
+  );
+  const maxM = Math.min(nonDestNodes.length, 8);
+
+  let sel = {
+    character: null,
+    colour: null,
+    playerCount: null,
+    journeyTarget: null,
+    mysteryCount: 3,
+  };
+
+  function render() {
+    const takenColours = [];
+    const colourNames = Object.keys(PLAYER_COLOURS);
+    const journeyOptions = Array.from({length: maxJ}, (_,i)=>i+1);
+    const playerOptions = [2,3,4,5,6];
+
+    const canConfirm = sel.character && sel.colour && sel.playerCount && sel.journeyTarget;
+
+    showLobby(`
+      <div class="lobby-inner">
+        <div class="lobby-wipe lobby-wipe-a"></div>
+        <div class="lobby-wipe lobby-wipe-b"></div>
+        <div class="lobby-noise"></div>
+        <div class="lobby-content">
+          <div class="lobby-kicker">Didcot Dogs</div>
+          <div class="lobby-title">CREATE GAME</div>
+
+          <div class="lobby-section">
+            <div class="lobby-section-label">Pick your dog</div>
+            <div class="lobby-char-grid">
+              ${ALL_CHARACTERS.map(c => `
+                <button type="button" class="lobby-char-btn${sel.character===c?" active":""}" data-char="${c}">
+                  <div class="lobby-char-frame">
+                    <img src="./assets/${c.toLowerCase()}.png" alt="${c}">
+                  </div>
+                  <div class="lobby-char-name">${c}</div>
+                </button>`).join("")}
+            </div>
+          </div>
+
+          <div class="lobby-section">
+            <div class="lobby-section-label">Pick your colour</div>
+            <div class="lobby-colour-grid">
+              ${colourNames.map(name => `
+                <button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}" data-colour="${name}" style="--pc:${PLAYER_COLOURS[name]}">
+                  <div class="lobby-colour-swatch" style="background:${PLAYER_COLOURS[name]}"></div>
+                  <div class="lobby-colour-name">${name}</div>
+                </button>`).join("")}
+            </div>
+          </div>
+
+          <div class="lobby-row-pickers">
+            <div class="lobby-section lobby-section-half">
+              <div class="lobby-section-label">Players</div>
+              <div class="lobby-num-grid">
+                ${playerOptions.map(n=>`
+                  <button type="button" class="lobby-num-btn${sel.playerCount===n?" active":""}" data-val="${n}">${n}</button>`).join("")}
+              </div>
+            </div>
+            <div class="lobby-section lobby-section-half">
+              <div class="lobby-section-label">Destinations each</div>
+              <div class="lobby-num-grid">
+                ${journeyOptions.map(n=>`
+                  <button type="button" class="lobby-num-btn${sel.journeyTarget===n?" active":""}" data-val="${n}">${n}</button>`).join("")}
+              </div>
+            </div>
+          </div>
+
+          <div class="lobby-section">
+            <div class="lobby-section-label">Mystery boxes on board (0–${maxM})</div>
+            <div class="lobby-num-grid">
+              ${Array.from({length:maxM+1},(_,i)=>i).map(n=>`
+                <button type="button" class="lobby-num-btn${sel.mysteryCount===n?" active":""}" data-val="${n}">${n}</button>`).join("")}
+            </div>
+          </div>
+
+          <div class="lobby-actions">
+            <button id="lobby-back-btn" class="action-btn subtle" type="button">← Menu</button>
+            <button id="lobby-confirm-btn" class="action-btn primary" type="button" ${canConfirm?"":"disabled"}>
+              ${canConfirm?"Create room →":"Select all options"}
+            </button>
+          </div>
+        </div>
+      </div>`);
+
+    // Wire char buttons
+    document.querySelectorAll(".lobby-char-btn").forEach(btn => {
+      btn.onclick = () => { sel.character = btn.dataset.char; render(); };
+    });
+    // Wire colour buttons
+    document.querySelectorAll(".lobby-colour-btn").forEach(btn => {
+      btn.onclick = () => { sel.colour = btn.dataset.colour; render(); };
+    });
+    // Wire player count / journey / mystery — distinguish by section
+    const sections = document.querySelectorAll(".lobby-section, .lobby-section-half");
+    // Player count
+    const pcGrid = document.querySelectorAll(".lobby-row-pickers .lobby-section-half");
+    if(pcGrid[0]) pcGrid[0].querySelectorAll(".lobby-num-btn").forEach(btn => {
+      btn.onclick = () => { sel.playerCount = +btn.dataset.val; render(); };
+    });
+    // Journey target
+    if(pcGrid[1]) pcGrid[1].querySelectorAll(".lobby-num-btn").forEach(btn => {
+      btn.onclick = () => { sel.journeyTarget = +btn.dataset.val; render(); };
+    });
+    // Mystery count — last num-grid
+    const allNumGrids = document.querySelectorAll(".lobby-num-grid");
+    if(allNumGrids[allNumGrids.length-1]) {
+      allNumGrids[allNumGrids.length-1].querySelectorAll(".lobby-num-btn").forEach(btn => {
+        btn.onclick = () => { sel.mysteryCount = +btn.dataset.val; render(); };
+      });
+    }
+
+    document.getElementById("lobby-back-btn").onclick = () => { hideLobby(); };
+    const confirmBtn = document.getElementById("lobby-confirm-btn");
+    if(confirmBtn && !confirmBtn.disabled) {
+      confirmBtn.onclick = async () => {
+        confirmBtn.disabled = true; confirmBtn.textContent = "Creating…";
+        try {
+          const state = createInitialLocalState(app.rulesData, sel.journeyTarget, sel.playerCount, sel.mysteryCount);
+          // Register creator character selection
+          state.characterSelections[sel.character] = { colour: sel.colour, slotIndex: 0 };
+          const code = await fbCreateRoom(state, sel.character);
+          app.roomCode = code;
+          app.localHero = sel.character;
+          app.state = { ...state, controlledHero: sel.character };
+          sessionStorage.setItem("dd_room_code", code);
+          sessionStorage.setItem("dd_hero", sel.character);
+          sessionStorage.setItem("dd_colour", sel.colour);
+          showWaitingLobby(code, sel.character, state.playerCount);
+          // Subscribe to state changes so we see others joining
+          fbSubscribeRoom(code, remoteState => {
+            if(!remoteState) return;
+            app.state = { ...restoreArrays({...remoteState}), controlledHero: sel.character };
+            // Check if lobby is full
+            const joined = Object.keys(remoteState.characterSelections||{}).length;
+            if(joined >= remoteState.playerCount && remoteState.phase !== "playing") {
+              startCarousel(code, sel.character);
+            } else {
+              updateWaitingLobby(code, sel.character, remoteState);
+            }
+          });
+          fbStartHeartbeat(code, sel.character);
+        } catch(e) {
+          confirmBtn.disabled=false; confirmBtn.textContent="Create room →";
+          console.error("[DD] Create failed:", e);
+        }
+      };
+    }
+  }
+  render();
+}
+
+// ── WAITING LOBBY ────────────────────────────────────────────────────────────
+function showWaitingLobby(code, myCharacter, playerCount) {
+  const state = app.state;
+  updateWaitingLobby(code, myCharacter, state);
+}
+
+function updateWaitingLobby(code, myCharacter, state) {
+  const joined = Object.keys(state.characterSelections||{}).length;
+  const total = state.playerCount;
+  const entries = Object.entries(state.characterSelections||{});
+
+  showLobby(`
+    <div class="lobby-inner">
+      <div class="lobby-wipe lobby-wipe-a"></div>
+      <div class="lobby-wipe lobby-wipe-b"></div>
+      <div class="lobby-noise"></div>
+      <div class="lobby-content">
+        <div class="lobby-kicker">Didcot Dogs</div>
+        <div class="lobby-title">WAITING…</div>
+        <div class="lobby-waiting-code-wrap">
+          <div class="lobby-waiting-code-label">Share this code</div>
+          <div class="lobby-waiting-code">${code}</div>
+        </div>
+        <div class="lobby-waiting-players">
+          ${Array.from({length:total},(_,i)=>{
+            const entry = entries[i];
+            if(entry) {
+              const [char, data] = entry;
+              const col = PLAYER_COLOURS[data.colour]||"#fff";
+              return `<div class="lobby-waiting-slot lobby-waiting-slot-filled" style="border-color:${col}">
+                <img src="./assets/${char.toLowerCase()}.png" alt="${char}" style="width:36px;height:36px;border-radius:50%;border:2px solid ${col}">
+                <span style="color:${col}">${char}</span>
+              </div>`;
+            }
+            return `<div class="lobby-waiting-slot lobby-waiting-slot-empty">
+              <div class="waiting-dots" style="display:flex;gap:4px;justify-content:center">
+                <div class="waiting-dot"></div><div class="waiting-dot"></div><div class="waiting-dot"></div>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+        <div class="lobby-waiting-sub">${joined}/${total} players joined</div>
+        <div style="margin-top:16px">
+          <button id="waiting-back-btn" class="action-btn subtle" type="button">← Back to menu</button>
+        </div>
+      </div>
+    </div>`);
+
+  document.getElementById("waiting-back-btn").onclick = () => { hideLobby(); returnToMenu(); };
+}
+
+// ── JOIN FLOW ────────────────────────────────────────────────────────────────
+function showJoinLobby(code, remoteState) {
+  const taken = Object.keys(remoteState.characterSelections||{});
+  const takenColours = Object.values(remoteState.characterSelections||{}).map(v=>v.colour);
+
+  let sel = { character: null, colour: null };
+
+  function render() {
+    const canConfirm = sel.character && sel.colour;
+    const colourNames = Object.keys(PLAYER_COLOURS);
+
+    showLobby(`
+      <div class="lobby-inner">
+        <div class="lobby-wipe lobby-wipe-a"></div>
+        <div class="lobby-wipe lobby-wipe-b"></div>
+        <div class="lobby-noise"></div>
+        <div class="lobby-content">
+          <div class="lobby-kicker">Didcot Dogs — ${code}</div>
+          <div class="lobby-title">JOIN GAME</div>
+          <div class="lobby-game-info">
+            <span>${remoteState.playerCount} players</span>
+            <span>·</span>
+            <span>${remoteState.journeyTarget} destination${remoteState.journeyTarget===1?"":"s"} each</span>
+          </div>
+
+          <div class="lobby-section">
+            <div class="lobby-section-label">Pick your dog</div>
+            <div class="lobby-char-grid">
+              ${ALL_CHARACTERS.map(c => {
+                const isTaken = taken.includes(c);
+                return `<button type="button" class="lobby-char-btn${sel.character===c?" active":""}${isTaken?" taken":""}" data-char="${c}" ${isTaken?"disabled":""}>
+                  <div class="lobby-char-frame">
+                    <img src="./assets/${c.toLowerCase()}.png" alt="${c}">
+                  </div>
+                  <div class="lobby-char-name">${c}${isTaken?" ✓":""}</div>
+                </button>`;
+              }).join("")}
+            </div>
+          </div>
+
+          <div class="lobby-section">
+            <div class="lobby-section-label">Pick your colour</div>
+            <div class="lobby-colour-grid">
+              ${colourNames.map(name => {
+                const isTaken = takenColours.includes(name);
+                return `<button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}${isTaken?" taken":""}" data-colour="${name}" ${isTaken?"disabled":""} style="--pc:${PLAYER_COLOURS[name]}">
+                  <div class="lobby-colour-swatch" style="background:${PLAYER_COLOURS[name]}"></div>
+                  <div class="lobby-colour-name">${name}</div>
+                </button>`;
+              }).join("")}
+            </div>
+          </div>
+
+          <div class="lobby-actions">
+            <button id="lobby-back-btn" class="action-btn subtle" type="button">← Menu</button>
+            <button id="lobby-confirm-btn" class="action-btn primary" type="button" ${canConfirm?"":"disabled"}>
+              ${canConfirm?"Join room →":"Select dog + colour"}
+            </button>
+          </div>
+        </div>
+      </div>`);
+
+    document.querySelectorAll(".lobby-char-btn:not([disabled])").forEach(btn => {
+      btn.onclick = () => { sel.character = btn.dataset.char; render(); };
+    });
+    document.querySelectorAll(".lobby-colour-btn:not([disabled])").forEach(btn => {
+      btn.onclick = () => { sel.colour = btn.dataset.colour; render(); };
+    });
+    document.getElementById("lobby-back-btn").onclick = () => { hideLobby(); };
+
+    const confirmBtn = document.getElementById("lobby-confirm-btn");
+    if(confirmBtn && !confirmBtn.disabled) {
+      confirmBtn.onclick = async () => {
+        confirmBtn.disabled = true; confirmBtn.textContent = "Joining…";
+        // Check character not taken since render
+        const freshSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
+        const freshState = freshSnap.val();
+        const nowTaken = Object.keys(freshState.characterSelections||{});
+        if(nowTaken.includes(sel.character)) {
+          // Show oops message and re-render
+          sel.character = null;
+          const takenNow = Object.values(freshState.characterSelections||{}).map(v=>v.colour);
+          if(takenNow.includes(sel.colour)) sel.colour = null;
+          render();
+          // Show oops toast
+          showMobileToast("Oops! That dog was just taken. Pick another.");
+          return;
+        }
+        // Register selection
+        const slotIndex = nowTaken.length;
+        await fbSelectCharacter(code, sel.character, sel.colour);
+        await _firebaseSet(dbRef(`rooms/${code}/state/characterSelections/${sel.character}`),
+          { colour: sel.colour, slotIndex });
+        await fbUpdatePresence(code, sel.character);
+        app.localHero = sel.character;
+        app.roomCode = code;
+        sessionStorage.setItem("dd_room_code", code);
+        sessionStorage.setItem("dd_hero", sel.character);
+        sessionStorage.setItem("dd_colour", sel.colour);
+        app.state = { ...restoreArrays({...freshState}), controlledHero: sel.character };
+        // Show waiting and subscribe
+        showWaitingLobby(code, sel.character, freshState.playerCount);
+        fbStartHeartbeat(code, sel.character);
+        fbSubscribeRoom(code, liveState => {
+          if(!liveState) return;
+          app.state = { ...restoreArrays({...liveState}), controlledHero: sel.character };
+          const joinedCount = Object.keys(liveState.characterSelections||{}).length;
+          if(joinedCount >= liveState.playerCount && liveState.phase !== "playing") {
+            startCarousel(code, sel.character);
+          } else {
+            updateWaitingLobby(code, sel.character, liveState);
+          }
+        });
+      };
+    }
+  }
+  // Subscribe to live updates so taken chars grey out in real time
+  fbSubscribeRoom(code, liveState => {
+    if(!liveState) return;
+    const nowTaken = Object.keys(liveState.characterSelections||{});
+    const nowTakenColours = Object.values(liveState.characterSelections||{}).map(v=>v.colour);
+    // If our selection got taken, clear it
+    if(sel.character && nowTaken.includes(sel.character)) { sel.character=null; }
+    if(sel.colour && nowTakenColours.includes(sel.colour)) { sel.colour=null; }
+    // Update remote state and re-render
+    Object.assign(remoteState, liveState);
+    render();
+  });
+  render();
+}
+
+// ── CAROUSEL / TURN ORDER REVEAL ─────────────────────────────────────────────
+function startCarousel(code, myCharacter) {
+  const state = app.state;
+  const players = Object.keys(state.characterSelections||{});
+  // Assign random turn order
+  const order = shuffle([...players]);
+  // Creator writes order to Firebase once
+  const isCreator = Object.entries(state.characterSelections||{})
+    .find(([,v])=>v.slotIndex===0)?.[0] === myCharacter;
+
+  if(isCreator) {
+    _firebaseSet(dbRef(`rooms/${code}/state/playerOrder`), order);
+    _firebaseSet(dbRef(`rooms/${code}/state/currentPlayer`), order[0]);
+    _firebaseSet(dbRef(`rooms/${code}/state/phase`), "playing");
+  }
+
+  showCarousel(order, myCharacter, () => {
+    hideLobby();
+    // Wait a moment for Firebase to propagate
+    setTimeout(async () => {
+      const freshSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
+      const freshState = freshSnap.val();
+      app.state = { ...restoreArrays({...freshState}), controlledHero: myCharacter };
+      hideScreen("room-screen");
+      showMobileHud();
+      resetBoardView();
+      showStartToast(myCharacter);
+      renderAll();
+      showCurrentDestinationReveal(myCharacter);
+      updateRoomHud();
+      // Subscribe for ongoing updates
+      let skipFirst = true;
+      fbSubscribeRoom(code, remoteState => {
+        if(!remoteState||!remoteState.players) return;
+        if(skipFirst){ skipFirst=false; return; }
+        app.state = { ...restoreArrays({...remoteState}), controlledHero: myCharacter };
+        renderAll(); updateRoomHud();
+      });
+    }, 800);
+  });
+}
+
+function showCarousel(order, myCharacter, onDone) {
+  // Build carousel overlay
+  let overlay = document.getElementById("carousel-overlay");
+  if(!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "carousel-overlay";
+    overlay.className = "carousel-overlay";
+    document.getElementById("game-shell").appendChild(overlay);
+  }
+
+  const portraits = order.map(c => `
+    <div class="carousel-portrait">
+      <img src="./assets/${c.toLowerCase()}.png" alt="${c}">
+      <div class="carousel-portrait-name">${c}</div>
+    </div>`).join("");
+
+  overlay.innerHTML = `
+    <div class="carousel-inner">
+      <div class="carousel-kicker">Get ready…</div>
+      <div class="carousel-title">TURN ORDER</div>
+      <div class="carousel-reel-wrap">
+        <div class="carousel-reel" id="carousel-reel">${portraits.repeat(4)}</div>
+      </div>
+      <div id="carousel-result" class="carousel-result" style="opacity:0"></div>
+      <button id="carousel-start-btn" class="action-btn primary carousel-btn" type="button" style="opacity:0;pointer-events:none">Let's play!</button>
+    </div>`;
+  overlay.classList.add("open");
+
+  // Animate: spin for 3s then land on first player
+  const reel = document.getElementById("carousel-reel");
+  const portraitWidth = 120; // matches CSS
+  const totalPortraits = order.length * 4;
+  const targetIndex = order.length * 3; // land on 3rd repetition = first player
+  const targetOffset = targetIndex * portraitWidth;
+
+  let start = null;
+  const duration = 3000;
+  function easeOut(t) { return 1 - Math.pow(1-t, 4); }
+
+  function animStep(ts) {
+    if(!start) start = ts;
+    const elapsed = ts - start;
+    const t = Math.min(1, elapsed / duration);
+    const ease = easeOut(t);
+    const offset = ease * targetOffset;
+    reel.style.transform = `translateX(-${offset}px)`;
+    if(t < 1) {
+      requestAnimationFrame(animStep);
+    } else {
+      // Show result
+      const result = document.getElementById("carousel-result");
+      const btn = document.getElementById("carousel-start-btn");
+      result.innerHTML = `
+        <div class="carousel-order">
+          ${order.map((c,i) => {
+            const col = PLAYER_COLOURS[app.state.characterSelections?.[c]?.colour]||"#fff";
+            return `<div class="carousel-order-item" style="animation-delay:${i*0.15}s">
+              <span class="carousel-order-num" style="color:${col}">${i+1}</span>
+              <img src="./assets/${c.toLowerCase()}.png" alt="${c}" style="border-color:${col}">
+              <span class="carousel-order-name" style="color:${col}">${c}${c===myCharacter?" (you)":""}</span>
+            </div>`;
+          }).join("")}
+        </div>`;
+      result.style.opacity = "1";
+      result.style.animation = "identityIn 400ms ease forwards";
+      btn.style.opacity = "1";
+      btn.style.pointerEvents = "auto";
+      btn.onclick = () => {
+        overlay.classList.remove("open");
+        onDone();
+      };
+    }
+  }
+  requestAnimationFrame(animStep);
+}
+
+// ── WIRE ROOM BUTTONS — replace old logic ────────────────────────────────────
 function wireRoomButtons(){
   const createBtn=document.getElementById("room-create-btn");
   const joinBtn=document.getElementById("room-join-btn");
@@ -770,76 +1387,22 @@ function wireRoomButtons(){
   joinBtn.disabled=false; joinBtn.textContent="Join";
   if(errorEl) errorEl.textContent="";
 
-  createBtn.onclick = async()=>{
-    createBtn.disabled=true; createBtn.textContent="Creating…"; errorEl.textContent="";
-    // Show journey count picker before committing to Firebase
-    showJourneyPicker(async (journeyTarget) => {
-    try {
-      const state=createInitialLocalState(app.rulesData, journeyTarget);
-      state.currentPlayer="Eric";
-      const code=await fbCreateRoom(state);
-      app.roomCode=code;
-
-      hideScreen("room-screen");
-      document.getElementById("hero-overlay").classList.add("active");
-
-      function creatorPickHero(hero){
-        const joinerHero=hero==="Eric"?"Tango":"Eric";
-        app.localHero=hero;
-        app.state={...state, controlledHero:hero, currentPlayer:hero};
-        sessionStorage.setItem("dd_room_code",code);
-        sessionStorage.setItem("dd_hero",hero);
-        fbPushState(code,{...state,currentPlayer:hero,phase:"waiting"});
-        document.getElementById("hero-overlay").classList.remove("active");
-        showMobileHud(); resetBoardView(); renderAll();
-        showCurrentDestinationReveal(hero); showStartToast(hero);
-        updateRoomHud();
-        // Show waiting screen with cancel button
-        const codeEl=document.getElementById("waiting-code");
-        if(codeEl) codeEl.textContent=code;
-        showScreen("waiting-screen");
-        // Wire the waiting screen cancel button
-        const cancelBtn=document.getElementById("waiting-cancel-btn");
-        if(cancelBtn) cancelBtn.onclick=()=>returnToMenu();
-
-        let started=false;
-        fbSubscribePresence(code, presence=>{
-          if(presence?.[joinerHero]?.connected&&!started){
-            started=true;
-            hideScreen("waiting-screen");
-            console.log("[DD] Opponent joined, subscribing");
-            let skipFirst=true;
-            fbSubscribeRoom(code, remoteState=>{
-              if(!remoteState||!remoteState.players) return;
-              if(skipFirst){skipFirst=false;return;}
-              console.log("[DD] Creator received remote state, currentPlayer:",remoteState.currentPlayer);
-              app.state={...restoreArrays({...remoteState}),controlledHero:hero};
-              renderAll(); updateRoomHud();
-            });
-          }
-        });
-      }
-      document.getElementById("pick-eric-btn").onclick=()=>creatorPickHero("Eric");
-      document.getElementById("pick-tango-btn").onclick=()=>creatorPickHero("Tango");
-    } catch(err){
-      errorEl.textContent=err.message;
-      createBtn.disabled=false; createBtn.textContent="Create game";
-    }
-    }); // end showJourneyPicker
+  createBtn.onclick = () => {
+    hideScreen("room-screen");
+    showCreateLobby();
   };
 
-  joinBtn.onclick = async()=>{
+  joinBtn.onclick = async () => {
     const code=(joinInput.value||"").toUpperCase().trim();
     if(code.length!==4){ errorEl.textContent="Enter a 4-character code."; return; }
     joinBtn.disabled=true; joinBtn.textContent="Joining…"; errorEl.textContent="";
     try {
       const firebaseState=await fbJoinRoom(code);
-      const creatorHero=firebaseState.currentPlayer||"Eric";
-      const joinerHero=creatorHero==="Eric"?"Tango":"Eric";
-      app.roomCode=code; app.localHero=joinerHero;
-      sessionStorage.setItem("dd_room_code",code); sessionStorage.setItem("dd_hero",joinerHero);
+      if(!firebaseState||!firebaseState.playerCount) throw new Error("Room not found or already started.");
+      const joined=Object.keys(firebaseState.characterSelections||{}).length;
+      if(joined>=firebaseState.playerCount) throw new Error("Room is full.");
       hideScreen("room-screen");
-      launchGame(joinerHero, firebaseState);
+      showJoinLobby(code, firebaseState);
     } catch(err){
       errorEl.textContent=err.message;
       joinBtn.disabled=false; joinBtn.textContent="Join";
@@ -880,31 +1443,29 @@ function restoreArrays(state) {
 }
 
 function launchGame(hero, firebaseState){
-  console.log("[DD] launchGame hero:",hero,"routes:",Object.keys(firebaseState.routes||{}).length,"deck:",firebaseState.drawPile?.length,"currentPlayer:",firebaseState.currentPlayer);
+  // Used for session resume only — normal flow uses startCarousel
+  console.log("[DD] launchGame (resume) hero:",hero);
   app.state={...restoreArrays({...firebaseState}), controlledHero:hero};
   app.localHero=hero;
-  document.getElementById("hero-overlay").classList.remove("active");
+  hideScreen("room-screen");
   showMobileHud();
   resetBoardView();
   showStartToast(hero);
   renderAll();
   showCurrentDestinationReveal(hero);
   updateRoomHud();
-
   let skipFirst=true;
   fbSubscribeRoom(app.roomCode, remoteState=>{
     if(!remoteState||!remoteState.players) return;
     if(skipFirst){ skipFirst=false; return; }
-    console.log("[DD] Remote state received, currentPlayer:",remoteState.currentPlayer,"localHero:",hero);
     app.state={...restoreArrays({...remoteState}), controlledHero:hero};
-    renderAll();
-    updateRoomHud();
+    renderAll(); updateRoomHud();
   });
 }
 
 // ─── Return to menu ───────────────────────────────────────────────────────────
 function returnToMenu(){
-  sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
+  sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero"); sessionStorage.removeItem("dd_colour");
   app.roomCode=null; app.localHero=null;
   cancelAutoSim(); closeRouteModal(); closeDestinationReveal(); closeMobileSheet();
   app.state=createInitialLocalState(app.rulesData);
@@ -916,10 +1477,11 @@ function returnToMenu(){
 
   document.getElementById("hero-overlay").classList.remove("active");
 
-  const pe=document.getElementById("pick-eric-btn");
-  const pt=document.getElementById("pick-tango-btn");
-  if(pe) pe.onclick=null;
-  if(pt) pt.onclick=null;
+  // Clear any dynamic character picker overlays
+  ["mystery-modal-overlay","journey-picker-overlay","lobby-overlay","carousel-overlay"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.classList.remove("open");
+  });
 
   const di=document.getElementById("desktop-identity");
   if(di) di.innerHTML="";
@@ -990,7 +1552,13 @@ function renderRoutes(){
     const rs=app.state.routes[routeId], rc=rs.colour;
     el.style.strokeWidth="8"; el.style.cursor="pointer";
     el.style.stroke=ROUTE_COLOUR_HEX[rc]||"#7a7a7a";
-    if(rs.claimedBy){el.classList.add(PLAYER_CONFIG[rs.claimedBy].routeClass);return;}
+    if(rs.claimedBy){
+      el.style.stroke=getPlayerColour(rs.claimedBy);
+      el.style.strokeWidth="12";
+      el.style.strokeOpacity="1";
+      el.classList.add("route-claimed");
+      return;
+    }
     const play=getRoutePlayability(routeId);
     if(play.playable) el.classList.add("route-eligible");
     if(app.state.selectedRouteId===routeId) el.classList.add("route-selected");
@@ -1056,26 +1624,31 @@ function renderHandInto(container,player,cls="hand-card"){
 function renderActiveHand(){
   const wrap=document.getElementById("active-hand"); if(!wrap) return;
   const hero=getViewHero();
-  const player=app.state.players[hero];
+  const player=hero?(getPlayerByChar(hero)||app.state.players[hero]):null;
+  if(!player){wrap.innerHTML="";return;}
   renderHandInto(wrap,player,"hand-card");
   player.lastDrawColor=null;
 }
 
-// Only show OWN player summary info — opponent details hidden
+// Show own info in full, opponents show only location + journey count
 function renderPlayerSummary(){
   const wrap=document.getElementById("player-summary-wrap"); if(!wrap) return;
   wrap.innerHTML="";
   const hero=getViewHero();
-  ["Eric","Tango"].forEach(n=>{
-    const p=app.state.players[n];
+  const active=getActivePlayers();
+  if(!active.length) return;
+  active.forEach(n=>{
+    const p=getPlayerByChar(n); if(!p) return;
     const isMe=n===hero;
+    const colour=getPlayerColour(n);
     const t=isMe?getCurrentTargetForPlayer(p):null;
     const card=document.createElement("div");
     card.className=`player-summary-card${app.state.currentPlayer===n?" active":""}`;
+    card.style.setProperty("--player-colour", colour);
     if(isMe){
       const targetTitle=t?(app.destinationData?.destinations[t]?.title||formatNodeName(t)):"—";
       card.innerHTML=`
-        <div class="player-summary-name">${n} <span style="font-size:13px;opacity:0.5;font-family:var(--ui-font)">(you)</span></div>
+        <div class="player-summary-name" style="color:${colour}">${n} <span style="font-size:13px;opacity:0.5;font-family:var(--ui-font);color:rgba(255,255,255,0.5)">(you)</span></div>
         <div class="player-summary-meta">
           <span class="summary-row"><span class="summary-lbl">Location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
           <span class="summary-row"><span class="summary-lbl">Cards</span><span class="summary-val">${p.hand.length}</span></span>
@@ -1083,9 +1656,8 @@ function renderPlayerSummary(){
           <span class="summary-row"><span class="summary-lbl">Target</span><span class="summary-val">${targetTitle}</span></span>
         </div>`;
     } else {
-      // Opponent — only show location and journey count, nothing secret
       card.innerHTML=`
-        <div class="player-summary-name">${n}</div>
+        <div class="player-summary-name" style="color:${colour}">${n}</div>
         <div class="player-summary-meta">
           <span class="summary-row"><span class="summary-lbl">Location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
           <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,getJourneyTarget())}/${getJourneyTarget()}</span></span>
@@ -1140,7 +1712,9 @@ function renderDestinationSequences(){
 function renderTargetPulse(){
   app.svg.querySelectorAll(".target-node-pulse").forEach(e=>e.classList.remove("target-node-pulse"));
   const hero=getViewHero();
-  const tid=getCurrentTargetForPlayer(app.state.players[hero]); if(!tid) return;
+  const heroPlayer=hero?(getPlayerByChar(hero)||app.state.players?.[hero]):null;
+  if(!heroPlayer) return;
+  const tid=getCurrentTargetForPlayer(heroPlayer); if(!tid) return;
   // Pulse the node circle
   app.svg.querySelectorAll(`#${CSS.escape(tid)}`).forEach(e=>e.classList.add("target-node-pulse"));
   // Also pulse the label text — labels have no IDs so match by text content
@@ -1160,7 +1734,7 @@ function renderDebug(audit){
   d.innerHTML=`<div class="debug-list">
     <div><strong>Version:</strong> ${APP_VERSION}</div>
     <div><strong>Room:</strong> ${app.roomCode||"solo"}</div>
-    <div><strong>Hero:</strong> ${app.localHero||app.state.controlledHero||"—"}</div>
+    <div><strong>Hero:</strong> ${app.localHero||"—"} / Players: ${(app.state.playerOrder||[]).join(",") || "—"}</div>
     <div><strong>Turn:</strong> ${app.state.currentPlayer}</div>
     <div><strong>My turn:</strong> ${isMyTurn()}</div>
     <div><strong>SVG nodes:</strong> ${audit.nodeCount} routes: ${audit.routeCount}</div>
@@ -1208,7 +1782,8 @@ function renderMobileRoutesPanel(){
 
   // Always show the VIEW HERO's data
   const hero=getViewHero();
-  const player=app.state.players[hero];
+  const player=hero ? (getPlayerByChar(hero)||app.state.players[hero]) : null;
+  if(!player) return;
   const tid=getCurrentTargetForPlayer(player);
   const ttitle=tid?(app.destinationData.destinations[tid]?.title||formatNodeName(tid)):"—";
   const comp=Math.min(player.completedCount,getJourneyTarget());
@@ -1304,12 +1879,17 @@ const MYSTERY_EVENTS = [
   }
 ];
 
-function pickMysteryNodes(allNodes, startNode, exclude=[]) {
-  const pool = allNodes.filter(n => n !== startNode && !exclude.includes(n));
+function pickMysteryNodes(allNodes, startNode, exclude=[], destinationPool=[], count=3) {
+  // Mystery nodes can only appear on nodes NOT in the destinationPool
+  const pool = allNodes.filter(n =>
+    n !== startNode &&
+    !exclude.includes(n) &&
+    !destinationPool.includes(n)
+  );
   const picked = [];
   const shuffled = shuffle([...pool]);
   for(const n of shuffled) {
-    if(picked.length >= 3) break;
+    if(picked.length >= count) break;
     picked.push(n);
   }
   return picked;
@@ -1318,11 +1898,11 @@ function pickMysteryNodes(allNodes, startNode, exclude=[]) {
 function rotateMysteryNode(triggeredNodeId) {
   if(!app.state.mysteryNodes) app.state.mysteryNodes=[];
   const allNodes = app.rulesData.nodes || [];
+  const destPool = app.rulesData.destinationPool || [];
   const remaining = app.state.mysteryNodes.filter(n => n !== triggeredNodeId);
-  // Pick a new node not already a mystery and not start node
-  const exclude = [...remaining, app.rulesData.startNode,
-    app.state.players.Eric.currentNode,
-    app.state.players.Tango.currentNode];
+  const activePlayers = getActivePlayers();
+  const currentNodes = activePlayers.map(n => app.state.players[n].currentNode);
+  const exclude = [...remaining, app.rulesData.startNode, ...currentNodes, ...destPool];
   const pool = allNodes.filter(n => !exclude.includes(n));
   const newNode = shuffle([...pool])[0];
   if(newNode) remaining.push(newNode);
@@ -1452,7 +2032,8 @@ function closeMysteryModal() {
 
 // ── OH WHUPS ──────────────────────────────────────────────────────────────
 function buildOhWhupsUI(content, playerName, okBtn, overlay, onDone) {
-  const player = app.state.players[playerName];
+  const player = getPlayerByChar(playerName)||app.state.players?.[playerName];
+  if(!player) return;
   const hand = [...player.hand];
   const mustDiscard = Math.ceil(hand.length / 2);
   const counts = countCards(hand);
@@ -1776,11 +2357,39 @@ function isMysteryNode(nodeId) {
   return (app.state.mysteryNodes||[]).includes(nodeId);
 }
 
+
+// ─── Destination node colouring ───────────────────────────────────────────────
+// All destination pool nodes show as red on the board.
+// The current player's active target shows as rainbow pulse (handled by renderTargetPulse).
+// Other players' targets are not revealed.
+function renderDestinationNodes() {
+  if(!app.svg) return;
+  const destPool = app.rulesData.destinationPool || [];
+  const hero = getViewHero();
+  const heroPlayer = hero ? (getPlayerByChar(hero)||app.state.players?.[hero]) : null;
+  const activeTarget = heroPlayer ? getCurrentTargetForPlayer(heroPlayer) : null;
+  const nodesGroup = app.svg.querySelector("#Nodes");
+  if(!nodesGroup) return;
+  nodesGroup.querySelectorAll("circle").forEach(el => {
+    const nodeId = el.id;
+    if(!nodeId) return;
+    if(destPool.includes(nodeId) && nodeId !== activeTarget) {
+      // Destination node — show as red, but not override the rainbow pulse
+      el.style.fill = "#e53935";
+      el.style.stroke = "#b71c1c";
+    } else if(!destPool.includes(nodeId) && nodeId !== activeTarget) {
+      // Reset to white
+      el.style.fill = "";
+      el.style.stroke = "";
+    }
+  });
+}
+
 function renderAll(){
   renderTurnBadge(); renderCounts(); renderSelectedRouteCard(); renderActiveHand();
   renderPlayerSummary(); renderDestinationSequences(); renderRoutes(); renderTokens();
   renderTargetPulse(); renderDebug(app.audit); renderButtons(); renderMobileRoutesPanel();
-  renderDesktopPiles(); renderMysteryNodes(); renderPoopNodes();
+  renderDesktopPiles(); renderMysteryNodes(); renderPoopNodes(); renderDestinationNodes();
   renderInventoryBadge();
   if(app.roomCode) updateRoomHud();
 }
@@ -1876,7 +2485,8 @@ async function confirmRouteModalPlay(){
   if(!isMyTurn()) return;
   if(!app.modal.routeId||app.modal.selectedOptionIndex===null) return;
   const routeId=app.modal.routeId, pay=app.modal.options[app.modal.selectedOptionIndex];
-  const pn=app.state.currentPlayer, player=app.state.players[pn];
+  const pn=app.state.currentPlayer;
+  const player=getPlayerByChar(pn)||app.state.players[pn];
   const play=getRoutePlayability(routeId);
   if(!play.playable){closeRouteModal();renderAll();return;}
   const {nextHand,spent}=removeSpecificCardsFromHand(player.hand,pay.colourChoice,pay.useColourCount,pay.useRainbowCount);
@@ -1914,7 +2524,7 @@ async function confirmRouteModalPlay(){
 function showStartToast(playerName){
   let card=document.getElementById("identity-card");
   if(!card){card=document.createElement("div");card.id="identity-card";card.className="identity-card";document.getElementById("game-shell").appendChild(card);}
-  const cfg=PLAYER_CONFIG[playerName];
+  const cfg=getPlayerConfig(playerName);
   card.innerHTML=`<div class="identity-wipe"></div><div class="identity-inner"><div class="identity-kicker">YOU ARE</div><div class="identity-portrait-wrap"><img class="identity-portrait" src="${cfg.image}" alt="${playerName}"></div><div class="identity-name">${playerName.toUpperCase()}</div></div>`;
   card.classList.remove("identity-out"); card.classList.add("identity-in");
   setTimeout(()=>{card.classList.remove("identity-in");card.classList.add("identity-out");},1800);
@@ -1928,7 +2538,9 @@ function openDestinationReveal(title,body,num=null){
 }
 function closeDestinationReveal(){document.getElementById("destination-reveal-overlay").classList.remove("open");}
 function showCurrentDestinationReveal(playerName){
-  const player=app.state.players[playerName], t=getCurrentTargetForPlayer(player);
+  const player=getPlayerByChar(playerName)||app.state.players?.[playerName];
+  if(!player) return;
+  const t=getCurrentTargetForPlayer(player);
   const N=getJourneyTarget();
   if(!t||player.completedCount>N) return;
   const dest=app.destinationData.destinations[t];
@@ -1936,7 +2548,9 @@ function showCurrentDestinationReveal(playerName){
 }
 
 function completeDestinationIfNeeded(playerName){
-  const player=app.state.players[playerName], t=getCurrentTargetForPlayer(player);
+  const player=getPlayerByChar(playerName)||app.state.players?.[playerName];
+  if(!player) return false;
+  const t=getCurrentTargetForPlayer(player);
   if(!t||player.currentNode!==t){app.state.justCompleted=null;return false;}
   const N=getJourneyTarget();
   app.state.justCompleted={playerName,destinationId:t};
@@ -2061,7 +2675,7 @@ async function drawCardForCurrentPlayer(){
   if(!isMyTurn()) return;
   const pn=app.state.currentPlayer, card=drawCard();
   if(!card){updateStatus("No cards available.");renderAll();return;}
-  const player=app.state.players[pn];
+  const player=getPlayerByChar(pn)||app.state.players[pn];
   await animateCardDraw(card);
   player.hand.push(card); player.lastDrawColor=card;
   closeMobileSheet(); renderAll();
@@ -2114,17 +2728,6 @@ function wireControlButtons(){
     showScreen("room-screen"); wireRoomButtons();
   });
 
-  function soloPickHero(hero) {
-    app.state=createInitialLocalState(app.rulesData); app.state.controlledHero=hero;
-    document.getElementById("hero-overlay").classList.remove("active");
-    showMobileHud(); resetBoardView(); showStartToast(hero); renderAll(); showCurrentDestinationReveal(hero);
-  }
-  document.getElementById("pick-eric-btn")?.addEventListener("click",()=>{
-    if(!document.getElementById("pick-eric-btn").onclick) soloPickHero("Eric");
-  });
-  document.getElementById("pick-tango-btn")?.addEventListener("click",()=>{
-    if(!document.getElementById("pick-tango-btn").onclick) soloPickHero("Tango");
-  });
   document.getElementById("mobile-open-sheet-btn")?.addEventListener("click",drawCardForCurrentPlayer);
   document.getElementById("mobile-reset-view-btn")?.addEventListener("click",toggleMobileSheet);
   document.getElementById("mobile-sheet-handle")?.addEventListener("click",closeMobileSheet);
@@ -2144,6 +2747,32 @@ function wireControlButtons(){
   });
 }
 
+
+// ─── Falling dogs animation on room screen ────────────────────────────────────
+function startFallingDogs() {
+  const container = document.getElementById("room-screen");
+  if(!container) return;
+  // Remove any existing falling dogs
+  container.querySelectorAll(".room-dog").forEach(e=>e.remove());
+  ALL_CHARACTERS.forEach((char, i) => {
+    const el = document.createElement("div");
+    el.className = "room-dog";
+    el.innerHTML = `<img src="./assets/${char.toLowerCase()}.png" alt="${char}">`;
+    // Random horizontal position
+    const leftPct = 5 + Math.random() * 85;
+    const delay = i * 0.8 + Math.random() * 1.2;
+    const duration = 4 + Math.random() * 3;
+    const rotStart = -20 + Math.random() * 40;
+    const rotEnd = rotStart + (-30 + Math.random() * 60);
+    el.style.left = `${leftPct}%`;
+    el.style.setProperty("--dog-rot-start", `${rotStart}deg`);
+    el.style.setProperty("--dog-rot-end", `${rotEnd}deg`);
+    el.style.animationDelay = `${delay}s`;
+    el.style.animationDuration = `${duration}s`;
+    container.appendChild(el);
+  });
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init(){
   injectMobileBottomBar();
@@ -2156,11 +2785,12 @@ async function init(){
   document.getElementById("hero-overlay").classList.remove("active");
   showScreen("room-screen");
   wireRoomButtons();
+  startFallingDogs();
 
   try {
     // Single source of truth — all game data lives in this JSON.
     // Edit didcot-dogs-game.v1.json to change route lengths, destinations, deck etc.
-    const gameData = await loadJson("./data/didcot-dogs-game.v1.json?v=3");
+    const gameData = await loadJson("./data/didcot-dogs-game.v1.json?v=4");
     const rulesData = gameData;           // routes, nodes, deck, win condition etc.
     const destinationData = { destinations: gameData.destinations }; // keep same shape
 
@@ -2181,14 +2811,15 @@ async function init(){
       hideScreen("room-screen");
       showScreen("resuming-screen");
       try {
-        const state=await fbJoinRoom(savedCode);
+        const state=await fbJoinRoom(savedCode, savedHero);
         if(!state||!state.players||state.phase==="waiting") throw new Error("Game not ready");
+        if(state.phase!=="playing") throw new Error("Game not started yet");
         app.roomCode=savedCode; app.localHero=savedHero;
         hideScreen("resuming-screen");
         launchGame(savedHero, restoreArrays(state));
       } catch(e){
         console.warn("[DD] Resume failed:",e.message);
-        sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
+        sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero"); sessionStorage.removeItem("dd_colour");
         hideScreen("resuming-screen");
         showScreen("room-screen");
       }
