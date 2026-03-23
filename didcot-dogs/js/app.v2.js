@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.17.1");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.17.2");
 
-const APP_VERSION = "v2.17.1";
+const APP_VERSION = "v2.17.2";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1086,6 +1086,8 @@ function showCreateLobby() {
           let carouselStarted = false;
           fbSubscribeRoom(code, remoteState => {
             if(!remoteState) return;
+            app.localHero = sel.character;
+            app.roomCode = code;
             app.state = { ...restoreArrays({...remoteState}), controlledHero: sel.character };
             // Check if lobby is full
             const joined = Object.keys(remoteState.characterSelections||{}).length;
@@ -1282,6 +1284,9 @@ function showJoinLobby(code, remoteState) {
         let carouselStarted = false;
         fbSubscribeRoom(code, liveState => {
           if(!liveState) return;
+          // Always keep localHero set — never let it go null
+          app.localHero = sel.character;
+          app.roomCode = code;
           app.state = { ...restoreArrays({...liveState}), controlledHero: sel.character };
           const joinedCount = Object.keys(liveState.characterSelections||{}).length;
           if(joinedCount >= liveState.playerCount && liveState.phase !== "playing" && !carouselStarted) {
@@ -1313,29 +1318,56 @@ function showJoinLobby(code, remoteState) {
 function startCarousel(code, myCharacter) {
   const state = app.state;
   const players = Object.keys(state.characterSelections||{});
-  // Assign random turn order
-  const order = shuffle([...players]);
-  // Creator writes order to Firebase once
   const isCreator = Object.entries(state.characterSelections||{})
     .find(([,v])=>v.slotIndex===0)?.[0] === myCharacter;
 
   if(isCreator) {
+    // Creator generates authoritative order and writes to Firebase
+    const order = shuffle([...players]);
     _firebaseSet(dbRef(`rooms/${code}/state/playerOrder`), order);
     _firebaseSet(dbRef(`rooms/${code}/state/currentPlayer`), order[0]);
     _firebaseSet(dbRef(`rooms/${code}/state/phase`), "playing");
+    // Creator can show carousel immediately with their order
+    runCarousel(code, myCharacter, order);
+  } else {
+    // Joiner waits for creator to write playerOrder, then uses that exact order
+    const maxWait = 20;
+    let waited = 0;
+    function pollForOrder() {
+      _firebaseGet(dbRef(`rooms/${code}/state`)).then(snap => {
+        const s = snap.val();
+        if(s?.playerOrder && s.playerOrder.length) {
+          const order = Array.isArray(s.playerOrder)
+            ? s.playerOrder
+            : Object.keys(s.playerOrder).sort((a,b)=>+a-+b).map(k=>s.playerOrder[k]);
+          app.state = { ...restoreArrays({...s}), controlledHero: myCharacter };
+          runCarousel(code, myCharacter, order);
+        } else if(waited++ < maxWait) {
+          setTimeout(pollForOrder, 300);
+        } else {
+          // Fallback: use own shuffle
+          runCarousel(code, myCharacter, shuffle([...players]));
+        }
+      });
+    }
+    pollForOrder();
   }
+}
 
+function runCarousel(code, myCharacter, order) {
   showCarousel(order, myCharacter, () => {
     hideLobby();
-    // Poll until Firebase has written playerOrder and currentPlayer (creator does this)
+    // Poll Firebase until playerOrder + currentPlayer are confirmed written
     async function waitForGameState(attempts=0) {
       const freshSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
       const freshState = freshSnap.val();
-      // Ensure playerOrder and currentPlayer are present before launching
-      if((!freshState.playerOrder || !freshState.currentPlayer) && attempts < 10) {
+      if((!freshState.playerOrder || !freshState.currentPlayer) && attempts < 15) {
         setTimeout(() => waitForGameState(attempts+1), 300);
         return;
       }
+      // Set localHero explicitly before setting state (guards against null hero)
+      app.localHero = myCharacter;
+      app.roomCode = code;
       app.state = { ...restoreArrays({...freshState}), controlledHero: myCharacter };
       hideScreen("room-screen");
       showMobileHud();
@@ -1344,13 +1376,12 @@ function startCarousel(code, myCharacter) {
       renderAll();
       showCurrentDestinationReveal(myCharacter);
       updateRoomHud();
-      // Subscribe for ongoing updates — never skip first here
+      // Subscribe for ongoing game updates
       fbSubscribeRoom(code, remoteState => {
         if(!remoteState||!remoteState.players) return;
         app.state = { ...restoreArrays({...remoteState}), controlledHero: myCharacter };
         renderAll(); updateRoomHud();
       });
-      // Watch for opponents quitting
       watchForPlayerDepartures(code);
     }
     waitForGameState();
@@ -3215,14 +3246,18 @@ async function init(){
 
     const savedCode=sessionStorage.getItem("dd_room_code");
     const savedHero=sessionStorage.getItem("dd_hero");
-    if(savedCode&&savedHero){
+    if(savedCode&&savedHero&&savedHero!=="null"&&savedHero!=="undefined"){
       hideScreen("room-screen");
       showScreen("resuming-screen");
       try {
         const state=await fbJoinRoom(savedCode, savedHero);
-        if(!state||!state.players||state.phase==="waiting") throw new Error("Game not ready");
-        if(state.phase!=="playing") throw new Error("Game not started yet");
-        app.roomCode=savedCode; app.localHero=savedHero;
+        if(!state||!state.players) throw new Error("Game not ready");
+        if(state.phase==="waiting") throw new Error("Game not started yet");
+        // Verify this character is still in the game
+        if(!state.characterSelections?.[savedHero]) throw new Error("Character no longer in game");
+        // Set localHero BEFORE launchGame so getViewHero() works immediately
+        app.roomCode=savedCode;
+        app.localHero=savedHero;
         hideScreen("resuming-screen");
         launchGame(savedHero, restoreArrays(state));
       } catch(e){
@@ -3230,6 +3265,7 @@ async function init(){
         sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero"); sessionStorage.removeItem("dd_colour");
         hideScreen("resuming-screen");
         showScreen("room-screen");
+        startFallingDogs();
       }
     }
     console.log("[DD] Game data loaded v"+gameData.version+". Routes:",Object.keys(rulesData.routes||{}).length);
