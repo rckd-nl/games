@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.17.2");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.18.0");
 
-const APP_VERSION = "v2.17.2";
+const APP_VERSION = "v2.18.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -249,19 +249,14 @@ function getActivePlayers() {
   return Object.keys(app.state.characterSelections || {});
 }
 
-// Map character name to slot key
-function getSlotForCharacter(charName) {
-  const sel = app.state.characterSelections || {};
-  const entry = Object.entries(sel).find(([c]) => c === charName);
-  if(!entry) return null;
-  return `slot_${entry[1].slotIndex}`;
+// Get player state object for a character name — direct lookup, no slot indirection
+function getPlayerByChar(charName) {
+  if(!charName || !app.state?.players) return null;
+  return app.state.players[charName] || null;
 }
 
-// Get player state object for a character name
-function getPlayerByChar(charName) {
-  const slot = getSlotForCharacter(charName);
-  return slot ? app.state.players[slot] : null;
-}
+// Kept for any legacy call sites
+function getSlotForCharacter(charName) { return charName; }
 
 // ─── Board view ───────────────────────────────────────────────────────────────
 function applyBoardViewTransform() {
@@ -498,34 +493,24 @@ function createPlayerState(startNode) {
 function createInitialLocalState(rulesData, journeyTarget=null, playerCount=2, mysteryNodeCount=3) {
   const routeIds=Object.keys(rulesData.routes||{});
   const colours=assignRouteColours(routeIds,rulesData.routeColours||[]);
-  const dests=shuffle(rulesData.destinationPool||[]);
   const routes={};
   routeIds.forEach(id=>{routes[id]={colour:colours[id],claimedBy:null};});
   const allNodes = rulesData.nodes || [];
   const N = journeyTarget || rulesData.winCondition?.targetJourneysBeforeReturn || 5;
   const mCount = Math.min(mysteryNodeCount, 8);
-
-  // Build player states — one slot per player, keyed by index
-  // Character selection happens separately via characterSelections
-  const players = {};
-  for(let i=0;i<playerCount;i++){
-    players[`slot_${i}`] = {
-      ...createPlayerState(rulesData.startNode),
-      destinationQueue: dests.slice(i*N, (i+1)*N),
-      slotIndex: i,
-    };
-  }
-
   const mysteryNodes = pickMysteryNodes(allNodes, rulesData.startNode, [], rulesData.destinationPool||[], mCount);
+
+  // Shuffle destinations upfront — stored in destPool for assignment at character confirm time
+  const destPool = shuffle(rulesData.destinationPool||[]);
 
   return {
     phase: "waiting",
     playerCount,
     journeyTarget: N,
     mysteryNodeCount: mCount,
-    currentPlayer: null,      // set after carousel
-    playerOrder: [],          // set after all players join
-    characterSelections: {},  // { characterName: { colour, slotIndex } }
+    currentPlayer: null,
+    playerOrder: [],
+    characterSelections: {},  // { charName: { colour, joinOrder } }
     gameStarted: false,
     selectedRouteId: null,
     drawPile: buildDeck(rulesData),
@@ -534,7 +519,22 @@ function createInitialLocalState(rulesData, journeyTarget=null, playerCount=2, m
     routes,
     mysteryNodes,
     poopedNodes: {},
-    players,
+    destPool,           // ordered pool; sliced per player at confirm time
+    players: {},        // keyed by character name, populated at confirm time
+  };
+}
+
+// Called when a player confirms their character — creates their player state
+// and assigns their destination slice from the pool
+function createPlayerEntry(state, charName, joinOrder) {
+  const N = state.journeyTarget || 5;
+  const pool = state.destPool || [];
+  const destQueue = pool.slice(joinOrder * N, (joinOrder + 1) * N);
+  return {
+    ...createPlayerState(state.routes ? Object.keys(state.routes)[0] ? "Didcot" : "Didcot" : "Didcot"),
+    currentNode: (state.routes ? "Didcot" : "Didcot"), // will be startNode
+    destinationQueue: destQueue,
+    joinOrder,
   };
 }
 
@@ -662,7 +662,8 @@ function getPaymentOptionsForColor(routeId,playerName,chosenColor=null) {
 
 function getRoutePlayability(routeId) {
   const pn=app.state.currentPlayer;
-  const player=getPlayerByChar(pn)||app.state.players[pn];
+  const player=getPlayerByChar(pn);
+  if(!player){console.warn("[DD] No player for",pn);return;}
   if(!player) return {playable:false,reason:"Waiting for game to start."};
   const rs=app.state.routes[routeId];
   const cn=getConnectedNode(routeId,player.currentNode);
@@ -693,7 +694,7 @@ function removeSpecificCardsFromHand(hand,colour,useCol,useRain) {
 
 // ─── Turn management ──────────────────────────────────────────────────────────
 function isHost() {
-  return app.state?.createdBy === app.localHero;
+  return app.state?.createdBy != null && app.state.createdBy === app.localHero;
 }
 
 function isMyTurn() {
@@ -714,8 +715,7 @@ function endTurn() {
   if(!next) { console.warn("[DD] endTurn: next is undefined, order:", order); return; }
   app.state.currentPlayer = next;
   // Check skip turns
-  const nextPlayerSlot = getSlotForCharacter(next);
-  const nextPlayer = nextPlayerSlot ? app.state.players[nextPlayerSlot] : null;
+  const nextPlayer = getPlayerByChar(next);
   if(nextPlayer && nextPlayer.skipTurns > 0){
     const skipsLeft = nextPlayer.skipTurns;
     nextPlayer.skipTurns--;
@@ -1071,9 +1071,17 @@ function showCreateLobby() {
         confirmBtn.disabled = true; confirmBtn.textContent = "Creating…";
         try {
           const state = createInitialLocalState(app.rulesData, sel.journeyTarget, sel.playerCount, sel.mysteryCount);
-          // Register creator character selection
-          state.characterSelections[sel.character] = { colour: sel.colour, slotIndex: 0 };
-          state.createdBy = sel.character;  // host identity
+          // Register creator character — joinOrder 0, player keyed by name
+          state.characterSelections[sel.character] = { colour: sel.colour, joinOrder: 0 };
+          state.createdBy = sel.character;
+          // Create player state entry keyed by character name
+          const startNode = app.rulesData.startNode || "Didcot";
+          const N = state.journeyTarget;
+          state.players[sel.character] = {
+            ...createPlayerState(startNode),
+            destinationQueue: (state.destPool||[]).slice(0, N),
+            joinOrder: 0,
+          };
           const code = await fbCreateRoom(state, sel.character);
           app.roomCode = code;
           app.localHero = sel.character;
@@ -1139,7 +1147,7 @@ function updateWaitingLobby(code, myCharacter, state) {
               const [char, data] = entry;
               const col = PLAYER_COLOURS[data.colour]||"#888";
               const fg = contrastText(col);
-              const isHost = data.slotIndex === 0;
+              const isHost = data.joinOrder === 0;
               const isMe = char === myCharacter;
               return `<div class="lobby-waiting-slot lobby-waiting-slot-filled" style="background:${col};border-color:${col}">
                 <img src="./assets/${char.toLowerCase()}.png" alt="${char}" style="width:40px;height:40px;border-radius:50%;border:3px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.9)">
@@ -1267,10 +1275,25 @@ function showJoinLobby(code, remoteState) {
           showMobileToast("Oops! That dog was just taken. Pick another.");
           return;
         }
-        // Single atomic write to characterSelections (removed duplicate fbSelectCharacter call)
-        const slotIndex = nowTaken.length;
+        // joinOrder = number of players already confirmed
+        const joinOrder = nowTaken.length;
+        const startNode = freshState.rulesData?.startNode || "Didcot";
+        const N = freshState.journeyTarget || 5;
+        const pool = Array.isArray(freshState.destPool) ? freshState.destPool
+          : Object.values(freshState.destPool||{});
+        const destQueue = pool.slice(joinOrder * N, (joinOrder + 1) * N);
+
+        // Write characterSelections entry
         await _firebaseSet(dbRef(`rooms/${code}/state/characterSelections/${sel.character}`),
-          { colour: sel.colour, slotIndex });
+          { colour: sel.colour, joinOrder });
+        // Write player state entry keyed by character name
+        const playerEntry = {
+          ...createPlayerState("Didcot"),
+          currentNode: "Didcot",
+          destinationQueue: destQueue,
+          joinOrder,
+        };
+        await _firebaseSet(dbRef(`rooms/${code}/state/players/${sel.character}`), playerEntry);
         await fbUpdatePresence(code, sel.character);
         app.localHero = sel.character;
         app.roomCode = code;
@@ -1319,7 +1342,7 @@ function startCarousel(code, myCharacter) {
   const state = app.state;
   const players = Object.keys(state.characterSelections||{});
   const isCreator = Object.entries(state.characterSelections||{})
-    .find(([,v])=>v.slotIndex===0)?.[0] === myCharacter;
+    .find(([,v])=>v.joinOrder===0)?.[0] === myCharacter;
 
   if(isCreator) {
     // Creator generates authoritative order and writes to Firebase
@@ -1516,6 +1539,8 @@ function restoreArrays(state) {
   state.playerOrder  = toArr(state.playerOrder);
   if(!state.poopedNodes) state.poopedNodes={};
   if(!state.characterSelections) state.characterSelections={};
+  // destPool is an array stored in Firebase
+  if(state.destPool) state.destPool = toArr(state.destPool);
   if (state.players) {
     Object.keys(state.players).forEach(name => {
       const p = state.players[name];
@@ -2117,7 +2142,7 @@ function rotateMysteryNode(triggeredNodeId) {
   const destPool = app.rulesData.destinationPool || [];
   const remaining = app.state.mysteryNodes.filter(n => n !== triggeredNodeId);
   const activePlayers = getActivePlayers();
-  const currentNodes = activePlayers.map(n => app.state.players[n].currentNode);
+  const currentNodes = activePlayers.map(n => getPlayerByChar(n)?.currentNode).filter(Boolean);
   const exclude = [...remaining, app.rulesData.startNode, ...currentNodes, ...destPool];
   const pool = allNodes.filter(n => !exclude.includes(n));
   const newNode = shuffle([...pool])[0];
@@ -3043,7 +3068,7 @@ function scheduleAutoSim(){
 }
 function runAutoSimTurn(){
   if(!app.state.controlledHero||app.state.currentPlayer===app.state.controlledHero) return;
-  const bot=app.state.currentPlayer, player=app.state.players[bot];
+  const bot=app.state.currentPlayer, player=getPlayerByChar(bot);
   const card=drawCard();if(card){player.hand.push(card);player.lastDrawColor=card;}
   app.state.currentPlayer=app.state.controlledHero; renderAll();
 }
@@ -3104,7 +3129,8 @@ async function drawCardForCurrentPlayer(){
   if(!isMyTurn()) return;
   const pn=app.state.currentPlayer, card=drawCard();
   if(!card){updateStatus("No cards available.");renderAll();return;}
-  const player=getPlayerByChar(pn)||app.state.players[pn];
+  const player=getPlayerByChar(pn);
+  if(!player){console.warn("[DD] Draw: no player for",pn);return;}
   await animateCardDraw(card);
   player.hand.push(card); player.lastDrawColor=card;
   closeMobileSheet(); renderAll();
