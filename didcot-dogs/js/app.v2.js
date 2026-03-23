@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.12.2");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.13.0");
 
-const APP_VERSION = "v2.12.2";
+const APP_VERSION = "v2.13.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -402,7 +402,7 @@ function rerollSpecificRouteColours(ids) {
 }
 
 function buildDeck(rulesData) {
-  const cols=rulesData.drawColours||[], cpc=rulesData.deck?.copiesPerColour??8, rc=rulesData.deck?.rainbowCount??4;
+  const cols=rulesData.drawColours||[], cpc=rulesData.deck?.copiesPerColour??8, rc=rulesData.deck?.rainbowCount??0;
   const deck=[];
   cols.forEach(c=>{for(let i=0;i<cpc;i++)deck.push(c);});
   for(let i=0;i<rc;i++)deck.push("rainbow");
@@ -421,7 +421,7 @@ function createPlayerState(startNode) {
   };
 }
 
-function createInitialLocalState(rulesData) {
+function createInitialLocalState(rulesData, journeyTarget=null) {
   const routeIds=Object.keys(rulesData.routes||{});
   const colours=assignRouteColours(routeIds,rulesData.routeColours||[]);
   const dests=shuffle(rulesData.destinationPool||[]);
@@ -429,21 +429,38 @@ function createInitialLocalState(rulesData) {
   routeIds.forEach(id=>{routes[id]={colour:colours[id],claimedBy:null};});
   const allNodes = rulesData.nodes || [];
   const mysteryNodes = pickMysteryNodes(allNodes, rulesData.startNode, []);
+  // journeyTarget: chosen by creator, or fall back to JSON default, or 5
+  const N = journeyTarget
+    || rulesData.winCondition?.targetJourneysBeforeReturn
+    || 5;
   return {
     currentPlayer:"Eric", gameStarted:false, selectedRouteId:null,
+    journeyTarget: N,   // stored in state so Firebase syncs it to joiner
     drawPile:buildDeck(rulesData), discardPile:[], justCompleted:null, routes,
-    mysteryNodes,   // 3 node IDs showing ? on board
-    poopedNodes:{}, // { nodeId: placedByHero } — hidden traps
+    mysteryNodes,
+    poopedNodes:{},
     players:{
-      Eric:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(0,5)},
-      Tango:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(5,10)}
+      Eric:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(0,N)},
+      Tango:{...createPlayerState(rulesData.startNode),destinationQueue:dests.slice(N,N*2)}
     }
   };
 }
 
+// Returns the number of destinations required to win — from game state (set at creation)
+// Falls back to rulesData.winCondition.targetJourneysBeforeReturn then to 5.
+function getJourneyTarget() {
+  return app.state?.journeyTarget
+    || app.rulesData?.winCondition?.targetJourneysBeforeReturn
+    || 5;
+}
+
 function getCurrentTargetForPlayer(player) {
-  if(player.completedCount<5) return player.destinationQueue[player.completedCount]||null;
-  return app.rulesData.winCondition?.finalDestinationAfterFive||"Didcot";
+  const N = getJourneyTarget();
+  if(player.completedCount < N) return player.destinationQueue[player.completedCount] || null;
+  // Final destination is always Didcot — comes from winCondition.finalDestination
+  return app.rulesData.winCondition?.finalDestination
+    || app.rulesData.winCondition?.finalDestinationAfterFive
+    || "Didcot";
 }
 
 // ─── Token / node helpers ─────────────────────────────────────────────────────
@@ -677,6 +694,68 @@ function updateRoomHud(){
   }
 }
 
+
+// ─── Journey count picker ──────────────────────────────────────────────────────
+// Shows before hero pick. Creator chooses how many destinations per player.
+// Max = floor(destinationPool.length / 2), min = 1.
+function showJourneyPicker(onConfirm) {
+  const pool = app.rulesData.destinationPool || [];
+  const maxJ = Math.floor(pool.length / 2);
+  const defaultJ = app.rulesData.winCondition?.targetJourneysBeforeReturn || Math.min(5, maxJ);
+
+  let overlay = document.getElementById("journey-picker-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "journey-picker-overlay";
+    overlay.className = "mystery-modal-overlay"; // reuse same overlay style
+    document.getElementById("game-shell").appendChild(overlay);
+  }
+
+  // Build option buttons 1..maxJ
+  const options = Array.from({length: maxJ}, (_,i) => i+1);
+  let chosen = defaultJ;
+
+  function render() {
+    overlay.innerHTML = `
+      <div class="mystery-modal journey-picker-modal">
+        <div class="mystery-modal-emoji">🗺️</div>
+        <div class="mystery-modal-title">HOW MANY STOPS?</div>
+        <div class="mystery-modal-body">
+          Choose how many destination cards each player must complete before heading home.
+          The final stop is always Didcot.
+        </div>
+        <div class="journey-picker-grid">
+          ${options.map(n => `
+            <button type="button" class="journey-picker-btn${n===chosen?" active":""}" data-n="${n}">
+              <span class="journey-picker-num">${n}</span>
+              <span class="journey-picker-lbl">${n===1?"stop":"stops"}</span>
+            </button>`).join("")}
+        </div>
+        <div class="journey-picker-summary">
+          ${chosen} destination${chosen===1?"":"s"} + Didcot = ${chosen+1} card${chosen+1===1?"":"s"} total
+        </div>
+        <div class="mystery-modal-actions">
+          <button id="journey-picker-confirm" class="action-btn primary" type="button">Let's go!</button>
+        </div>
+      </div>`;
+
+    overlay.querySelectorAll(".journey-picker-btn").forEach(btn => {
+      btn.onclick = () => {
+        chosen = +btn.dataset.n;
+        render();
+      };
+    });
+
+    document.getElementById("journey-picker-confirm").onclick = () => {
+      overlay.classList.remove("open");
+      onConfirm(chosen);
+    };
+  }
+
+  render();
+  overlay.classList.add("open");
+}
+
 // ─── Room screen ──────────────────────────────────────────────────────────────
 function showScreen(id){ const e=document.getElementById(id); if(e) e.classList.add("active"); }
 function hideScreen(id){ const e=document.getElementById(id); if(e) e.classList.remove("active"); }
@@ -693,8 +772,10 @@ function wireRoomButtons(){
 
   createBtn.onclick = async()=>{
     createBtn.disabled=true; createBtn.textContent="Creating…"; errorEl.textContent="";
+    // Show journey count picker before committing to Firebase
+    showJourneyPicker(async (journeyTarget) => {
     try {
-      const state=createInitialLocalState(app.rulesData);
+      const state=createInitialLocalState(app.rulesData, journeyTarget);
       state.currentPlayer="Eric";
       const code=await fbCreateRoom(state);
       app.roomCode=code;
@@ -744,6 +825,7 @@ function wireRoomButtons(){
       errorEl.textContent=err.message;
       createBtn.disabled=false; createBtn.textContent="Create game";
     }
+    }); // end showJourneyPicker
   };
 
   joinBtn.onclick = async()=>{
@@ -997,7 +1079,7 @@ function renderPlayerSummary(){
         <div class="player-summary-meta">
           <span class="summary-row"><span class="summary-lbl">Location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
           <span class="summary-row"><span class="summary-lbl">Cards</span><span class="summary-val">${p.hand.length}</span></span>
-          <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,5)}/5</span></span>
+          <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,getJourneyTarget())}/${getJourneyTarget()}</span></span>
           <span class="summary-row"><span class="summary-lbl">Target</span><span class="summary-val">${targetTitle}</span></span>
         </div>`;
     } else {
@@ -1006,7 +1088,7 @@ function renderPlayerSummary(){
         <div class="player-summary-name">${n}</div>
         <div class="player-summary-meta">
           <span class="summary-row"><span class="summary-lbl">Location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
-          <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,5)}/5</span></span>
+          <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,getJourneyTarget())}/${getJourneyTarget()}</span></span>
         </div>`;
     }
     wrap.appendChild(card);
@@ -1016,17 +1098,26 @@ function renderPlayerSummary(){
 // Only render the VIEW HERO's destination sequence
 function buildDestinationSequenceElement(playerName,showFlip=true){
   const player=app.state.players[playerName];
+  const N=getJourneyTarget();
   const seq=document.createElement("div"); seq.className="destination-sequence";
   const title=document.createElement("div"); title.className="sequence-title"; title.textContent="Your routes";
   const grid=document.createElement("div"); grid.className="destination-card-grid";
-  for(let i=0;i<5;i++){
-    const did=player.destinationQueue[i], dest=app.destinationData.destinations[did];
-    const label=dest?dest.title:formatNodeName(did), body=dest?.description||"";
-    let el;
+  // Show N journey destinations + the final Didcot card
+  for(let i=0;i<=N;i++){
+    let label, body, el;
+    if(i < N){
+      // Regular destination
+      const did=player.destinationQueue[i], dest=app.destinationData.destinations[did];
+      label=dest?dest.title:formatNodeName(did); body=dest?.description||"";
+    } else {
+      // Final Didcot card — always last
+      const finalDest=app.destinationData.destinations["Didcot"];
+      label=finalDest?.title||"Didcot"; body=finalDest?.description||"";
+    }
     if(i<player.completedCount){
       el=document.createElement("div");el.className="destination-card completed-card";
       el.innerHTML=`<div class="destination-title">✓ ${label}</div>`;
-    } else if(i===player.completedCount&&player.completedCount<5){
+    } else if(i===player.completedCount){
       el=document.createElement("div");el.className="destination-card active-card";
       if(showFlip&&app.state.justCompleted?.playerName===playerName)el.classList.add("flip-in");
       el.innerHTML=`<div class="destination-title">${label}</div><div class="destination-body">${body}</div>`;
@@ -1120,7 +1211,7 @@ function renderMobileRoutesPanel(){
   const player=app.state.players[hero];
   const tid=getCurrentTargetForPlayer(player);
   const ttitle=tid?(app.destinationData.destinations[tid]?.title||formatNodeName(tid)):"—";
-  const comp=Math.min(player.completedCount,5);
+  const comp=Math.min(player.completedCount,getJourneyTarget());
 
   hudTurn.textContent=app.state.currentPlayer;
   renderDrawPile(hudDraw,app.state.drawPile.length);
@@ -1838,7 +1929,8 @@ function openDestinationReveal(title,body,num=null){
 function closeDestinationReveal(){document.getElementById("destination-reveal-overlay").classList.remove("open");}
 function showCurrentDestinationReveal(playerName){
   const player=app.state.players[playerName], t=getCurrentTargetForPlayer(player);
-  if(!t||player.completedCount>=5) return;
+  const N=getJourneyTarget();
+  if(!t||player.completedCount>N) return;
   const dest=app.destinationData.destinations[t];
   openDestinationReveal(dest?.title||formatNodeName(t),dest?.description||"",player.completedCount+1);
 }
@@ -1846,19 +1938,27 @@ function showCurrentDestinationReveal(playerName){
 function completeDestinationIfNeeded(playerName){
   const player=app.state.players[playerName], t=getCurrentTargetForPlayer(player);
   if(!t||player.currentNode!==t){app.state.justCompleted=null;return false;}
+  const N=getJourneyTarget();
   app.state.justCompleted={playerName,destinationId:t};
-  if(player.completedCount<5){player.completedDestinations.push(t);player.completedCount++;}
-  else player.completedCount++;
+  player.completedDestinations.push(t);
+  player.completedCount++;
   [...player.journeyRouteIds].forEach(id=>{app.state.routes[id].claimedBy=null;});
   rerollSpecificRouteColours([...player.journeyRouteIds]);
   player.journeyRouteIds=[]; player.previousNode=null;
-  if(player.completedCount>5){
+  if(player.completedCount>N){
+    // Won — completed all N destinations AND the final Didcot return
     updateStatus(`${playerName} wins!`,TOAST_NOTABLE);
     setTimeout(()=>showEndScreen(playerName),800);
   } else {
     const nt=getCurrentTargetForPlayer(player), nd=app.destinationData.destinations[nt];
-    if(player.completedCount>=5) updateStatus(`Five done! Head to ${formatNodeName(nt)}`,TOAST_NOTABLE);
-    else{updateStatus(`✓ ${formatNodeName(t)}! Next: ${formatNodeName(nt)}`,TOAST_NOTABLE);openDestinationReveal(nd?.title||formatNodeName(nt),nd?.description||"",player.completedCount+1);}
+    if(player.completedCount===N){
+      // Just completed last regular destination — now head to Didcot
+      updateStatus(`${player.completedCount} done! Now head to ${formatNodeName(nt)}`,TOAST_NOTABLE);
+      openDestinationReveal(nd?.title||formatNodeName(nt),nd?.description||"",player.completedCount+1);
+    } else {
+      updateStatus(`✓ ${formatNodeName(t)}! Next: ${formatNodeName(nt)}`,TOAST_NOTABLE);
+      openDestinationReveal(nd?.title||formatNodeName(nt),nd?.description||"",player.completedCount+1);
+    }
   }
   return true;
 }
@@ -2060,7 +2160,7 @@ async function init(){
   try {
     // Single source of truth — all game data lives in this JSON.
     // Edit didcot-dogs-game.v1.json to change route lengths, destinations, deck etc.
-    const gameData = await loadJson("./data/didcot-dogs-game.v1.json?v=2");
+    const gameData = await loadJson("./data/didcot-dogs-game.v1.json?v=3");
     const rulesData = gameData;           // routes, nodes, deck, win condition etc.
     const destinationData = { destinations: gameData.destinations }; // keep same shape
 
