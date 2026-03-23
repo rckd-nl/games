@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.18.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.18.2");
 
-const APP_VERSION = "v2.18.0";
+const APP_VERSION = "v2.18.2";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -524,28 +524,16 @@ function createInitialLocalState(rulesData, journeyTarget=null, playerCount=2, m
   };
 }
 
-// Called when a player confirms their character — creates their player state
-// and assigns their destination slice from the pool
-function createPlayerEntry(state, charName, joinOrder) {
-  const N = state.journeyTarget || 5;
-  const pool = state.destPool || [];
-  const destQueue = pool.slice(joinOrder * N, (joinOrder + 1) * N);
-  return {
-    ...createPlayerState(state.routes ? Object.keys(state.routes)[0] ? "Didcot" : "Didcot" : "Didcot"),
-    currentNode: (state.routes ? "Didcot" : "Didcot"), // will be startNode
-    destinationQueue: destQueue,
-    joinOrder,
-  };
-}
+// createPlayerEntry removed — player state created inline at character confirmation
 
 // Returns the number of destinations required to win — from game state (set at creation)
 // Falls back to rulesData.winCondition.targetJourneysBeforeReturn then to 5.
 function getJourneyTarget() {
-  // Set by host at game creation, stored in state.journeyTarget.
-  // Fallback: 3, or max available if pool is very small.
   if(app.state?.journeyTarget) return app.state.journeyTarget;
-  const pool = app.rulesData?.destinationPool || [];
-  return Math.min(3, Math.floor(pool.length / 2)) || 1;
+  if(app.rulesData?.destinationPool?.length) {
+    return Math.min(3, Math.floor(app.rulesData.destinationPool.length / 2)) || 1;
+  }
+  return 3; // safe default
 }
 
 function getCurrentTargetForPlayer(playerOrName) {
@@ -577,7 +565,7 @@ function ensureLayer(svg,id,alwaysOnTop=false) {
 function ensureTokenDefs(svg) {
   let defs=svg.querySelector("defs");
   if(!defs){defs=createSvgEl("defs");svg.insertBefore(defs,svg.firstChild);}
-  ["Eric","Tango"].forEach(n=>{
+  ALL_CHARACTERS.forEach(n=>{
     const id=`token-clip-${n}`;
     if(!svg.querySelector(`#${CSS.escape(id)}`)){
       const cp=createSvgEl("clipPath",{id});
@@ -592,6 +580,7 @@ function ensurePlayerToken(svg,playerName) {
   let g=svg.querySelector(`#token-${CSS.escape(playerName)}`);
   if(g) return g;
   const cfg=getPlayerConfig(playerName);
+  const heroColour=getPlayerColour(playerName);
   g=createSvgEl("g",{id:`token-${playerName}`,class:`token-group ${cfg.tokenClass}`});
   const w=createSvgEl("g",{class:"token-wobble"});
   const tokenColour = getPlayerColour(playerName);
@@ -599,8 +588,9 @@ function ensurePlayerToken(svg,playerName) {
   tc.style.stroke=tokenColour; tc.style.strokeWidth="5";
   w.appendChild(tc);
   const img=createSvgEl("image",{x:"-20",y:"-20",width:"40",height:"40",preserveAspectRatio:"xMidYMid meet","clip-path":`url(#token-clip-${playerName})`});
-  img.setAttributeNS(XLINK_NS,"xlink:href",PLAYER_CONFIG[playerName].image);
-  img.setAttribute("href",PLAYER_CONFIG[playerName].image);
+  const _imgCfg=getPlayerConfig(playerName);
+  img.setAttributeNS(XLINK_NS,"xlink:href",_imgCfg.image);
+  img.setAttribute("href",_imgCfg.image);
   w.appendChild(img); g.appendChild(w); layer.appendChild(g);
   return g;
 }
@@ -648,7 +638,7 @@ function getConnectedNode(routeId,fromNode) {
 
 // ─── Payment / playability ────────────────────────────────────────────────────
 function getPaymentOptionsForColor(routeId,playerName,chosenColor=null) {
-  const player=getPlayerByChar(playerName)||app.state.players[playerName], hc=countCards(player.hand);
+  const player=getPlayerByChar(playerName), hc=player?countCards(player.hand):{};
   const rc=hc.rainbow||0, routeColour=app.state.routes[routeId].colour;
   const baseCost=app.rulesData.routes[routeId].length;
   const cost=baseCost+(player.routeCostBonus||0); // JUST SNIFFIN' penalty
@@ -763,8 +753,11 @@ function animateTokenAlongRoute(playerName,routeId,fromNode,toNode){
       const t=Math.min(1,(now-start)/900),e=easeInOutCubic(t),p=fwd?e:1-e;
       const pt=el.getPointAtLength(tot*p);
       let x=pt.x,y=pt.y;
-      const op=playerName==="Eric"?"Tango":"Eric";
-      if(app.state.players[op].currentNode===toNode){x+=playerName==="Eric"?-18:18;}
+      // If another player is already at toNode, offset slightly
+      const othersAtDest = getActivePlayers().filter(n =>
+        n !== playerName && getPlayerByChar(n)?.currentNode === toNode
+      );
+      if(othersAtDest.length) { x += 18; }
       token.setAttribute("transform",`translate(${x},${y})`);
       if(t<1) requestAnimationFrame(step); else resolve();
     }
@@ -806,7 +799,7 @@ function updateRoomHud(){
              id="desktop-identity-portrait"
              data-hero="${hero}"
              src="${cfg.image}" alt="${hero}"
-             style="border-color:${hero==="Eric"?"rgba(25,167,255,0.6)":"rgba(255,230,0,0.6)"}">
+             style="border-color:${getPlayerColour(hero)}">
         <div class="desktop-identity-text">
           <div class="desktop-identity-label">${isHost()?"HOST · YOU ARE":"YOU ARE"}</div>
           <div class="desktop-identity-name">${hero.toUpperCase()}</div>
@@ -1277,19 +1270,20 @@ function showJoinLobby(code, remoteState) {
         }
         // joinOrder = number of players already confirmed
         const joinOrder = nowTaken.length;
-        const startNode = freshState.rulesData?.startNode || "Didcot";
         const N = freshState.journeyTarget || 5;
-        const pool = Array.isArray(freshState.destPool) ? freshState.destPool
-          : Object.values(freshState.destPool||{});
+        // Restore destPool array (Firebase may return as object with numeric keys)
+        const rawPool = freshState.destPool || [];
+        const pool = Array.isArray(rawPool) ? rawPool
+          : Object.keys(rawPool).sort((a,b)=>+a-+b).map(k=>rawPool[k]);
         const destQueue = pool.slice(joinOrder * N, (joinOrder + 1) * N);
 
         // Write characterSelections entry
         await _firebaseSet(dbRef(`rooms/${code}/state/characterSelections/${sel.character}`),
           { colour: sel.colour, joinOrder });
         // Write player state entry keyed by character name
+        const startNode = app.rulesData?.startNode || "Didcot";
         const playerEntry = {
-          ...createPlayerState("Didcot"),
-          currentNode: "Didcot",
+          ...createPlayerState(startNode),
           destinationQueue: destQueue,
           joinOrder,
         };
@@ -1638,9 +1632,10 @@ function doReturnToMenu() {
   app.roomCode=null; app.localHero=null;
   cancelAutoSim(); closeRouteModal(); closeDestinationReveal(); closeMobileSheet();
 
-  // Reset to a clean pre-game state — DO NOT call createInitialLocalState here
-  // as it generates a new game. Just null out the state so renderAll bails early.
+  // Null out state — renderAll and gameIsRunning both guard against this
   app.state = null;
+  app.localHero = null;
+  app.roomCode = null;
 
   ["mobile-hud","mobile-bottom-bar"].forEach(id=>{
     const e=document.getElementById(id);if(e)e.classList.remove("visible");
@@ -1670,13 +1665,18 @@ function doReturnToMenu() {
 
 // Watch for opponents leaving — show notification to remaining players
 function watchForPlayerDepartures(code) {
-  fbSubscribeRoom(code, remoteState => {
-    if(!remoteState || !app.localHero) return;
-    const left = remoteState.playerLeft;
+  const sessionStart = Date.now();
+  // Use a separate subscriber just for departure events
+  _firebaseOnValue(dbRef(`rooms/${code}/state/playerLeft`), snap => {
+    if(!snap.exists() || !app.localHero) return;
+    const left = snap.val();
     if(!left || left.character === app.localHero) return;
-    if(Date.now() - left.leftAt > 30000) return; // ignore stale
-    // Someone just left
-    showPlayerLeftNotification(left.character, remoteState, code);
+    // Only react to departures that happened after this client joined
+    if(left.leftAt < sessionStart) return;
+    if(Date.now() - left.leftAt > 120000) return; // ignore if >2 min old
+    const state = app.state;
+    if(!state) return;
+    showPlayerLeftNotification(left.character, state, code);
   });
 }
 
@@ -2072,10 +2072,11 @@ function renderMobileRoutesPanel(){
 function renderButtons(){
   const b=document.getElementById("draw-card-btn");
   if(!b) return;
-  const mine=gameIsRunning()&&isMyTurn();
+  const running=gameIsRunning();
+  const mine=running&&isMyTurn();
   b.disabled=!mine;
-  b.textContent=mine?"Draw card":(gameIsRunning()?"Waaaaiit…":"—");
-  b.classList.toggle("btn-waiting",gameIsRunning()&&!mine);
+  b.textContent=mine?"Draw card":(running?"Waaaaiit…":"—");
+  b.classList.toggle("btn-waiting",running&&!mine);
 }
 
 function renderDesktopPiles(){
@@ -2406,7 +2407,8 @@ function buildBrightBrownUI(content, playerName, okBtn, overlay, onDone) {
 
   okBtn.onclick = () => {
     if(!chosenColour) return;
-    const myPlayer = getPlayerByChar(playerName)||app.state.players[playerName];
+    const myPlayer = getPlayerByChar(playerName);
+    if(!myPlayer){overlay.classList.remove("open");onDone();return;}
     const opponents = getActivePlayers().filter(n => n !== playerName);
     let totalStolen = 0;
     opponents.forEach(oppName => {
@@ -2467,8 +2469,8 @@ function buildGimmeGimmeUI(content, playerName, okBtn, overlay, onDone) {
 
   okBtn.onclick = () => {
     if(!chosen) return;
-    const myPlayer = getPlayerByChar(playerName)||app.state.players[playerName];
-    const oppPlayer = getPlayerByChar(chosen)||app.state.players[chosen];
+    const myPlayer = getPlayerByChar(playerName);
+    const oppPlayer = getPlayerByChar(chosen);
     if(!oppPlayer) { overlay.classList.remove("open"); onDone(); return; }
     const n = Math.min(3, oppPlayer.hand.length);
     const stolen = shuffle([...oppPlayer.hand]).slice(0, n);
@@ -2485,7 +2487,8 @@ function buildGimmeGimmeUI(content, playerName, okBtn, overlay, onDone) {
 
 // ── BIN DIPPER — pick 5 from discard pile ────────────────────────────────
 function buildBinDipperUI(content, playerName, okBtn, overlay, onDone) {
-  const myPlayer = getPlayerByChar(playerName)||app.state.players[playerName];
+  const myPlayer = getPlayerByChar(playerName);
+  if(!myPlayer) { onDone(); return; }
   const pile = [...(app.state.discardPile||[])];
   if(!pile.length) {
     content.innerHTML = `<div class="mystery-card-select-label">Oh no, it's bin day! The binman has thrown away all the treats.</div>`;
@@ -2556,9 +2559,12 @@ function buildBinDipperUI(content, playerName, okBtn, overlay, onDone) {
 
 // ── Apply effects for simple events ──────────────────────────────────────
 function applyMysteryEffect(eventId, playerName) {
-  const player = app.state.players[playerName];
-  const opponent = playerName === "Eric" ? "Tango" : "Eric";
-  const oppPlayer = app.state.players[opponent];
+  const player = getPlayerByChar(playerName);
+  if(!player) return;
+  // For legacy 2-player event effects, find first opponent
+  const opponents = getActivePlayers().filter(n => n !== playerName);
+  const opponent = opponents[0] || null;
+  const oppPlayer = opponent ? getPlayerByChar(opponent) : null;
 
   switch(eventId) {
     case "nowhere_to_poo":
@@ -2597,7 +2603,8 @@ function applyMysteryEffect(eventId, playerName) {
       break;
 
     case "rainbow_warrior": {
-      const myPl = getPlayerByChar(playerName)||app.state.players[playerName];
+      const myPl = getPlayerByChar(playerName);
+      if(!myPl) break;
       const opps = getActivePlayers().filter(n => n !== playerName);
       let total = 0;
       opps.forEach(oppName => {
@@ -2619,8 +2626,8 @@ function applyMysteryEffect(eventId, playerName) {
 
 // ── HITCH A LIFT ──────────────────────────────────────────────────────────
 function applyHitchALift(playerName) {
-  const player = app.state.players[playerName];
-  // Complete destination first if currently on it
+  const player = getPlayerByChar(playerName);
+  if(!player) return;
   completeDestinationIfNeeded(playerName);
   const target = getCurrentTargetForPlayer(player);
   if(!target) { updateStatus("Hitch a Lift! Nowhere to go.", TOAST_NOTABLE); return; }
@@ -2634,7 +2641,7 @@ function applyHitchALift(playerName) {
 
 // ── POOP drop prompt ──────────────────────────────────────────────────────
 function maybePromptPoopDrop(playerName, nodeId) {
-  const player = app.state.players[playerName];
+  const player = getPlayerByChar(playerName);
   if(!player.inventory || !player.inventory.includes("poop")) return Promise.resolve();
   if(playerName !== getViewHero()) return Promise.resolve();
   return new Promise(resolve => {
@@ -2678,7 +2685,7 @@ function checkPoopTrap(playerName, nodeId) {
   if(!placedBy || placedBy === playerName) return false;
   // Stepped in poop! Wipe the node immediately — only first victim
   delete app.state.poopedNodes[nodeId];
-  const victim = getPlayerByChar(playerName)||app.state.players?.[playerName];
+  const victim = getPlayerByChar(playerName);
   if(victim) victim.skipTurns += 3;
   if(playerName === getViewHero()) {
     showPoopTrapModal();
@@ -2712,8 +2719,8 @@ function showPoopTrapModal() {
 
 // ── ZOOMIES activation ────────────────────────────────────────────────────
 function maybeActivateZoom(playerName) {
-  const player = app.state.players[playerName];
-  if(!player.inventory || !player.inventory.includes("zoom")) return Promise.resolve(false);
+  const player = getPlayerByChar(playerName);
+  if(!player || !player.inventory || !player.inventory.includes("zoom")) return Promise.resolve(false);
   if(playerName !== getViewHero()) {
     // Opponent used zoom — consume silently
     const idx = player.inventory.indexOf("zoom");
@@ -2839,7 +2846,7 @@ function gameIsRunning() {
 }
 
 function renderAll(){
-  if(!app.svg || !app.rulesData || !app.state?.routes) return; // SVG not ready
+  if(!app.svg || !app.rulesData || !app.state || !app.state.routes) return; // not ready
   renderTurnBadge(); renderCounts(); renderSelectedRouteCard(); renderActiveHand();
   renderPlayerSummary(); renderDestinationSequences(); renderRoutes(); renderTokens();
   renderTargetPulse(); renderDebug(app.audit); renderButtons(); renderMobileRoutesPanel();
@@ -2940,7 +2947,8 @@ async function confirmRouteModalPlay(){
   if(!app.modal.routeId||app.modal.selectedOptionIndex===null) return;
   const routeId=app.modal.routeId, pay=app.modal.options[app.modal.selectedOptionIndex];
   const pn=app.state.currentPlayer;
-  const player=getPlayerByChar(pn)||app.state.players[pn];
+  const player=getPlayerByChar(pn);
+  if(!player){closeRouteModal();return;}
   const play=getRoutePlayability(routeId);
   if(!play.playable){closeRouteModal();renderAll();return;}
   const {nextHand,spent}=removeSpecificCardsFromHand(player.hand,pay.colourChoice,pay.useColourCount,pay.useRainbowCount);
@@ -3038,22 +3046,17 @@ function buildEndScreenOverlay(){
   o.innerHTML=`<div class="end-screen-loop"><div class="end-screen-wipe end-screen-wipe-a"></div><div class="end-screen-wipe end-screen-wipe-b"></div><div class="end-screen-wipe end-screen-wipe-c"></div><div class="end-screen-noise"></div></div><div class="end-screen-inner"><div class="end-screen-kicker">Didcot Dogs</div><div id="end-screen-headline" class="end-screen-headline">YOU WIN!</div><div id="end-screen-sub" class="end-screen-sub"></div><div id="end-screen-portrait" class="end-screen-portrait-wrap"></div><button id="end-screen-play-again" class="action-btn primary end-screen-btn" type="button">Play again</button></div>`;
   document.getElementById("game-shell").appendChild(o);
   document.getElementById("end-screen-play-again").addEventListener("click",()=>{
-    hideEndScreen(); sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
-    app.roomCode=null; app.localHero=null;
-    app.state=createInitialLocalState(app.rulesData);
-    closeRouteModal(); closeDestinationReveal(); closeMobileSheet(); resetBoardView(); renderAll();
-    document.getElementById("hero-overlay").classList.add("active");
-    ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
-    const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
-    showScreen("room-screen"); wireRoomButtons();
+    hideEndScreen();
+    doReturnToMenu();
   });
 }
 function showEndScreen(winnerName){
   buildEndScreenOverlay();
   const o=document.getElementById("end-screen-overlay"), mine=winnerName===app.localHero;
   document.getElementById("end-screen-headline").textContent=mine?"YOU WIN!":"YOU LOSE!";
-  document.getElementById("end-screen-sub").textContent=mine?`${winnerName} completed all five. Legendary.`:`${winnerName} beat you to it.`;
-  document.getElementById("end-screen-portrait").innerHTML=`<img src="${PLAYER_CONFIG[winnerName].image}" alt="${winnerName}" class="end-screen-portrait">`;
+  const jt = getJourneyTarget();
+  document.getElementById("end-screen-sub").textContent=mine?`${winnerName} completed all ${jt}. Legendary.`:`${winnerName} beat you to it.`;
+  document.getElementById("end-screen-portrait").innerHTML=`<img src="${getPlayerConfig(winnerName).image}" alt="${winnerName}" class="end-screen-portrait">`;
   o.className=`end-screen-overlay active ${mine?"end-win":"end-lose"}`;
 }
 function hideEndScreen(){const o=document.getElementById("end-screen-overlay");if(o)o.className="end-screen-overlay";}
@@ -3140,15 +3143,16 @@ async function drawCardForCurrentPlayer(){
 
 // ─── Route interactions ───────────────────────────────────────────────────────
 function handleRouteHover(routeId){
+  if(!app.state?.routes?.[routeId]) return;
   const play=getRoutePlayability(routeId), rc=getDisplayRouteColor(app.state.routes[routeId].colour), cost=app.rulesData.routes[routeId].length;
   updateStatus(play.playable?`${formatRouteName(routeId)} · ${rc} · cost ${cost} · eligible`:`${formatRouteName(routeId)} · ${rc} · cost ${cost} · ${play.reason}`);
 }
 function wireRouteInteractions(){
   Object.keys(app.rulesData.routes||{}).forEach(routeId=>{
     const el=app.svg.querySelector(`#${CSS.escape(routeId)}`);if(!el) return;
-    el.addEventListener("mouseenter",()=>handleRouteHover(routeId));
-    el.addEventListener("mouseleave",()=>updateStatus("Choose one action: draw a card or click a route to play it."));
-    el.addEventListener("click",()=>handleRouteSelection(routeId));
+    el.addEventListener("mouseenter",()=>{ if(gameIsRunning()) handleRouteHover(routeId); });
+    el.addEventListener("mouseleave",()=>{ if(gameIsRunning()) updateStatus("Choose one action: draw a card or click a route to play it."); });
+    el.addEventListener("click",()=>{ if(gameIsRunning()) handleRouteSelection(routeId); });
   });
 }
 
@@ -3174,13 +3178,7 @@ function wireControlButtons(){
   document.getElementById("menu-btn")?.addEventListener("click",returnToMenu);
   document.getElementById("mobile-menu-btn")?.addEventListener("click",returnToMenu);
   document.getElementById("reset-local-btn")?.addEventListener("click",()=>{
-    cancelAutoSim();
-    sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero");
-    app.roomCode=null; app.localHero=null;
-    app.state=createInitialLocalState(app.rulesData);
-    closeRouteModal(); closeDestinationReveal(); closeMobileSheet(); resetBoardView(); renderAll();
-    updateStatus("Game reset.");
-    showScreen("room-screen"); wireRoomButtons();
+    doReturnToMenu();
   });
 
   document.getElementById("mobile-open-sheet-btn")?.addEventListener("click",drawCardForCurrentPlayer);
@@ -3265,7 +3263,9 @@ async function init(){
 
     app.rulesData=rulesData; app.destinationData=destinationData; app.svg=svg;
     app.audit=getSvgAudit(svg,rulesData);
-    app.state=createInitialLocalState(rulesData);
+    // Don't create a full game state at startup — leave null so gameIsRunning()=false
+    // A real state is created only when a game is actually created or joined
+    app.state=null;
 
     wireRouteInteractions(); wireControlButtons(); setupMobileBoardGestures();
     resetBoardView();
