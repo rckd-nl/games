@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.16.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.16.1");
 
-const APP_VERSION = "v2.16.0";
+const APP_VERSION = "v2.16.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1891,14 +1891,16 @@ async function loadMysteryEvents() {
 
 function _defaultMysteryEvents() {
   return [
-    { id:"oh_whups",      title:"OH WHUPS",        body:"Oopadays. You've lost half your cards.",                                           emoji:"😬" },
-    { id:"nowhere_to_poo",title:"NOWHERE TO POO",  body:"Can't seem to find the right spot… just gonna look around for 3 turns.",          emoji:"🔍" },
-    { id:"just_sniffin",  title:"JUST SNIFFIN'",  body:"Slow progress. Routes require an extra card.",                                      emoji:"👃" },
-    { id:"gimme_gimme",   title:"GIMME GIMME",     body:"Nabbed! Take 3 of your opponent's cards and run away.",                           emoji:"🐾" },
-    { id:"bright_brown",  title:"BRIGHT BROWN",    body:"Choose a colour. Opponent will give you all cards of that colour.",                 emoji:"💩" },
-    { id:"zoomies",       title:"ZOOMIES",         body:"Zoom zoom zoom. Next time you move, make a second move for free.",                  emoji:"⚡" },
-    { id:"poop",          title:"POOP",            body:"Drop a log, slow down your opponent!",                                             emoji:"💩" },
-    { id:"hitch_a_lift",  title:"HITCH A LIFT",    body:"Dad's here to give a ride! Travel immediately to the next destination.",          emoji:"🚗" },
+    { id:"oh_whups",        title:"OH WHUPS",          body:"Oopadays. You've lost half your cards.",                                           emoji:"😬" },
+    { id:"nowhere_to_poo",  title:"NOWHERE TO POO",    body:"Can't seem to find the right spot… just gonna look around for 3 turns.",          emoji:"🔍" },
+    { id:"just_sniffin",    title:"JUST SNIFFIN'",     body:"Slow progress. Routes require an extra card.",                                     emoji:"👃" },
+    { id:"gimme_gimme",     title:"GIMME GIMME",       body:"Nabbed! Take 3 of your opponent's cards and run away.",                           emoji:"🐾" },
+    { id:"bright_brown",    title:"BRIGHT BROWN",      body:"Choose a colour. Opponent will give you all cards of that colour.",                emoji:"💩" },
+    { id:"zoomies",         title:"ZOOMIES",           body:"Zoom zoom zoom. Next time you move, make a second move for free.",                 emoji:"⚡" },
+    { id:"poop",            title:"POOP",              body:"Drop a log, slow down your opponent!",                                            emoji:"💩" },
+    { id:"hitch_a_lift",    title:"HITCH A LIFT",      body:"Dad's here to give a ride! Travel immediately to the next destination.",          emoji:"🚗" },
+    { id:"rainbow_warrior", title:"RAINBOW WARRIOR",   body:"All rainbows are mine!",                                                          emoji:"🌈" },
+    { id:"bin_dipper",      title:"BIN DIPPER",        body:"Have a rummage around and pick five tasty treats.",                               emoji:"🗑️" },
   ];
 }
 
