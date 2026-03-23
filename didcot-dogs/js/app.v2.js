@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.14.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.14.1");
 
-const APP_VERSION = "v2.14.0";
+const APP_VERSION = "v2.14.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -541,9 +541,11 @@ function createInitialLocalState(rulesData, journeyTarget=null, playerCount=2, m
 // Returns the number of destinations required to win — from game state (set at creation)
 // Falls back to rulesData.winCondition.targetJourneysBeforeReturn then to 5.
 function getJourneyTarget() {
-  return app.state?.journeyTarget
-    || app.rulesData?.winCondition?.targetJourneysBeforeReturn
-    || 5;
+  // Set by host at game creation, stored in state.journeyTarget.
+  // Fallback: 3, or max available if pool is very small.
+  if(app.state?.journeyTarget) return app.state.journeyTarget;
+  const pool = app.rulesData?.destinationPool || [];
+  return Math.min(3, Math.floor(pool.length / 2)) || 1;
 }
 
 function getCurrentTargetForPlayer(playerOrName) {
@@ -831,7 +833,7 @@ function updateRoomHud(){
 function showJourneyPicker(onConfirm) {
   const pool = app.rulesData.destinationPool || [];
   const maxJ = Math.floor(pool.length / 2);
-  const defaultJ = app.rulesData.winCondition?.targetJourneysBeforeReturn || Math.min(5, maxJ);
+  const defaultJ = Math.min(3, maxJ);
 
   let overlay = document.getElementById("journey-picker-overlay");
   if (!overlay) {
@@ -919,6 +921,7 @@ function hideLobby() {
 
 // ── CREATE FLOW ──────────────────────────────────────────────────────────────
 function showCreateLobby() {
+  const finalDestKey = app.rulesData.winCondition?.finalDestination || "Didcot";
   const pool = app.rulesData.destinationPool || [];
   const maxJ = Math.floor(pool.length / 2);
   const nonDestNodes = (app.rulesData.nodes||[]).filter(n =>
@@ -2790,9 +2793,13 @@ async function init(){
   try {
     // Single source of truth — all game data lives in this JSON.
     // Edit didcot-dogs-game.v1.json to change route lengths, destinations, deck etc.
-    const gameData = await loadJson("./data/didcot-dogs-game.v1.json?v=4");
-    const rulesData = gameData;           // routes, nodes, deck, win condition etc.
-    const destinationData = { destinations: gameData.destinations }; // keep same shape
+    const gameData = await loadJson("./data/didcot-dogs-game.v1.json?v=5");
+    // Infer destinationPool from destinations keys, excluding the final return node
+    const finalDest = gameData.winCondition?.finalDestination || "Didcot";
+    gameData.destinationPool = Object.keys(gameData.destinations || {})
+      .filter(k => k !== finalDest);
+    const rulesData = gameData;
+    const destinationData = { destinations: gameData.destinations };
 
     const svg=await injectBoardSvg();
     ensureSvgDefs(svg); startClaimGradientAnimation(svg);
