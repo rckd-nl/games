@@ -1,11 +1,7 @@
 {
-  "version": "v1.4",
+  "version": "v1.5",
   "game": "didcot-dogs",
   "startNode": "Didcot",
-  "characters": [
-    "Eric",
-    "Tango"
-  ],
   "routeColours": [
     "red",
     "orange",
@@ -29,24 +25,11 @@
     "rainbowCount": 12
   },
   "winCondition": {
-    "targetJourneysBeforeReturn": 5,
     "finalDestination": "Didcot"
   },
   "svgNodeIdAliases": {
     "Clifton_Hampden1": "Clifton_Hampden"
   },
-  "destinationPool": [
-    "Chilton",
-    "Abingdon",
-    "Clifton_Hampden",
-    "Dorchester",
-    "Blewbury",
-    "Wittenham_Clumps",
-    "Wallingford",
-    "East_Hagbourne",
-    "Brightwell-cum-Sotwell",
-    "Milton_Interchange"
-  ],
   "nodes": [
     "Steventon",
     "Drayton",
