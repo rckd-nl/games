@@ -2459,3 +2459,85 @@ html, body {
   .mystery-modal-emoji { font-size: 40px; }
   .mystery-modal-body  { font-size: 15px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2.13.0  JOURNEY PICKER MODAL
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.journey-picker-modal {
+  max-width: 520px;
+}
+
+.journey-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin: 4px 0 8px;
+}
+
+.journey-picker-btn {
+  appearance: none;
+  width: 72px;
+  height: 80px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+
+.journey-picker-btn:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.journey-picker-btn:active {
+  transform: scale(0.95);
+}
+
+.journey-picker-btn.active {
+  border-color: rgba(255,230,0,0.7);
+  background: rgba(255,230,0,0.14);
+  box-shadow: 0 0 0 1px rgba(255,230,0,0.2);
+}
+
+.journey-picker-num {
+  font-family: var(--header-font);
+  font-size: 32px;
+  line-height: 1;
+  color: #fff;
+}
+
+.journey-picker-btn.active .journey-picker-num {
+  color: #ffe600;
+}
+
+.journey-picker-lbl {
+  font-family: var(--ui-font);
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.journey-picker-summary {
+  text-align: center;
+  font-family: var(--ui-font);
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+  padding: 4px 0 2px;
+}
+
+@media (max-width: 767px) {
+  .journey-picker-btn {
+    width: 60px;
+    height: 68px;
+  }
+  .journey-picker-num { font-size: 26px; }
+}
