@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.18.2");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.19.0");
 
-const APP_VERSION = "v2.18.2";
+const APP_VERSION = "v2.19.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -714,8 +714,9 @@ function endTurn() {
     if(app.roomCode) fbPushState(app.roomCode, app.state).then(()=>updateRoomHud());
     // Show skip modal if this player is local viewer, or a brief toast for others
     if(next === getViewHero()){
-      const msgs = nextPlayer.skipMessages || ["Maybe here? 🤔","Or perhaps here? 🧐","Or I could go here? 🚶"];
-      const msgIdx = Math.max(0, 3 - skipsLeft); // 0,1,2 as turns tick down
+      // Consistent messages regardless of Firebase sync — keyed by turns remaining
+      const msgs = ["Maybe here? 🤔","Or perhaps here? 🧐","Or I could go here? 🚶"];
+      const msgIdx = Math.min(msgs.length-1, Math.max(0, 3 - skipsLeft));
       showNowhereToPoModal(msgs[msgIdx] || msgs[0], ()=>{ setTimeout(endTurn, 200); });
     } else {
       showMobileToast(`${next} is looking for a spot… (${skipsLeft} turn${skipsLeft!==1?"s":""} skipped)`);
@@ -1095,7 +1096,8 @@ function showCreateLobby() {
             if(joined >= remoteState.playerCount && remoteState.phase !== "playing" && !carouselStarted) {
               carouselStarted = true;
               startCarousel(code, sel.character);
-            } else {
+            } else if(!carouselStarted) {
+              // Only update waiting screen if carousel hasn't started yet
               updateWaitingLobby(code, sel.character, remoteState);
             }
           });
@@ -1112,14 +1114,16 @@ function showCreateLobby() {
 
 // ── WAITING LOBBY ────────────────────────────────────────────────────────────
 function showWaitingLobby(code, myCharacter, playerCount) {
-  const state = app.state;
-  updateWaitingLobby(code, myCharacter, state);
+  // Always use app.state — it should be current by the time this is called
+  updateWaitingLobby(code, myCharacter, app.state || {playerCount, characterSelections:{}});
 }
 
 function updateWaitingLobby(code, myCharacter, state) {
   const joined = Object.keys(state.characterSelections||{}).length;
-  const total = state.playerCount;
-  const entries = Object.entries(state.characterSelections||{});
+  const total = state.playerCount || 2;
+  // Sort by joinOrder so slots always appear in correct sequence regardless of Firebase key order
+  const entries = Object.entries(state.characterSelections||{})
+    .sort((a,b) => (a[1].joinOrder||0) - (b[1].joinOrder||0));
 
   showLobby(`
     <div class="lobby-inner">
@@ -1164,19 +1168,7 @@ function updateWaitingLobby(code, myCharacter, state) {
     </div>`);
 
   document.getElementById("waiting-back-btn").onclick = () => {
-    hideLobby();
-    // Full reset to clean room screen state
-    app.roomCode=null; app.localHero=null;
-    sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero"); sessionStorage.removeItem("dd_colour");
-    // Reset state to initial so board renders correctly
-    if(app.rulesData) app.state=createInitialLocalState(app.rulesData);
-    ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
-    const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
-    hideEndScreen();
-    if(app.svg) { closeRouteModal(); renderAll(); }
-    showScreen("room-screen");
-    startFallingDogs();
-    wireRoomButtons();
+    doReturnToMenu();
   };
 }
 
@@ -1317,17 +1309,23 @@ function showJoinLobby(code, remoteState) {
     }
   }
   // Subscribe to live updates so taken chars grey out in real time
-  fbSubscribeRoom(code, liveState => {
+  // Capture unsubscribe so we can cancel it after the player confirms
+  let greyoutUnsubscribe = null;
+  let confirmed = false;
+  greyoutUnsubscribe = _firebaseOnValue(dbRef(`rooms/${code}/state`), snap => {
+    if(confirmed) return; // stop processing after confirm
+    const liveState = snap.exists() ? snap.val() : null;
     if(!liveState) return;
     const nowTaken = Object.keys(liveState.characterSelections||{});
     const nowTakenColours = Object.values(liveState.characterSelections||{}).map(v=>v.colour);
-    // If our selection got taken, clear it
     if(sel.character && nowTaken.includes(sel.character)) { sel.character=null; }
     if(sel.colour && nowTakenColours.includes(sel.colour)) { sel.colour=null; }
-    // Update remote state and re-render
     Object.assign(remoteState, liveState);
     render();
   });
+
+  // Patch render() to pass unsubscribe handle into confirm onclick
+  // We already set confirmed=true in the confirm flow below
   render();
 }
 
@@ -1353,16 +1351,21 @@ function startCarousel(code, myCharacter) {
     function pollForOrder() {
       _firebaseGet(dbRef(`rooms/${code}/state`)).then(snap => {
         const s = snap.val();
-        if(s?.playerOrder && s.playerOrder.length) {
-          const order = Array.isArray(s.playerOrder)
-            ? s.playerOrder
-            : Object.keys(s.playerOrder).sort((a,b)=>+a-+b).map(k=>s.playerOrder[k]);
+        // Firebase may return array as numeric-keyed object — normalise
+        const rawOrder = s?.playerOrder;
+        const order = rawOrder
+          ? (Array.isArray(rawOrder)
+              ? rawOrder
+              : Object.keys(rawOrder).sort((a,b)=>+a-+b).map(k=>rawOrder[k]))
+          : null;
+        if(order && order.length) {
           app.state = { ...restoreArrays({...s}), controlledHero: myCharacter };
           runCarousel(code, myCharacter, order);
         } else if(waited++ < maxWait) {
           setTimeout(pollForOrder, 300);
         } else {
-          // Fallback: use own shuffle
+          // Fallback: use own shuffle after timeout
+          console.warn("[DD] playerOrder not found after polling, using local shuffle");
           runCarousel(code, myCharacter, shuffle([...players]));
         }
       });
@@ -1546,6 +1549,8 @@ function restoreArrays(state) {
       if(p.skipTurns===undefined) p.skipTurns=0;
       if(p.routeCostBonus===undefined) p.routeCostBonus=0;
       if(p.pendingZoom===undefined) p.pendingZoom=false;
+      // Remove skipMessages — computed fresh, never stored in Firebase
+      delete p.skipMessages;
     });
   }
   return state;
@@ -1649,7 +1654,7 @@ function doReturnToMenu() {
   // Hide lobby/carousel overlays
   ["mystery-modal-overlay","journey-picker-overlay","lobby-overlay","carousel-overlay"].forEach(id=>{
     const el=document.getElementById(id);
-    if(el) el.classList.remove("open");
+    if(el) { el.classList.remove("open"); el.innerHTML=""; }
   });
 
   const di=document.getElementById("desktop-identity");
@@ -1731,7 +1736,7 @@ function _legacyReturnToMenu(){
   // Clear any dynamic character picker overlays
   ["mystery-modal-overlay","journey-picker-overlay","lobby-overlay","carousel-overlay"].forEach(id=>{
     const el=document.getElementById(id);
-    if(el) el.classList.remove("open");
+    if(el) { el.classList.remove("open"); el.innerHTML=""; }
   });
 
   const di=document.getElementById("desktop-identity");
@@ -2569,13 +2574,8 @@ function applyMysteryEffect(eventId, playerName) {
   switch(eventId) {
     case "nowhere_to_poo":
       player.skipTurns += 3;
+      // skipMessages computed from skipTurns in endTurn — no need to store
       updateStatus("Nowhere to Poo! Skipping 3 turns.", TOAST_NOTABLE);
-      // Store messages for the skip turn modal
-      player.skipMessages = [
-        "Maybe here? 🤔",
-        "Or perhaps here? 🧐",
-        "Or I could go here? 🚶"
-      ];
       break;
 
     case "just_sniffin":
