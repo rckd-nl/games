@@ -2,7 +2,19 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
- * v2.21.2
+ * v2.22.0
+ *   - FIXED: getRoutePlayability returned undefined instead of a playability
+ *     object when player was null (dead guard on line 2). confirmRouteModalPlay
+ *     then threw on play.playable, leaving actionInProgress=true permanently
+ *     and locking the modal. All subsequent route attempts also failed silently.
+ *   - FIXED: confirmRouteModalPlay now guards against undefined play result.
+ *   - ADDED: Draw-2-pick-1 mechanic. drawCardForCurrentPlayer now draws two
+ *     cards and renders an inline choice UI in the left panel — does not
+ *     obscure the board. Player picks one; other goes to discard. If only one
+ *     card is available it is auto-taken with no prompt.
+ *   - UPDATED: Draw button enlarged to two-line DRAW/CARDS format.
+ *
+
  *   - FIXED: launchGameFromLobby double-launch guard replaced DOM style check
  *     with dedicated _gameAlreadyLaunched boolean flag.
  *   - FIXED: _countdownActive and _gameAlreadyLaunched not reset on
@@ -71,9 +83,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.21.2");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.22.0");
 
-const APP_VERSION = "v2.21.2";
+const APP_VERSION = "v2.22.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -726,8 +738,7 @@ function getPaymentOptionsForColor(routeId,playerName,chosenColor=null) {
 function getRoutePlayability(routeId) {
   const pn=app.state.currentPlayer;
   const player=getPlayerByChar(pn);
-  if(!player){console.warn("[DD] No player for",pn);return;}
-  if(!player) return {playable:false,reason:"Waiting for game to start."};
+  if(!player){console.warn("[DD] No player for",pn);return {playable:false,reason:"Waiting for game to start."};}
   const rs=app.state.routes[routeId];
   const cn=getConnectedNode(routeId,player.currentNode);
   if(!cn) return {playable:false,reason:"Route does not connect to current node."};
@@ -1995,8 +2006,10 @@ function renderButtons(){
   if(!b) return;
   const running=gameIsRunning();
   const mine=running&&isMyTurn();
-  b.disabled=!mine;
-  b.textContent=mine?"Draw card":(running?"Waaaaiit…":"—");
+  b.disabled=!mine||app.actionInProgress;
+  b.innerHTML=mine
+    ? `<span class="draw-btn-line1">DRAW</span><span class="draw-btn-line2">CARDS</span>`
+    : `<span class="draw-btn-line1">${running?"WAIT":"—"}</span>`;
   b.classList.toggle("btn-waiting",running&&!mine);
 }
 
@@ -2867,7 +2880,7 @@ async function confirmRouteModalPlay(){
   const player=getPlayerByChar(pn);
   if(!player){app.actionInProgress=false;closeRouteModal();return;}
   const play=getRoutePlayability(routeId);
-  if(!play.playable){app.actionInProgress=false;closeRouteModal();renderAll();return;}
+  if(!play||!play.playable){app.actionInProgress=false;closeRouteModal();renderAll();return;}
   const {nextHand,spent}=removeSpecificCardsFromHand(player.hand,pay.colourChoice,pay.useColourCount,pay.useRainbowCount);
   player.hand=nextHand; app.state.discardPile.push(...spent);
   const from=player.currentNode, to=getConnectedNode(routeId,from);
@@ -3045,18 +3058,97 @@ function triggerCardGlow(colour){
   peek.querySelectorAll(`.mobile-hand-peek-card.${colour}`).forEach(c=>{c.style.setProperty("--glow-colour",GLOW_COLOURS[colour]||"rgba(255,255,255,0.7)");c.classList.add("card-glow-steady");});
 }
 
-// ─── Draw card action ─────────────────────────────────────────────────────────
-async function drawCardForCurrentPlayer(){
+// ─── Draw card action — draw 2, pick 1, other goes to discard ────────────────
+//
+// The choice UI renders inline in the left panel (desktop) or mobile sheet,
+// so it never obscures the board. actionInProgress stays true until the
+// player picks — preventing any other action during selection.
+//
+function drawCardForCurrentPlayer(){
   if(!isMyTurn() || app.actionInProgress) return;
+  const pn = app.state.currentPlayer;
+  const player = getPlayerByChar(pn);
+  if(!player){ console.warn("[DD] Draw: no player for", pn); return; }
+
+  // Draw two cards from the deck
+  const cardA = drawCard();
+  const cardB = drawCard();
+
+  if(!cardA && !cardB){
+    updateStatus("No cards left in deck or discard.", TOAST_NOTABLE);
+    return;
+  }
+
+  // If only one card available, auto-take it — no choice needed
+  if(!cardB){
+    app.actionInProgress = true;
+    player.hand.push(cardA); player.lastDrawColor = cardA;
+    closeMobileSheet(); renderAll();
+    requestAnimationFrame(() => triggerCardGlow(cardA));
+    app.actionInProgress = false;
+    endTurn();
+    return;
+  }
+
+  // Two cards available — show pick UI, lock actions until chosen
   app.actionInProgress = true;
-  const pn=app.state.currentPlayer, card=drawCard();
-  if(!card){updateStatus("No cards available.");renderAll();return;}
-  const player=getPlayerByChar(pn);
-  if(!player){console.warn("[DD] Draw: no player for",pn);return;}
-  await animateCardDraw(card);
-  player.hand.push(card); player.lastDrawColor=card;
-  closeMobileSheet(); renderAll();
-  requestAnimationFrame(()=>triggerCardGlow(card));
+  renderCardDrawChoice(pn, player, cardA, cardB);
+}
+
+function renderCardDrawChoice(pn, player, cardA, cardB) {
+  // Render inline in the left panel draw section — does not obscure the board
+  const section = document.querySelector("#left-panel .panel-section:has(#draw-card-btn)") ||
+                  document.getElementById("draw-card-btn")?.parentElement;
+  if(!section){ _resolveCardChoice(pn, player, cardA, cardB, cardA); return; }
+
+  const gradMap = {
+    red:"#f3a3a3,#d74b4b", orange:"#f2bf95,#db7f2f", blue:"#8ab5ff,#2f6edb",
+    green:"#72c78e,#1e8b4c", black:"#5b5b5b,#1d1d1d", pink:"#ef9cc3,#c64f8e",
+    yellow:"#f0dd67,#d6b300",
+    rainbow:"#f3a3a3 0%,#f0dd67 25%,#72c78e 50%,#8ab5ff 75%,#ef9cc3 100%"
+  };
+
+  function cardBg(c) {
+    const g = gradMap[c] || "gray,gray";
+    return c === "rainbow"
+      ? `linear-gradient(135deg,${g})`
+      : `linear-gradient(180deg,${g})`;
+  }
+  function cardFg(c) { return c === "yellow" ? "#222" : "#fff"; }
+
+  section.innerHTML = `
+    <div class="draw-choice-wrap">
+      <div class="draw-choice-label">Pick one card</div>
+      <div class="draw-choice-cards">
+        <button type="button" class="draw-choice-card" id="draw-pick-a"
+          style="background:${cardBg(cardA)};color:${cardFg(cardA)}">
+          <span class="draw-choice-card-name">${cardA}</span>
+        </button>
+        <button type="button" class="draw-choice-card" id="draw-pick-b"
+          style="background:${cardBg(cardB)};color:${cardFg(cardB)}">
+          <span class="draw-choice-card-name">${cardB}</span>
+        </button>
+      </div>
+      <div class="draw-choice-sub">The other goes to discard</div>
+    </div>`;
+
+  document.getElementById("draw-pick-a").onclick = () =>
+    _resolveCardChoice(pn, player, cardA, cardB, cardA);
+  document.getElementById("draw-pick-b").onclick = () =>
+    _resolveCardChoice(pn, player, cardA, cardB, cardB);
+}
+
+async function _resolveCardChoice(pn, player, cardA, cardB, chosen) {
+  const discarded = chosen === cardA ? cardB : cardA;
+  player.hand.push(chosen);
+  player.lastDrawColor = chosen;
+  app.state.discardPile.push(discarded);
+
+  // Restore the draw button in the panel
+  renderAll();
+  await animateCardDraw(chosen);
+  requestAnimationFrame(() => triggerCardGlow(chosen));
+  closeMobileSheet();
   app.actionInProgress = false;
   endTurn();
 }
