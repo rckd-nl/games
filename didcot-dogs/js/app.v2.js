@@ -2,7 +2,16 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
- * v2.21.1
+ * v2.21.2
+ *   - FIXED: launchGameFromLobby double-launch guard replaced DOM style check
+ *     with dedicated _gameAlreadyLaunched boolean flag.
+ *   - FIXED: _countdownActive and _gameAlreadyLaunched not reset on
+ *     doReturnToMenu — next game's countdown would silently refuse to fire.
+ *   - REMOVED: _legacyReturnToMenu — dead code that called
+ *     createInitialLocalState and would have corrupted app.state if triggered.
+ *   - FIXED: Non-optional hero-overlay DOM access in init() made defensive.
+ *
+
  *   - FIXED: Old duplicate lobby functions (showCreateLobby, showJoinLobby,
  *     showWaitingLobby, updateWaitingLobby, startCarousel, runCarousel,
  *     showCarousel, wireRoomButtons) left behind from v2.21.0 rewrite were
@@ -62,9 +71,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.21.1");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.21.2");
 
-const APP_VERSION = "v2.21.1";
+const APP_VERSION = "v2.21.2";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1382,9 +1391,11 @@ function renderCountdownScreen(code, myCharacter, state) {
 }
 
 // ── LAUNCH — transition from lobby into the game ──────────────────────────
+let _gameAlreadyLaunched = false;
 function launchGameFromLobby(code, myCharacter, state) {
-  // Guard: only launch once
-  if(app.state?.phase === "playing" && document.getElementById("board-wrap")?.style.display !== "none") return;
+  // Guard: subscriber fires on every state change — only launch once
+  if(_gameAlreadyLaunched) return;
+  _gameAlreadyLaunched = true;
 
   // If phase isn't playing yet, write it (creator only, idempotent)
   if(state.phase !== "playing" && state.createdBy === myCharacter) {
@@ -1571,6 +1582,8 @@ function doReturnToMenu() {
   app.localHero = null;
   app.roomCode = null;
   app.actionInProgress = false;
+  _countdownActive = false;
+  _gameAlreadyLaunched = false;
   if(_activeGameUnsubscribe) { _activeGameUnsubscribe(); _activeGameUnsubscribe = null; }
 
   ["mobile-hud","mobile-bottom-bar"].forEach(id=>{
@@ -1656,39 +1669,6 @@ function returnToMenu(){
   showQuitConfirmation();
 }
 
-function _legacyReturnToMenu(){
-  sessionStorage.removeItem("dd_room_code"); sessionStorage.removeItem("dd_hero"); sessionStorage.removeItem("dd_colour");
-  app.roomCode=null; app.localHero=null;
-  cancelAutoSim(); closeRouteModal(); closeDestinationReveal(); closeMobileSheet();
-  app.state=createInitialLocalState(app.rulesData);
-
-  ["mobile-hud","mobile-bottom-bar"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("visible");});
-  const sh=document.getElementById("mobile-sheet");if(sh)sh.classList.remove("visible-shell","expanded");
-  ["waiting-screen","resuming-screen"].forEach(hideScreen);
-  hideEndScreen();
-
-  document.getElementById("hero-overlay").classList.remove("active");
-
-  // Clear any dynamic character picker overlays
-  ["mystery-modal-overlay","journey-picker-overlay","lobby-overlay","carousel-overlay"].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) { el.classList.remove("open"); el.innerHTML=""; }
-  });
-
-  const di=document.getElementById("desktop-identity");
-  if(di) di.innerHTML="";
-  const ti=document.getElementById("desktop-turn-indicator");
-  if(ti) ti.textContent="";
-  const rhud=document.getElementById("room-hud");
-  if(rhud) rhud.style.display="none";
-
-  resetBoardView();
-  // Don't renderAll here — state has no characterSelections yet so board renders blank.
-  // Just show the room screen and re-init falling dogs.
-  showScreen("room-screen");
-  startFallingDogs();
-  wireRoomButtons();
-}
 
 // ─── Portrait harsh wobble ────────────────────────────────────────────────────
 let __wobbleTimer = null;
@@ -3181,7 +3161,7 @@ async function init(){
   // Load mystery events from JSON (falls back to built-in if missing)
   await loadMysteryEvents();
 
-  document.getElementById("hero-overlay").classList.remove("active");
+  document.getElementById("hero-overlay")?.classList.remove("active");
   showScreen("room-screen");
   wireRoomButtons();
   startFallingDogs();
