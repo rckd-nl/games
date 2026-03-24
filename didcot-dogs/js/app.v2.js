@@ -2,7 +2,22 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
- * v2.20.1
+ * v2.21.0
+ *   - REWRITE: Entire lobby/join/carousel/launch system replaced with a clean
+ *     phase-driven flow. Eliminates all race conditions and polling.
+ *     Phase flow: waiting → ready → countdown → playing.
+ *     One fbSubscribeRoomExclusive listener per client drives all transitions.
+ *     No separate greyout subscriber. No polling for playerOrder. No timing
+ *     races between creator and joiner. Creator writes phase advances only.
+ *     Joiner writes only their own characterSelections + players slice, then
+ *     hands off entirely to the subscriber.
+ *   - ADDED: phase "ready" — room full, host sees Start button, others wait.
+ *   - ADDED: phase "countdown" — 3→2→1 fires simultaneously on all clients.
+ *   - REMOVED: showJourneyPicker (merged into create lobby).
+ *   - REMOVED: showWaitingLobby, updateWaitingLobby, startCarousel,
+ *     runCarousel, showCarousel (all replaced by phase-driven screens).
+ *
+
  *   - FIXED: Joiner greyout subscriber (`confirmed` flag) was never set to true
  *     after confirm, so it kept firing on every Firebase state change, calling
  *     render() which rebuilt the join lobby HTML — clobbering the waiting screen
@@ -38,9 +53,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.20.1");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.21.0");
 
-const APP_VERSION = "v2.20.1";
+const APP_VERSION = "v2.21.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -874,74 +889,25 @@ function updateRoomHud(){
 }
 
 
-// ─── Journey count picker ──────────────────────────────────────────────────────
-// Shows before hero pick. Creator chooses how many destinations per player.
-// Max = floor(destinationPool.length / 2), min = 1.
-function showJourneyPicker(onConfirm) {
-  const pool = app.rulesData.destinationPool || [];
-  const maxJ = Math.floor(pool.length / 2);
-  const defaultJ = Math.min(3, maxJ);
-
-  let overlay = document.getElementById("journey-picker-overlay");
-  if (!overlay) {
-    overlay = document.createElement("div");
-    overlay.id = "journey-picker-overlay";
-    overlay.className = "mystery-modal-overlay"; // reuse same overlay style
-    document.getElementById("game-shell").appendChild(overlay);
-  }
-
-  // Build option buttons 1..maxJ
-  const options = Array.from({length: maxJ}, (_,i) => i+1);
-  let chosen = defaultJ;
-
-  function render() {
-    overlay.innerHTML = `
-      <div class="mystery-modal journey-picker-modal">
-        <div class="mystery-modal-emoji">🗺️</div>
-        <div class="mystery-modal-title">HOW MANY STOPS?</div>
-        <div class="mystery-modal-body">
-          Choose how many destination cards each player must complete before heading home.
-          The final stop is always Didcot.
-        </div>
-        <div class="journey-picker-grid">
-          ${options.map(n => `
-            <button type="button" class="journey-picker-btn${n===chosen?" active":""}" data-n="${n}">
-              <span class="journey-picker-num">${n}</span>
-              <span class="journey-picker-lbl">${n===1?"stop":"stops"}</span>
-            </button>`).join("")}
-        </div>
-        <div class="journey-picker-summary">
-          ${chosen} destination${chosen===1?"":"s"} + Didcot = ${chosen+1} card${chosen+1===1?"":"s"} total
-        </div>
-        <div class="mystery-modal-actions">
-          <button id="journey-picker-confirm" class="action-btn primary" type="button">Let's go!</button>
-        </div>
-      </div>`;
-
-    overlay.querySelectorAll(".journey-picker-btn").forEach(btn => {
-      btn.onclick = () => {
-        chosen = +btn.dataset.n;
-        render();
-      };
-    });
-
-    document.getElementById("journey-picker-confirm").onclick = () => {
-      overlay.classList.remove("open");
-      onConfirm(chosen);
-    };
-  }
-
-  render();
-  overlay.classList.add("open");
-}
-
 // ─── Room screen ──────────────────────────────────────────────────────────────
 function showScreen(id){ const e=document.getElementById(id); if(e) e.classList.add("active"); }
 function hideScreen(id){ const e=document.getElementById(id); if(e) e.classList.remove("active"); }
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LOBBY SYSTEM — create / join / waiting / carousel
+// LOBBY SYSTEM v3 — phase-driven, no polling, no race conditions
+//
+// Phase flow:
+//   "waiting"   — room open, players joining
+//   "ready"     — room full, host sees Start button, others see waiting
+//   "countdown" — 3→2→1, all clients show simultaneously
+//   "playing"   — game running
+//
+// Rules:
+//   - Every client watches phase via ONE fbSubscribeRoomExclusive listener
+//   - No polling. No greyout subscribers. No carousel timing races.
+//   - Creator writes all state. Joiner writes only their own slice.
+//   - app.state is only set from confirmed Firebase snapshots.
 // ═══════════════════════════════════════════════════════════════════════════
 
 function getLobbyOverlay() {
@@ -964,11 +930,484 @@ function showLobby(html) {
 function hideLobby() {
   const o = document.getElementById("lobby-overlay");
   if(o) { o.classList.remove("open"); o.innerHTML=""; }
-  // Always restore room screen when leaving any lobby state
-  showScreen("room-screen");
-  startFallingDogs();
-  wireRoomButtons();
 }
+
+// ── Contrast helper ───────────────────────────────────────────────────────
+function contrastText(hex) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  const lum = 0.2126*(r/255) + 0.7152*(g/255) + 0.0722*(b/255);
+  return lum > 0.45 ? "#111111" : "#ffffff";
+}
+
+// ── CREATE LOBBY ──────────────────────────────────────────────────────────
+function showCreateLobby() {
+  const pool = app.rulesData.destinationPool || [];
+  const maxJ = Math.floor(pool.length / 2);
+  const nonDestNodes = (app.rulesData.nodes||[]).filter(n =>
+    n !== app.rulesData.startNode && !pool.includes(n)
+  );
+  const maxM = Math.min(nonDestNodes.length, 8);
+  const colourNames = Object.keys(PLAYER_COLOURS);
+  const playerOptions = [2,3,4,5,6];
+  const journeyOptions = Array.from({length: maxJ}, (_,i) => i+1);
+
+  let sel = { character: null, colour: null, playerCount: null, journeyTarget: null, mysteryCount: 3 };
+
+  function render() {
+    const canConfirm = sel.character && sel.colour && sel.playerCount && sel.journeyTarget;
+    showLobby(`
+      <div class="lobby-inner">
+        <div class="lobby-wipe lobby-wipe-a"></div>
+        <div class="lobby-wipe lobby-wipe-b"></div>
+        <div class="lobby-noise"></div>
+        <div class="lobby-content">
+          <div class="lobby-kicker">Didcot Dogs</div>
+          <div class="lobby-title">CREATE GAME</div>
+          <div class="lobby-section">
+            <div class="lobby-section-label">Pick your dog</div>
+            <div class="lobby-char-grid">
+              ${ALL_CHARACTERS.map(c => `
+                <button type="button" class="lobby-char-btn${sel.character===c?" active":""}" data-char="${c}">
+                  <div class="lobby-char-frame"><img src="./assets/${c.toLowerCase()}.png" alt="${c}"></div>
+                  <div class="lobby-char-name">${c}</div>
+                </button>`).join("")}
+            </div>
+          </div>
+          <div class="lobby-section">
+            <div class="lobby-section-label">Pick your colour</div>
+            <div class="lobby-colour-grid">
+              ${colourNames.map(name => {
+                const hex=PLAYER_COLOURS[name], fg=contrastText(hex);
+                return `<button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}" data-colour="${name}" style="background:${hex};color:${fg};border-color:${sel.colour===name?"rgba(255,230,0,0.8)":"transparent"}">${name}</button>`;
+              }).join("")}
+            </div>
+          </div>
+          <div class="lobby-row-pickers">
+            <div class="lobby-section lobby-section-half">
+              <div class="lobby-section-label">Players</div>
+              <div class="lobby-num-grid">
+                ${playerOptions.map(n=>`<button type="button" class="lobby-num-btn${sel.playerCount===n?" active":""}" data-val="${n}">${n}</button>`).join("")}
+              </div>
+            </div>
+            <div class="lobby-section lobby-section-half">
+              <div class="lobby-section-label">Destinations each</div>
+              <div class="lobby-num-grid">
+                ${journeyOptions.map(n=>{
+                  const maxForCount = sel.playerCount ? Math.floor(pool.length / sel.playerCount) : maxJ;
+                  const tooHigh = n > maxForCount;
+                  if(sel.journeyTarget && sel.journeyTarget > maxForCount) sel.journeyTarget = null;
+                  return `<button type="button" class="lobby-num-btn${sel.journeyTarget===n?" active":""}${tooHigh?" greyed":""}" data-val="${n}" ${tooHigh?"disabled":""}>${n}</button>`;
+                }).join("")}
+              </div>
+            </div>
+          </div>
+          <div class="lobby-section">
+            <div class="lobby-section-label">Mystery boxes on board (0–${maxM})</div>
+            <div class="lobby-num-grid">
+              ${Array.from({length:maxM+1},(_,i)=>i).map(n=>`<button type="button" class="lobby-num-btn${sel.mysteryCount===n?" active":""}" data-val="${n}">${n}</button>`).join("")}
+            </div>
+          </div>
+          <div class="lobby-actions">
+            <button id="lobby-back-btn" class="action-btn subtle" type="button">← Menu</button>
+            <button id="lobby-confirm-btn" class="action-btn primary" type="button" ${canConfirm?"":"disabled"}>
+              ${canConfirm?"Create room →":"Select all options"}
+            </button>
+          </div>
+        </div>
+      </div>`);
+
+    document.querySelectorAll(".lobby-char-btn").forEach(btn => {
+      btn.onclick = () => { sel.character = btn.dataset.char; render(); };
+    });
+    document.querySelectorAll(".lobby-colour-btn").forEach(btn => {
+      btn.onclick = () => { sel.colour = btn.dataset.colour; render(); };
+    });
+    const pcGrid = document.querySelectorAll(".lobby-row-pickers .lobby-section-half");
+    if(pcGrid[0]) pcGrid[0].querySelectorAll(".lobby-num-btn").forEach(btn => {
+      btn.onclick = () => { sel.playerCount = +btn.dataset.val; render(); };
+    });
+    if(pcGrid[1]) pcGrid[1].querySelectorAll(".lobby-num-btn").forEach(btn => {
+      btn.onclick = () => { sel.journeyTarget = +btn.dataset.val; render(); };
+    });
+    const allNumGrids = document.querySelectorAll(".lobby-num-grid");
+    if(allNumGrids[allNumGrids.length-1]) {
+      allNumGrids[allNumGrids.length-1].querySelectorAll(".lobby-num-btn").forEach(btn => {
+        btn.onclick = () => { sel.mysteryCount = +btn.dataset.val; render(); };
+      });
+    }
+    document.getElementById("lobby-back-btn").onclick = () => {
+      hideLobby();
+      showScreen("room-screen");
+      startFallingDogs();
+      wireRoomButtons();
+    };
+    const confirmBtn = document.getElementById("lobby-confirm-btn");
+    if(confirmBtn && !confirmBtn.disabled) {
+      confirmBtn.onclick = async () => {
+        confirmBtn.disabled = true; confirmBtn.textContent = "Creating…";
+        try {
+          const state = createInitialLocalState(app.rulesData, sel.journeyTarget, sel.playerCount, sel.mysteryCount);
+          const startNode = app.rulesData.startNode || "Didcot";
+          const N = state.journeyTarget;
+          state.characterSelections[sel.character] = { colour: sel.colour, joinOrder: 0 };
+          state.createdBy = sel.character;
+          state.players[sel.character] = {
+            ...createPlayerState(startNode),
+            destinationQueue: (state.destPool||[]).slice(0, N),
+            joinOrder: 0,
+          };
+          const code = await fbCreateRoom(state, sel.character);
+          app.roomCode = code;
+          app.localHero = sel.character;
+          sessionStorage.setItem("dd_room_code", code);
+          sessionStorage.setItem("dd_hero", sel.character);
+          sessionStorage.setItem("dd_colour", sel.colour);
+          fbStartHeartbeat(code, sel.character);
+          // Single subscriber drives ALL phase transitions from here
+          startLobbySubscriber(code, sel.character);
+        } catch(e) {
+          confirmBtn.disabled = false; confirmBtn.textContent = "Create room →";
+          console.error("[DD] Create failed:", e);
+        }
+      };
+    }
+  }
+  render();
+}
+
+// ── JOIN LOBBY ────────────────────────────────────────────────────────────
+function showJoinLobby(code, remoteState) {
+  const taken = Object.keys(remoteState.characterSelections||{});
+  const takenColours = Object.values(remoteState.characterSelections||{}).map(v=>v.colour);
+  const colourNames = Object.keys(PLAYER_COLOURS);
+  let sel = { character: null, colour: null };
+
+  function render() {
+    const canConfirm = sel.character && sel.colour;
+    showLobby(`
+      <div class="lobby-inner">
+        <div class="lobby-wipe lobby-wipe-a"></div>
+        <div class="lobby-wipe lobby-wipe-b"></div>
+        <div class="lobby-noise"></div>
+        <div class="lobby-content">
+          <div class="lobby-kicker">Didcot Dogs — ${code}</div>
+          <div class="lobby-title">JOIN GAME</div>
+          <div class="lobby-game-info">
+            <span>${remoteState.playerCount} players</span>
+            <span>·</span>
+            <span>${remoteState.journeyTarget} destination${remoteState.journeyTarget===1?"":"s"} each</span>
+          </div>
+          <div class="lobby-section">
+            <div class="lobby-section-label">Pick your dog</div>
+            <div class="lobby-char-grid">
+              ${ALL_CHARACTERS.map(c => {
+                const isTaken = taken.includes(c);
+                return `<button type="button" class="lobby-char-btn${sel.character===c?" active":""}${isTaken?" taken":""}" data-char="${c}" ${isTaken?"disabled":""}>
+                  <div class="lobby-char-frame"><img src="./assets/${c.toLowerCase()}.png" alt="${c}"></div>
+                  <div class="lobby-char-name">${c}${isTaken?" ✓":""}</div>
+                </button>`;
+              }).join("")}
+            </div>
+          </div>
+          <div class="lobby-section">
+            <div class="lobby-section-label">Pick your colour</div>
+            <div class="lobby-colour-grid">
+              ${colourNames.map(name => {
+                const isTaken = takenColours.includes(name);
+                const hex = PLAYER_COLOURS[name], fg = contrastText(hex);
+                return `<button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}${isTaken?" taken":""}" data-colour="${name}" ${isTaken?"disabled":""} style="background:${isTaken?"#1a1a2e":hex};color:${isTaken?"rgba(255,255,255,0.25)":fg};border-color:${sel.colour===name?"rgba(255,230,0,0.8)":"transparent"};${isTaken?"text-decoration:line-through":""}">
+                  ${name}
+                </button>`;
+              }).join("")}
+            </div>
+          </div>
+          <div class="lobby-actions">
+            <button id="lobby-back-btn" class="action-btn subtle" type="button">← Menu</button>
+            <button id="lobby-confirm-btn" class="action-btn primary" type="button" ${canConfirm?"":"disabled"}>
+              ${canConfirm?"Join room →":"Select dog + colour"}
+            </button>
+          </div>
+        </div>
+      </div>`);
+
+    document.querySelectorAll(".lobby-char-btn:not([disabled])").forEach(btn => {
+      btn.onclick = () => { sel.character = btn.dataset.char; render(); };
+    });
+    document.querySelectorAll(".lobby-colour-btn:not([disabled])").forEach(btn => {
+      btn.onclick = () => { sel.colour = btn.dataset.colour; render(); };
+    });
+    document.getElementById("lobby-back-btn").onclick = () => {
+      hideLobby();
+      showScreen("room-screen");
+      startFallingDogs();
+      wireRoomButtons();
+    };
+    const confirmBtn = document.getElementById("lobby-confirm-btn");
+    if(confirmBtn && !confirmBtn.disabled) {
+      confirmBtn.onclick = async () => {
+        confirmBtn.disabled = true; confirmBtn.textContent = "Joining…";
+        try {
+          // Re-fetch to guard against character stolen since render
+          const freshSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
+          const freshState = freshSnap.val();
+          const nowTaken = Object.keys(freshState.characterSelections||{});
+          if(nowTaken.includes(sel.character)) {
+            sel.character = null;
+            const takenColoursNow = Object.values(freshState.characterSelections||{}).map(v=>v.colour);
+            if(takenColoursNow.includes(sel.colour)) sel.colour = null;
+            confirmBtn.disabled = false; confirmBtn.textContent = "Join room →";
+            render();
+            showMobileToast("Oops! That dog was just taken. Pick another.");
+            return;
+          }
+          const joinOrder = nowTaken.length;
+          const N = freshState.journeyTarget || 5;
+          const rawPool = freshState.destPool || [];
+          const pool = Array.isArray(rawPool) ? rawPool
+            : Object.keys(rawPool).sort((a,b)=>+a-+b).map(k=>rawPool[k]);
+          const destQueue = pool.slice(joinOrder * N, (joinOrder + 1) * N);
+          const startNode = app.rulesData?.startNode || "Didcot";
+
+          // Write both entries — await each so they're confirmed before we proceed
+          await _firebaseSet(dbRef(`rooms/${code}/state/characterSelections/${sel.character}`),
+            { colour: sel.colour, joinOrder });
+          await _firebaseSet(dbRef(`rooms/${code}/state/players/${sel.character}`), {
+            ...createPlayerState(startNode),
+            destinationQueue: destQueue,
+            joinOrder,
+          });
+          await fbUpdatePresence(code, sel.character);
+
+          // Set identity — state will arrive via subscriber below
+          app.localHero = sel.character;
+          app.roomCode = code;
+          sessionStorage.setItem("dd_room_code", code);
+          sessionStorage.setItem("dd_hero", sel.character);
+          sessionStorage.setItem("dd_colour", sel.colour);
+          fbStartHeartbeat(code, sel.character);
+          // Single subscriber drives ALL phase transitions from here
+          startLobbySubscriber(code, sel.character);
+        } catch(e) {
+          confirmBtn.disabled = false; confirmBtn.textContent = "Join room →";
+          console.error("[DD] Join failed:", e);
+        }
+      };
+    }
+  }
+  render();
+}
+
+// ── LOBBY SUBSCRIBER — single source of truth for all phase transitions ───
+//
+// Called by both creator and joiner after their writes are confirmed.
+// Watches phase field and drives: waiting → ready → countdown → playing.
+// No polling. No separate greyout subscribers. One listener per client.
+//
+function startLobbySubscriber(code, myCharacter) {
+  console.log("[DD] startLobbySubscriber", code, myCharacter);
+  fbSubscribeRoomExclusive(code, raw => {
+    if(!raw) return;
+    const state = restoreArrays({...raw});
+    // Always keep identity set
+    app.localHero = myCharacter;
+    app.roomCode = code;
+    app.state = { ...state, controlledHero: myCharacter };
+
+    switch(state.phase) {
+      case "waiting":
+        renderWaitingScreen(code, myCharacter, state);
+        break;
+      case "ready":
+        renderReadyScreen(code, myCharacter, state);
+        break;
+      case "countdown":
+        // Only render once — guard with a flag on the overlay
+        renderCountdownScreen(code, myCharacter, state);
+        break;
+      case "playing":
+        launchGameFromLobby(code, myCharacter, state);
+        break;
+    }
+  });
+}
+
+// ── WAITING screen — shown to all until room is full ─────────────────────
+function renderWaitingScreen(code, myCharacter, state) {
+  const joined = Object.keys(state.characterSelections||{}).length;
+  const total = state.playerCount || 2;
+  const entries = Object.entries(state.characterSelections||{})
+    .sort((a,b) => (a[1].joinOrder||0) - (b[1].joinOrder||0));
+
+  showLobby(`
+    <div class="lobby-inner">
+      <div class="lobby-wipe lobby-wipe-a"></div>
+      <div class="lobby-wipe lobby-wipe-b"></div>
+      <div class="lobby-noise"></div>
+      <div class="lobby-content">
+        <div class="lobby-kicker">Didcot Dogs</div>
+        <div class="lobby-title">WAITING…</div>
+        <div class="lobby-waiting-code-wrap">
+          <div class="lobby-waiting-code-label">Share this code</div>
+          <div class="lobby-waiting-code">${code}</div>
+        </div>
+        <div class="lobby-waiting-players">
+          ${Array.from({length:total},(_,i) => {
+            const entry = entries[i];
+            if(entry) {
+              const [char, data] = entry;
+              const col = PLAYER_COLOURS[data.colour]||"#888";
+              const fg = contrastText(col);
+              return `<div class="lobby-waiting-slot lobby-waiting-slot-filled" style="background:${col};border-color:${col}">
+                <img src="./assets/${char.toLowerCase()}.png" alt="${char}" style="width:40px;height:40px;border-radius:50%;border:3px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.9)">
+                <span style="color:${fg};font-weight:700">${char}</span>
+                ${data.joinOrder===0?`<span class="lobby-host-badge" style="color:${fg}">HOST</span>`:""}
+                ${char===myCharacter&&data.joinOrder!==0?`<span class="lobby-host-badge" style="color:${fg}">YOU</span>`:""}
+              </div>`;
+            }
+            return `<div class="lobby-waiting-slot lobby-waiting-slot-empty">
+              <div class="waiting-dots" style="display:flex;gap:4px;justify-content:center">
+                <div class="waiting-dot"></div><div class="waiting-dot"></div><div class="waiting-dot"></div>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+        <div class="lobby-waiting-sub">${joined}/${total} players joined</div>
+        <div style="margin-top:16px">
+          <button id="waiting-back-btn" class="action-btn subtle" type="button">← Back to menu</button>
+        </div>
+      </div>
+    </div>`);
+
+  document.getElementById("waiting-back-btn").onclick = () => doReturnToMenu();
+
+  // Creator advances phase to "ready" once room is full
+  // Only the creator writes — all other clients just watch
+  const isCreator = state.createdBy === myCharacter;
+  if(isCreator && joined >= total) {
+    _firebaseSet(dbRef(`rooms/${code}/state/phase`), "ready");
+  }
+}
+
+// ── READY screen — host sees Start, others see waiting for host ───────────
+function renderReadyScreen(code, myCharacter, state) {
+  const isCreator = state.createdBy === myCharacter;
+  const entries = Object.entries(state.characterSelections||{})
+    .sort((a,b) => (a[1].joinOrder||0) - (b[1].joinOrder||0));
+
+  showLobby(`
+    <div class="lobby-inner">
+      <div class="lobby-wipe lobby-wipe-a"></div>
+      <div class="lobby-wipe lobby-wipe-b"></div>
+      <div class="lobby-noise"></div>
+      <div class="lobby-content">
+        <div class="lobby-kicker">Didcot Dogs</div>
+        <div class="lobby-title">ALL IN!</div>
+        <div class="lobby-waiting-players">
+          ${entries.map(([char, data]) => {
+            const col = PLAYER_COLOURS[data.colour]||"#888";
+            const fg = contrastText(col);
+            return `<div class="lobby-waiting-slot lobby-waiting-slot-filled" style="background:${col};border-color:${col}">
+              <img src="./assets/${char.toLowerCase()}.png" alt="${char}" style="width:40px;height:40px;border-radius:50%;border:3px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.9)">
+              <span style="color:${fg};font-weight:700">${char}</span>
+              ${char===myCharacter?`<span class="lobby-host-badge" style="color:${fg}">YOU</span>`:""}
+            </div>`;
+          }).join("")}
+        </div>
+        <div style="margin-top:24px;text-align:center">
+          ${isCreator
+            ? `<button id="start-game-btn" class="action-btn primary" type="button" style="font-size:20px;padding:16px 40px">Start game →</button>`
+            : `<div class="lobby-waiting-sub">Waiting for host to start…</div>
+               <div class="waiting-dots" style="display:flex;gap:4px;justify-content:center;margin-top:12px">
+                 <div class="waiting-dot"></div><div class="waiting-dot"></div><div class="waiting-dot"></div>
+               </div>`
+          }
+        </div>
+        <div style="margin-top:16px">
+          <button id="waiting-back-btn" class="action-btn subtle" type="button">← Back to menu</button>
+        </div>
+      </div>
+    </div>`);
+
+  document.getElementById("waiting-back-btn").onclick = () => doReturnToMenu();
+  if(isCreator) {
+    document.getElementById("start-game-btn").onclick = async () => {
+      document.getElementById("start-game-btn").disabled = true;
+      // Write turn order and advance to countdown — one atomic-ish sequence
+      const players = Object.keys(state.characterSelections||{});
+      const order = shuffle([...players]);
+      await _firebaseSet(dbRef(`rooms/${code}/state/playerOrder`), order);
+      await _firebaseSet(dbRef(`rooms/${code}/state/currentPlayer`), order[0]);
+      await _firebaseSet(dbRef(`rooms/${code}/state/phase`), "countdown");
+    };
+  }
+}
+
+// ── COUNTDOWN screen — 3→2→1, all clients fire simultaneously ────────────
+let _countdownActive = false;
+function renderCountdownScreen(code, myCharacter, state) {
+  if(_countdownActive) return; // subscriber may fire multiple times — only run once
+  _countdownActive = true;
+
+  showLobby(`
+    <div class="lobby-inner" style="display:flex;align-items:center;justify-content:center;min-height:100vh">
+      <div class="lobby-content" style="text-align:center">
+        <div class="lobby-kicker">Didcot Dogs</div>
+        <div id="countdown-number" style="font-family:var(--header-font);font-size:180px;line-height:1;color:#ffe600;text-shadow:0 0 60px rgba(255,230,0,0.5)">3</div>
+        <div style="font-family:var(--header-font);font-size:22px;opacity:0.5;letter-spacing:0.15em">GET READY</div>
+      </div>
+    </div>`);
+
+  let count = 3;
+  const el = () => document.getElementById("countdown-number");
+  const tick = setInterval(() => {
+    count--;
+    if(count > 0) {
+      if(el()) el().textContent = count;
+    } else {
+      clearInterval(tick);
+      _countdownActive = false;
+      hideLobby();
+      launchGameFromLobby(code, myCharacter, state);
+    }
+  }, 1000);
+}
+
+// ── LAUNCH — transition from lobby into the game ──────────────────────────
+function launchGameFromLobby(code, myCharacter, state) {
+  // Guard: only launch once
+  if(app.state?.phase === "playing" && document.getElementById("board-wrap")?.style.display !== "none") return;
+
+  // If phase isn't playing yet, write it (creator only, idempotent)
+  if(state.phase !== "playing" && state.createdBy === myCharacter) {
+    _firebaseSet(dbRef(`rooms/${code}/state/phase`), "playing");
+  }
+
+  app.localHero = myCharacter;
+  app.roomCode = code;
+  app.state = { ...state, controlledHero: myCharacter, phase: "playing" };
+
+  hideLobby();
+  hideScreen("room-screen");
+  showMobileHud();
+  resetBoardView();
+  showStartToast(myCharacter);
+  renderAll();
+  showCurrentDestinationReveal(myCharacter);
+  updateRoomHud();
+
+  // Hand off to the canonical game subscriber
+  fbSubscribeRoomExclusive(code, remoteRaw => {
+    if(!remoteRaw || !remoteRaw.players) return;
+    app.state = { ...restoreArrays({...remoteRaw}), controlledHero: myCharacter };
+    renderAll();
+    updateRoomHud();
+  });
+  watchForPlayerDepartures(code);
+  console.log("[DD] Game launched. Hero:", myCharacter, "Turn:", state.currentPlayer);
+}
+
+// ── WIRE ROOM BUTTONS ─────────────────────────────────────────────────────
+function wireRoomButtons(){
 
 // ── CREATE FLOW ──────────────────────────────────────────────────────────────
 
