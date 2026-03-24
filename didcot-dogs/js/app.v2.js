@@ -2,6 +2,16 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
+ * v2.20.0
+ *   - FIXED: waitForGameState now calls restoreArrays() before the playerOrder
+ *     guard check. Firebase returns arrays as numeric-keyed objects; the raw
+ *     value is truthy but has no .length, causing gameIsRunning() to return
+ *     false — board stayed blank and turns never passed.
+ *   - FIXED: Joiner confirm handler now fetches a fresh Firebase snapshot after
+ *     both _firebaseSet writes complete before setting app.state. Previously
+ *     app.state was built from freshState (fetched before the writes), meaning
+ *     the joiner's own players[char] entry was absent from their local state
+ *     until the next subscriber snapshot arrived.
  * v2.11.0
  *   - ADDED: Mystery node system. 3 nodes always show ? on board.
  *   - ADDED: OH WHUPS — discard half your cards via selection modal.
@@ -21,9 +31,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.19.2");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.20.0");
 
-const APP_VERSION = "v2.19.2";
+const APP_VERSION = "v2.20.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1315,7 +1325,11 @@ function showJoinLobby(code, remoteState) {
         sessionStorage.setItem("dd_room_code", code);
         sessionStorage.setItem("dd_hero", sel.character);
         sessionStorage.setItem("dd_colour", sel.colour);
-        app.state = { ...restoreArrays({...freshState}), controlledHero: sel.character };
+        // Fetch a fresh confirmed snapshot AFTER both writes complete.
+        // Using freshState here would give app.state a copy that predates our own
+        // players[char] write, so the joiner couldn't see themselves in the game.
+        const confirmedSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
+        app.state = { ...restoreArrays({ ...confirmedSnap.val() }), controlledHero: sel.character };
         // Show waiting and subscribe — guard against carousel firing multiple times
         showWaitingLobby(code, sel.character, freshState.playerCount);
         fbStartHeartbeat(code, sel.character);
@@ -1409,15 +1423,18 @@ function runCarousel(code, myCharacter, order) {
     // Poll Firebase until playerOrder + currentPlayer are confirmed written
     async function waitForGameState(attempts=0) {
       const freshSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
-      const freshState = freshSnap.val();
-      if((!freshState.playerOrder || !freshState.currentPlayer) && attempts < 15) {
+      // restoreArrays BEFORE the guard — Firebase may return playerOrder as a
+      // numeric-keyed object which is truthy but has no .length, causing
+      // gameIsRunning() to return false and the board to stay blank.
+      const freshState = restoreArrays({ ...freshSnap.val() });
+      if((!freshState.playerOrder?.length || !freshState.currentPlayer) && attempts < 15) {
         setTimeout(() => waitForGameState(attempts+1), 300);
         return;
       }
       // Set localHero explicitly before setting state (guards against null hero)
       app.localHero = myCharacter;
       app.roomCode = code;
-      app.state = { ...restoreArrays({...freshState}), controlledHero: myCharacter };
+      app.state = { ...freshState, controlledHero: myCharacter };
       hideScreen("room-screen");
       showMobileHud();
       resetBoardView();
