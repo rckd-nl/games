@@ -21,9 +21,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.19.1");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.19.2");
 
-const APP_VERSION = "v2.19.1";
+const APP_VERSION = "v2.19.2";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -946,7 +946,11 @@ function showLobby(html) {
 
 function hideLobby() {
   const o = document.getElementById("lobby-overlay");
-  if(o) o.classList.remove("open");
+  if(o) { o.classList.remove("open"); o.innerHTML=""; }
+  // Always restore room screen when leaving any lobby state
+  showScreen("room-screen");
+  startFallingDogs();
+  wireRoomButtons();
 }
 
 // ── CREATE FLOW ──────────────────────────────────────────────────────────────
@@ -1688,6 +1692,11 @@ function doReturnToMenu() {
   if(ti) ti.textContent="";
 
   // Show room screen — renderAll is guarded so blank state won't render
+  // Explicitly hide game panels to ensure clean state
+  ["left-panel","right-panel","board-wrap"].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = "";  // clear any inline display, let CSS handle it
+  });
   showScreen("room-screen");
   startFallingDogs();
   wireRoomButtons();
