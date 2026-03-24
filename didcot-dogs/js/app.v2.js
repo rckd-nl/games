@@ -2,7 +2,18 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
- * v2.23.0
+ * v2.23.1
+ *   - FIXED: Draw choice cards persisted in the DOM after turn ended — opponent
+ *     saw permanent "Pick one card" UI. Root cause: renderCardDrawChoice replaced
+ *     section.innerHTML but renderAll/renderButtons never restored it. Fixed by:
+ *     (a) _drawChoicePending flag tracks whether a choice is actively pending;
+ *     (b) restoreDrawButton() recreates the draw button element if missing;
+ *     (c) renderButtons() calls restoreDrawButton() whenever _drawChoicePending
+ *     is false, clearing any stale choice UI on every renderAll cycle;
+ *     (d) _resolveCardChoice restores the button BEFORE renderAll so the panel
+ *     is clean before the opponent's state arrives via Firebase.
+ *   - FIXED: _drawChoicePending and actionInProgress not reset in doReturnToMenu.
+ *
  *   - FIXED: watchForPlayerDepartures listener never cancelled on doReturnToMenu
  *     — stale listener fired after menu return on null app.localHero. Now stores
  *     unsubscribe handle and cancels on doReturnToMenu.
@@ -53,9 +64,9 @@
  * v2.19.2 — previous stable version
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.23.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.23.1");
 
-const APP_VERSION = "v2.23.0";
+const APP_VERSION = "v2.23.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1564,6 +1575,7 @@ function doReturnToMenu() {
   app.actionInProgress = false;
   _countdownActive = false;
   _gameAlreadyLaunched = false;
+  _drawChoicePending = false;
   if(_activeGameUnsubscribe) { _activeGameUnsubscribe(); _activeGameUnsubscribe = null; }
   if(_departureUnsubscribe) { _departureUnsubscribe(); _departureUnsubscribe = null; }
 
@@ -1981,15 +1993,25 @@ function renderMobileRoutesPanel(){
 }
 
 function renderButtons(){
-  const b=document.getElementById("draw-card-btn");
+  const running = gameIsRunning();
+  const mine = running && isMyTurn();
+
+  // If it's not our turn (or game not running), always clear any pending choice UI
+  if(!mine && _drawChoicePending) {
+    _drawChoicePending = false;
+    app.actionInProgress = false;
+  }
+
+  // Restore the button if the choice UI is showing but shouldn't be
+  if(!_drawChoicePending) restoreDrawButton();
+
+  const b = document.getElementById("draw-card-btn");
   if(!b) return;
-  const running=gameIsRunning();
-  const mine=running&&isMyTurn();
-  b.disabled=!mine||app.actionInProgress;
-  b.innerHTML=mine
+  b.disabled = !mine || app.actionInProgress;
+  b.innerHTML = mine
     ? `<span class="draw-btn-line1">DRAW</span><span class="draw-btn-line2">CARDS</span>`
-    : `<span class="draw-btn-line1">${running?"WAIT":"—"}</span>`;
-  b.classList.toggle("btn-waiting",running&&!mine);
+    : `<span class="draw-btn-line1">${running ? "WAIT" : "—"}</span>`;
+  b.classList.toggle("btn-waiting", running && !mine);
 }
 
 function renderDesktopPiles(){
@@ -3045,12 +3067,14 @@ function triggerCardGlow(colour){
 
 // ─── Draw card action — draw 2, pick 1, other goes to discard ────────────────
 //
-// The choice UI renders inline in the left panel (desktop) or mobile sheet,
-// so it never obscures the board. actionInProgress stays true until the
-// player picks — preventing any other action during selection.
+// The choice UI renders inline in the left panel (desktop), replacing the
+// draw button temporarily. renderButtons() always restores the section when
+// no choice is pending or it's not the local player's turn.
 //
+let _drawChoicePending = false; // true while waiting for player to pick a card
+
 function drawCardForCurrentPlayer(){
-  if(!isMyTurn() || app.actionInProgress) return;
+  if(!isMyTurn() || app.actionInProgress || _drawChoicePending) return;
   const pn = app.state.currentPlayer;
   const player = getPlayerByChar(pn);
   if(!player){ console.warn("[DD] Draw: no player for", pn); return; }
@@ -3061,31 +3085,27 @@ function drawCardForCurrentPlayer(){
 
   if(!cardA && !cardB){
     updateStatus("No cards left — turn skipped.", TOAST_NOTABLE);
-    app.actionInProgress = false;
     endTurn();
     return;
   }
 
   // If only one card available, auto-take it — no choice needed
   if(!cardB){
-    app.actionInProgress = true;
     player.hand.push(cardA); player.lastDrawColor = cardA;
     closeMobileSheet(); renderAll();
     requestAnimationFrame(() => triggerCardGlow(cardA));
-    app.actionInProgress = false;
     endTurn();
     return;
   }
 
   // Two cards available — show pick UI, lock actions until chosen
   app.actionInProgress = true;
+  _drawChoicePending = true;
   renderCardDrawChoice(pn, player, cardA, cardB);
 }
 
 function renderCardDrawChoice(pn, player, cardA, cardB) {
-  // Render inline in the left panel draw section — does not obscure the board
-  const section = document.querySelector("#left-panel .panel-section:has(#draw-card-btn)") ||
-                  document.getElementById("draw-card-btn")?.parentElement;
+  const section = document.getElementById("draw-card-btn")?.parentElement;
   if(!section){ _resolveCardChoice(pn, player, cardA, cardB, cardA); return; }
 
   const gradMap = {
@@ -3125,18 +3145,32 @@ function renderCardDrawChoice(pn, player, cardA, cardB) {
     _resolveCardChoice(pn, player, cardA, cardB, cardB);
 }
 
+function restoreDrawButton() {
+  // Always restore the section to just the draw button — called by renderButtons
+  const existing = document.getElementById("draw-card-btn");
+  if(existing) return; // button already present, nothing to restore
+  const section = document.querySelector("#left-panel .panel-section:has(.draw-choice-wrap)") ||
+                  document.querySelector(".draw-choice-wrap")?.parentElement;
+  if(!section) return;
+  section.innerHTML = `<button id="draw-card-btn" class="action-btn primary draw-card-btn-big" type="button"></button>`;
+  // Re-wire the button since we just recreated it
+  document.getElementById("draw-card-btn")?.addEventListener("click", drawCardForCurrentPlayer);
+}
+
 async function _resolveCardChoice(pn, player, cardA, cardB, chosen) {
   const discarded = chosen === cardA ? cardB : cardA;
   player.hand.push(chosen);
   player.lastDrawColor = chosen;
   app.state.discardPile.push(discarded);
+  _drawChoicePending = false;
+  app.actionInProgress = false;
 
-  // Restore the draw button in the panel
+  // Restore the section to the draw button before renderAll so it renders cleanly
+  restoreDrawButton();
   renderAll();
   await animateCardDraw(chosen);
   requestAnimationFrame(() => triggerCardGlow(chosen));
   closeMobileSheet();
-  app.actionInProgress = false;
   endTurn();
 }
 
