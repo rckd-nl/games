@@ -2,90 +2,60 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
+ * v2.23.0
+ *   - FIXED: watchForPlayerDepartures listener never cancelled on doReturnToMenu
+ *     — stale listener fired after menu return on null app.localHero. Now stores
+ *     unsubscribe handle and cancels on doReturnToMenu.
+ *   - FIXED: Empty deck permanently locked turn — drawCardForCurrentPlayer
+ *     returned without calling endTurn when both piles empty. Now calls endTurn
+ *     with a "turn skipped" status message.
+ *   - FIXED: Skip turn UX — 3 separate modal/turn cycles replaced with one modal
+ *     that consumes all skipTurns at once. Opponents see a single toast.
+ *   - FIXED: just_sniffin stacked unboundedly. Now capped at +2 with clear
+ *     status message showing current level.
+ *   - ADDED: Status effects (sniffin penalty, skip turns) now visible on both
+ *     own and opponent summary cards in the right panel.
+ *
  * v2.22.0
  *   - FIXED: getRoutePlayability returned undefined instead of a playability
- *     object when player was null (dead guard on line 2). confirmRouteModalPlay
- *     then threw on play.playable, leaving actionInProgress=true permanently
- *     and locking the modal. All subsequent route attempts also failed silently.
+ *     object when player was null. confirmRouteModalPlay threw on play.playable,
+ *     leaving actionInProgress=true permanently — route modal was stuck.
  *   - FIXED: confirmRouteModalPlay now guards against undefined play result.
- *   - ADDED: Draw-2-pick-1 mechanic. drawCardForCurrentPlayer now draws two
- *     cards and renders an inline choice UI in the left panel — does not
- *     obscure the board. Player picks one; other goes to discard. If only one
- *     card is available it is auto-taken with no prompt.
+ *   - ADDED: Draw-2-pick-1 mechanic. drawCardForCurrentPlayer draws two cards
+ *     and renders an inline choice UI in the left panel — does not obscure the
+ *     board. Player picks one; other goes to discard. Auto-takes if only 1 card.
  *   - UPDATED: Draw button enlarged to two-line DRAW/CARDS format.
  *
-
+ * v2.21.2
  *   - FIXED: launchGameFromLobby double-launch guard replaced DOM style check
  *     with dedicated _gameAlreadyLaunched boolean flag.
  *   - FIXED: _countdownActive and _gameAlreadyLaunched not reset on
  *     doReturnToMenu — next game's countdown would silently refuse to fire.
- *   - REMOVED: _legacyReturnToMenu — dead code that called
- *     createInitialLocalState and would have corrupted app.state if triggered.
+ *   - REMOVED: _legacyReturnToMenu dead code.
  *   - FIXED: Non-optional hero-overlay DOM access in init() made defensive.
  *
-
- *   - FIXED: Old duplicate lobby functions (showCreateLobby, showJoinLobby,
- *     showWaitingLobby, updateWaitingLobby, startCarousel, runCarousel,
- *     showCarousel, wireRoomButtons) left behind from v2.21.0 rewrite were
- *     overriding the new v3 versions. JS uses last definition — Create game
- *     button did nothing because the old broken showCreateLobby ran instead.
- *     Removed all duplicates. Restored wireRoomButtons which was lost in the
- *     cleanup.
+ * v2.21.1
+ *   - FIXED: Old duplicate lobby functions left behind from v2.21.0 rewrite
+ *     were overriding the new v3 versions. Removed all duplicates.
  *
-
+ * v2.21.0
  *   - REWRITE: Entire lobby/join/carousel/launch system replaced with a clean
- *     phase-driven flow. Eliminates all race conditions and polling.
- *     Phase flow: waiting → ready → countdown → playing.
+ *     phase-driven flow: waiting → ready → countdown → playing.
  *     One fbSubscribeRoomExclusive listener per client drives all transitions.
- *     No separate greyout subscriber. No polling for playerOrder. No timing
- *     races between creator and joiner. Creator writes phase advances only.
- *     Joiner writes only their own characterSelections + players slice, then
- *     hands off entirely to the subscriber.
- *   - ADDED: phase "ready" — room full, host sees Start button, others wait.
+ *   - ADDED: phase "ready" — host sees Start button, others wait.
  *   - ADDED: phase "countdown" — 3→2→1 fires simultaneously on all clients.
- *   - REMOVED: showJourneyPicker (merged into create lobby).
- *   - REMOVED: showWaitingLobby, updateWaitingLobby, startCarousel,
- *     runCarousel, showCarousel (all replaced by phase-driven screens).
  *
-
- *   - FIXED: Joiner greyout subscriber (`confirmed` flag) was never set to true
- *     after confirm, so it kept firing on every Firebase state change, calling
- *     render() which rebuilt the join lobby HTML — clobbering the waiting screen
- *     and preventing the joiner's carousel from ever triggering. Set
- *     confirmed=true immediately after the two _firebaseSet writes complete.
+ * v2.20.0 / v2.20.1
+ *   - FIXED: waitForGameState restoreArrays before playerOrder guard.
+ *   - FIXED: Joiner confirmed snapshot fetch after writes complete.
+ *   - FIXED: Joiner greyout confirmed flag never set to true.
  *
-
- *   - FIXED: waitForGameState now calls restoreArrays() before the playerOrder
- *     guard check. Firebase returns arrays as numeric-keyed objects; the raw
- *     value is truthy but has no .length, causing gameIsRunning() to return
- *     false — board stayed blank and turns never passed.
- *   - FIXED: Joiner confirm handler now fetches a fresh Firebase snapshot after
- *     both _firebaseSet writes complete before setting app.state. Previously
- *     app.state was built from freshState (fetched before the writes), meaning
- *     the joiner's own players[char] entry was absent from their local state
- *     until the next subscriber snapshot arrived.
- * v2.11.0
- *   - ADDED: Mystery node system. 3 nodes always show ? on board.
- *   - ADDED: OH WHUPS — discard half your cards via selection modal.
- *   - ADDED: NOWHERE TO POO — skip next 3 turns.
- *   - ADDED: JUST SNIFFIN' — all routes cost +1 card for remainder of game.
- *   - ADDED: GIMME GIMME — steal 3 random cards from opponent.
- *   - ADDED: BRIGHT BROWN — choose a colour, steal all of that colour from opponent.
- *   - ADDED: HITCH A LIFT — teleport instantly to next destination.
- *   - ADDED: ZOOMIES — held inventory card; after next move, pick a free second move.
- *   - ADDED: POOP — place hidden poo trap on a node; opponent skips 3 turns on arrival.
- *   - FIXED: restoreArrays() handles mysteryNodes, poopedNodes, inventory arrays.
- *
- * v2.10.5 — target node pulse fix
- * v2.10.4 — desktop scale mobile guard
- * v2.10.3 — own-knowledge-only rendering
- * v2.9.1  — Firebase array fix
- * v2.9.0  — Complete rewrite of multiplayer integration.
+ * v2.19.2 — previous stable version
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.22.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.23.0");
 
-const APP_VERSION = "v2.22.0";
+const APP_VERSION = "v2.23.0";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -789,24 +759,23 @@ function endTurn() {
   const next = order[(idx+1) % order.length];
   if(!next) { console.warn("[DD] endTurn: next is undefined, order:", order); return; }
   app.state.currentPlayer = next;
-  // Check skip turns
+  // Check skip turns — consume ALL remaining skips at once, one modal only
   const nextPlayer = getPlayerByChar(next);
   if(nextPlayer && nextPlayer.skipTurns > 0){
     const skipsLeft = nextPlayer.skipTurns;
-    nextPlayer.skipTurns--;
-    console.log("[DD] Skipping",next,"— turns left:",nextPlayer.skipTurns);
+    nextPlayer.skipTurns = 0; // consume all at once
+    console.log("[DD] Skipping", next, "—", skipsLeft, "turn(s)");
     renderAll();
     if(app.roomCode) fbPushState(app.roomCode, app.state).then(()=>updateRoomHud());
-    // Show skip modal if this player is local viewer, or a brief toast for others
     if(next === getViewHero()){
-      // Consistent messages regardless of Firebase sync — keyed by turns remaining
-      const msgs = ["Maybe here? 🤔","Or perhaps here? 🧐","Or I could go here? 🚶"];
-      const msgIdx = Math.min(msgs.length-1, Math.max(0, 3 - skipsLeft));
-      showNowhereToPoModal(msgs[msgIdx] || msgs[0], ()=>{ setTimeout(endTurn, 200); });
+      // Skipped player sees one modal then turn passes
+      showNowhereToPoModal(
+        skipsLeft === 1 ? "Still looking for the right spot…" : `Sniffing around for ${skipsLeft} turns… 🐾`,
+        () => { setTimeout(endTurn, 200); }
+      );
     } else {
-      showMobileToast(`${next} is looking for a spot… (${skipsLeft} turn${skipsLeft!==1?"s":""} skipped)`);
-      // Only the active player's client drives skip advancement to avoid conflicting pushes
-      // Other clients will receive the updated state via Firebase subscription
+      showMobileToast(`${next} is sniffing around — ${skipsLeft} turn${skipsLeft!==1?"s":""} skipped`);
+      // Non-local clients just receive updated state via Firebase subscriber
     }
     return;
   }
@@ -1596,6 +1565,7 @@ function doReturnToMenu() {
   _countdownActive = false;
   _gameAlreadyLaunched = false;
   if(_activeGameUnsubscribe) { _activeGameUnsubscribe(); _activeGameUnsubscribe = null; }
+  if(_departureUnsubscribe) { _departureUnsubscribe(); _departureUnsubscribe = null; }
 
   ["mobile-hud","mobile-bottom-bar"].forEach(id=>{
     const e=document.getElementById(id);if(e)e.classList.remove("visible");
@@ -1629,16 +1599,17 @@ function doReturnToMenu() {
 }
 
 // Watch for opponents leaving — show notification to remaining players
+let _departureUnsubscribe = null;
 function watchForPlayerDepartures(code) {
+  // Cancel any previous departure listener before registering a new one
+  if(_departureUnsubscribe) { _departureUnsubscribe(); _departureUnsubscribe = null; }
   const sessionStart = Date.now();
-  // Use a separate subscriber just for departure events
-  _firebaseOnValue(dbRef(`rooms/${code}/state/playerLeft`), snap => {
+  _departureUnsubscribe = _firebaseOnValue(dbRef(`rooms/${code}/state/playerLeft`), snap => {
     if(!snap.exists() || !app.localHero) return;
     const left = snap.val();
     if(!left || left.character === app.localHero) return;
-    // Only react to departures that happened after this client joined
     if(left.leftAt < sessionStart) return;
-    if(Date.now() - left.leftAt > 120000) return; // ignore if >2 min old
+    if(Date.now() - left.leftAt > 120000) return;
     const state = app.state;
     if(!state) return;
     showPlayerLeftNotification(left.character, state, code);
@@ -1840,6 +1811,9 @@ function renderPlayerSummary(){
     card.style.setProperty("--player-colour", colour);
     if(isMe){
       const targetTitle=t?(app.destinationData?.destinations[t]?.title||formatNodeName(t)):"—";
+      const effects=[];
+      if(p.routeCostBonus>0) effects.push(`👃 +${p.routeCostBonus} card cost`);
+      if(p.skipTurns>0) effects.push(`⏸ Skipping ${p.skipTurns} turn${p.skipTurns!==1?"s":""}`);
       card.innerHTML=`
         <div class="player-summary-name" style="color:${colour}">${n} <span style="font-size:13px;opacity:0.5;font-family:var(--ui-font);color:rgba(255,255,255,0.5)">(you)</span></div>
         <div class="player-summary-meta">
@@ -1847,13 +1821,18 @@ function renderPlayerSummary(){
           <span class="summary-row"><span class="summary-lbl">Cards</span><span class="summary-val">${p.hand.length}</span></span>
           <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,getJourneyTarget())}/${getJourneyTarget()}</span></span>
           <span class="summary-row"><span class="summary-lbl">Target</span><span class="summary-val">${targetTitle}</span></span>
+          ${effects.map(e=>`<span class="summary-row summary-effect"><span class="summary-val" style="color:#ffe600;font-size:12px">${e}</span></span>`).join("")}
         </div>`;
     } else {
+      const effects=[];
+      if(p.routeCostBonus>0) effects.push(`👃 +${p.routeCostBonus} cost`);
+      if(p.skipTurns>0) effects.push(`⏸ ${p.skipTurns} skip${p.skipTurns!==1?"s":""}`);
       card.innerHTML=`
         <div class="player-summary-name" style="color:${colour}">${n}</div>
         <div class="player-summary-meta">
           <span class="summary-row"><span class="summary-lbl">Location</span><span class="summary-val">${formatNodeName(p.currentNode)}</span></span>
           <span class="summary-row"><span class="summary-lbl">Journeys</span><span class="summary-val">${Math.min(p.completedCount,getJourneyTarget())}/${getJourneyTarget()}</span></span>
+          ${effects.map(e=>`<span class="summary-row summary-effect"><span class="summary-val" style="color:#ffe600;font-size:12px">${e}</span></span>`).join("")}
         </div>`;
     }
     wrap.appendChild(card);
@@ -2507,10 +2486,16 @@ function applyMysteryEffect(eventId, playerName) {
       updateStatus("Nowhere to Poo! Skipping 3 turns.", TOAST_NOTABLE);
       break;
 
-    case "just_sniffin":
-      player.routeCostBonus = (player.routeCostBonus || 0) + 1;
-      updateStatus("Just Sniffin'! Routes cost +1 card.", TOAST_NOTABLE);
+    case "just_sniffin": {
+      const current = player.routeCostBonus || 0;
+      if(current >= 2) {
+        updateStatus("Just Sniffin'! Already at max sniff level — no further penalty.", TOAST_NOTABLE);
+      } else {
+        player.routeCostBonus = current + 1;
+        updateStatus(`Just Sniffin'! Routes cost +${player.routeCostBonus} card${player.routeCostBonus!==1?"s":""}. (${player.routeCostBonus}/2 max)`, TOAST_NOTABLE);
+      }
       break;
+    }
 
     case "gimme_gimme":
       // Handled via modal — see showMysteryEventModal switch
@@ -3075,7 +3060,9 @@ function drawCardForCurrentPlayer(){
   const cardB = drawCard();
 
   if(!cardA && !cardB){
-    updateStatus("No cards left in deck or discard.", TOAST_NOTABLE);
+    updateStatus("No cards left — turn skipped.", TOAST_NOTABLE);
+    app.actionInProgress = false;
+    endTurn();
     return;
   }
 
