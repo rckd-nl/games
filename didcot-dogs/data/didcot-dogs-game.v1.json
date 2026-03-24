@@ -27,9 +27,6 @@
   "winCondition": {
     "finalDestination": "Didcot"
   },
-  "svgNodeIdAliases": {
-    "Clifton_Hampden1": "Clifton_Hampden"
-  },
   "nodes": [
     "Steventon",
     "Drayton",
@@ -89,6 +86,9 @@
       "length": 2
     },
     "Aston_Upthorpe_to_South_Moreton": {
+      "length": 2
+    },
+    "Appleford_to_Long_Wittenham": {
       "length": 2
     },
     "East_Hagbourne_to_Blewbury": {
