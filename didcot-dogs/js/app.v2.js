@@ -2,7 +2,14 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
- * v2.20.0
+ * v2.20.1
+ *   - FIXED: Joiner greyout subscriber (`confirmed` flag) was never set to true
+ *     after confirm, so it kept firing on every Firebase state change, calling
+ *     render() which rebuilt the join lobby HTML — clobbering the waiting screen
+ *     and preventing the joiner's carousel from ever triggering. Set
+ *     confirmed=true immediately after the two _firebaseSet writes complete.
+ *
+
  *   - FIXED: waitForGameState now calls restoreArrays() before the playerOrder
  *     guard check. Firebase returns arrays as numeric-keyed objects; the raw
  *     value is truthy but has no .length, causing gameIsRunning() to return
@@ -31,9 +38,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.20.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.20.1");
 
-const APP_VERSION = "v2.20.0";
+const APP_VERSION = "v2.20.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1320,6 +1327,10 @@ function showJoinLobby(code, remoteState) {
         };
         await _firebaseSet(dbRef(`rooms/${code}/state/players/${sel.character}`), playerEntry);
         await fbUpdatePresence(code, sel.character);
+        // Stop the greyout subscriber NOW — before any further async work.
+        // Without this it keeps firing on every state change, calling render()
+        // which rebuilds the lobby HTML and clobbers the waiting screen.
+        confirmed = true;
         app.localHero = sel.character;
         app.roomCode = code;
         sessionStorage.setItem("dd_room_code", code);
