@@ -18,7 +18,11 @@
  *   - FIXED: SVG no CSS transform — viewBox pan/zoom only (no pixellation).
  *   - REMOVED: All duplicate and conflicting display rules from v1 @media block.
  *
- * v2.10.5
+ * v2.17.0
+ *   - UPDATED: Draw button enlarged to two-line DRAW / CARDS format (96px min-height).
+ *   - ADDED: .draw-choice-wrap, .draw-choice-cards, .draw-choice-card styles
+ *     for the inline draw-2-pick-1 UI in the left panel.
+ *
  *   - FIXED: Target node pulse now works on all nodes. Separate
  *     targetNodeCirclePulse keyframe uses !important on fill/stroke per frame
  *     to override the base #Nodes circle rule. Text label pulse also fixed.
@@ -2214,13 +2218,31 @@ html, body {
 /* ── Big draw card button ────────────────────────────────────────────────── */
 .draw-card-btn-big {
   font-family: var(--header-font) !important;
-  font-size: 28px !important;
-  min-height: 72px !important;
+  font-size: 18px !important;
+  min-height: 96px !important;
   border-radius: 20px !important;
   width: 100%;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
   letter-spacing: 0.03em;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 4px 16px rgba(0,0,0,0.3);
   transition: background 120ms ease, transform 80ms ease, box-shadow 120ms ease;
+}
+.draw-btn-line1 {
+  font-family: var(--header-font);
+  font-size: 38px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+.draw-btn-line2 {
+  font-family: var(--header-font);
+  font-size: 24px;
+  line-height: 1;
+  opacity: 0.75;
+  letter-spacing: 0.1em;
 }
 .draw-card-btn-big:not(:disabled):hover {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 8px 24px rgba(0,0,0,0.4);
@@ -2228,6 +2250,59 @@ html, body {
 }
 .draw-card-btn-big:not(:disabled):active {
   transform: scale(0.97);
+}
+
+/* ── Draw 2 pick 1 — inline card choice in left panel ────────────────────── */
+.draw-choice-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+.draw-choice-label {
+  font-family: var(--header-font);
+  font-size: 18px;
+  color: #ffe600;
+  text-align: center;
+  letter-spacing: 0.05em;
+}
+.draw-choice-cards {
+  display: flex;
+  gap: 10px;
+}
+.draw-choice-card {
+  flex: 1;
+  min-height: 90px;
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 100ms ease, border-color 100ms ease, box-shadow 100ms ease;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+}
+.draw-choice-card:hover {
+  transform: translateY(-4px) scale(1.04);
+  border-color: #ffe600;
+  box-shadow: 0 0 18px rgba(255,230,0,0.35), 0 6px 18px rgba(0,0,0,0.4);
+}
+.draw-choice-card:active {
+  transform: scale(0.97);
+}
+.draw-choice-card-name {
+  font-family: var(--header-font);
+  font-size: 16px;
+  text-transform: capitalize;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+.draw-choice-sub {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  text-align: center;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 /* ── Waiting screen cancel button ───────────────────────────────────────── */
