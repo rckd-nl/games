@@ -2,7 +2,16 @@
  * app.v2.js — Didcot Dogs
  *
  * CHANGELOG
- * v2.21.0
+ * v2.21.1
+ *   - FIXED: Old duplicate lobby functions (showCreateLobby, showJoinLobby,
+ *     showWaitingLobby, updateWaitingLobby, startCarousel, runCarousel,
+ *     showCarousel, wireRoomButtons) left behind from v2.21.0 rewrite were
+ *     overriding the new v3 versions. JS uses last definition — Create game
+ *     button did nothing because the old broken showCreateLobby ran instead.
+ *     Removed all duplicates. Restored wireRoomButtons which was lost in the
+ *     cleanup.
+ *
+
  *   - REWRITE: Entire lobby/join/carousel/launch system replaced with a clean
  *     phase-driven flow. Eliminates all race conditions and polling.
  *     Phase flow: waiting → ready → countdown → playing.
@@ -53,9 +62,9 @@
  * v2.9.0  — Complete rewrite of multiplayer integration.
  */
 
-console.log("Didcot Dogs app.v2.js loaded — VERSION v2.21.0");
+console.log("Didcot Dogs app.v2.js loaded — VERSION v2.21.1");
 
-const APP_VERSION = "v2.21.0";
+const APP_VERSION = "v2.21.1";
 const DEV_AUTO_SIM = false;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -1406,590 +1415,16 @@ function launchGameFromLobby(code, myCharacter, state) {
   console.log("[DD] Game launched. Hero:", myCharacter, "Turn:", state.currentPlayer);
 }
 
-// ── WIRE ROOM BUTTONS ─────────────────────────────────────────────────────
-function wireRoomButtons(){
+// ── WIRE ROOM BUTTONS ─────────────────────────────────────────────────────────
+function wireRoomButtons() {
+  const createBtn  = document.getElementById("room-create-btn");
+  const joinBtn    = document.getElementById("room-join-btn");
+  const joinInput  = document.getElementById("room-join-input");
+  const errorEl    = document.getElementById("room-error");
 
-// ── CREATE FLOW ──────────────────────────────────────────────────────────────
-
-// Contrast helper — returns "black" or "white" for text on a given hex background
-function contrastText(hex) {
-  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
-  // Relative luminance (WCAG formula)
-  const lum = 0.2126*(r/255) + 0.7152*(g/255) + 0.0722*(b/255);
-  return lum > 0.45 ? "#111111" : "#ffffff";
-}
-
-function showCreateLobby() {
-  const finalDestKey = app.rulesData.winCondition?.finalDestination || "Didcot";
-  const pool = app.rulesData.destinationPool || [];
-  const maxJ = Math.floor(pool.length / 2);
-  const nonDestNodes = (app.rulesData.nodes||[]).filter(n =>
-    n !== app.rulesData.startNode && !(pool.includes(n))
-  );
-  const maxM = Math.min(nonDestNodes.length, 8);
-
-  let sel = {
-    character: null,
-    colour: null,
-    playerCount: null,
-    journeyTarget: null,
-    mysteryCount: 3,
-  };
-
-  function render() {
-    const takenColours = [];
-    const colourNames = Object.keys(PLAYER_COLOURS);
-    const journeyOptions = Array.from({length: maxJ}, (_,i)=>i+1);
-    const playerOptions = [2,3,4,5,6];
-
-    const canConfirm = sel.character && sel.colour && sel.playerCount && sel.journeyTarget;
-
-    showLobby(`
-      <div class="lobby-inner">
-        <div class="lobby-wipe lobby-wipe-a"></div>
-        <div class="lobby-wipe lobby-wipe-b"></div>
-        <div class="lobby-noise"></div>
-        <div class="lobby-content">
-          <div class="lobby-kicker">Didcot Dogs</div>
-          <div class="lobby-title">CREATE GAME</div>
-
-          <div class="lobby-section">
-            <div class="lobby-section-label">Pick your dog</div>
-            <div class="lobby-char-grid">
-              ${ALL_CHARACTERS.map(c => `
-                <button type="button" class="lobby-char-btn${sel.character===c?" active":""}" data-char="${c}">
-                  <div class="lobby-char-frame">
-                    <img src="./assets/${c.toLowerCase()}.png" alt="${c}">
-                  </div>
-                  <div class="lobby-char-name">${c}</div>
-                </button>`).join("")}
-            </div>
-          </div>
-
-          <div class="lobby-section">
-            <div class="lobby-section-label">Pick your colour</div>
-            <div class="lobby-colour-grid">
-              ${colourNames.map(name => {
-                const hex=PLAYER_COLOURS[name], fg=contrastText(hex);
-                return `<button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}" data-colour="${name}" style="background:${hex};color:${fg};border-color:${sel.colour===name?"rgba(255,230,0,0.8)":"transparent"}">
-                  ${name}
-                </button>`;
-              }).join("")}
-            </div>
-          </div>
-
-          <div class="lobby-row-pickers">
-            <div class="lobby-section lobby-section-half">
-              <div class="lobby-section-label">Players</div>
-              <div class="lobby-num-grid">
-                ${playerOptions.map(n=>`
-                  <button type="button" class="lobby-num-btn${sel.playerCount===n?" active":""}" data-val="${n}">${n}</button>`).join("")}
-              </div>
-            </div>
-            <div class="lobby-section lobby-section-half">
-              <div class="lobby-section-label">Destinations each</div>
-              <div class="lobby-num-grid">
-                ${journeyOptions.map(n=>{
-                  const maxForCount = sel.playerCount ? Math.floor(pool.length / sel.playerCount) : maxJ;
-                  const tooHigh = n > maxForCount;
-                  if(sel.journeyTarget && sel.journeyTarget > maxForCount) sel.journeyTarget = null;
-                  return `<button type="button" class="lobby-num-btn${sel.journeyTarget===n?" active":""}${tooHigh?" greyed":""}" data-val="${n}" ${tooHigh?"disabled":""}>${n}</button>`;
-                }).join("")}
-              </div>
-            </div>
-          </div>
-
-          <div class="lobby-section">
-            <div class="lobby-section-label">Mystery boxes on board (0–${maxM})</div>
-            <div class="lobby-num-grid">
-              ${Array.from({length:maxM+1},(_,i)=>i).map(n=>`
-                <button type="button" class="lobby-num-btn${sel.mysteryCount===n?" active":""}" data-val="${n}">${n}</button>`).join("")}
-            </div>
-          </div>
-
-          <div class="lobby-actions">
-            <button id="lobby-back-btn" class="action-btn subtle" type="button">← Menu</button>
-            <button id="lobby-confirm-btn" class="action-btn primary" type="button" ${canConfirm?"":"disabled"}>
-              ${canConfirm?"Create room →":"Select all options"}
-            </button>
-          </div>
-        </div>
-      </div>`);
-
-    // Wire char buttons
-    document.querySelectorAll(".lobby-char-btn").forEach(btn => {
-      btn.onclick = () => { sel.character = btn.dataset.char; render(); };
-    });
-    // Wire colour buttons
-    document.querySelectorAll(".lobby-colour-btn").forEach(btn => {
-      btn.onclick = () => { sel.colour = btn.dataset.colour; render(); };
-    });
-    // Wire player count / journey / mystery — distinguish by section
-    const sections = document.querySelectorAll(".lobby-section, .lobby-section-half");
-    // Player count
-    const pcGrid = document.querySelectorAll(".lobby-row-pickers .lobby-section-half");
-    if(pcGrid[0]) pcGrid[0].querySelectorAll(".lobby-num-btn").forEach(btn => {
-      btn.onclick = () => { sel.playerCount = +btn.dataset.val; render(); };
-    });
-    // Journey target
-    if(pcGrid[1]) pcGrid[1].querySelectorAll(".lobby-num-btn").forEach(btn => {
-      btn.onclick = () => { sel.journeyTarget = +btn.dataset.val; render(); };
-    });
-    // Mystery count — last num-grid
-    const allNumGrids = document.querySelectorAll(".lobby-num-grid");
-    if(allNumGrids[allNumGrids.length-1]) {
-      allNumGrids[allNumGrids.length-1].querySelectorAll(".lobby-num-btn").forEach(btn => {
-        btn.onclick = () => { sel.mysteryCount = +btn.dataset.val; render(); };
-      });
-    }
-
-    document.getElementById("lobby-back-btn").onclick = () => { hideLobby(); };
-    const confirmBtn = document.getElementById("lobby-confirm-btn");
-    if(confirmBtn && !confirmBtn.disabled) {
-      confirmBtn.onclick = async () => {
-        confirmBtn.disabled = true; confirmBtn.textContent = "Creating…";
-        try {
-          const state = createInitialLocalState(app.rulesData, sel.journeyTarget, sel.playerCount, sel.mysteryCount);
-          // Register creator character — joinOrder 0, player keyed by name
-          state.characterSelections[sel.character] = { colour: sel.colour, joinOrder: 0 };
-          state.createdBy = sel.character;
-          // Create player state entry keyed by character name
-          const startNode = app.rulesData.startNode || "Didcot";
-          const N = state.journeyTarget;
-          state.players[sel.character] = {
-            ...createPlayerState(startNode),
-            destinationQueue: (state.destPool||[]).slice(0, N),
-            joinOrder: 0,
-          };
-          const code = await fbCreateRoom(state, sel.character);
-          app.roomCode = code;
-          app.localHero = sel.character;
-          app.state = { ...state, controlledHero: sel.character };
-          sessionStorage.setItem("dd_room_code", code);
-          sessionStorage.setItem("dd_hero", sel.character);
-          sessionStorage.setItem("dd_colour", sel.colour);
-          showWaitingLobby(code, sel.character, state.playerCount);
-          // Subscribe to state changes so we see others joining
-          let carouselStarted = false;
-          fbSubscribeRoomExclusive(code, remoteState => {
-            if(!remoteState) return;
-            app.localHero = sel.character;
-            app.roomCode = code;
-            app.state = { ...restoreArrays({...remoteState}), controlledHero: sel.character };
-            // Check if lobby is full
-            const joined = Object.keys(remoteState.characterSelections||{}).length;
-            if(joined >= remoteState.playerCount && remoteState.phase !== "playing" && !carouselStarted) {
-              carouselStarted = true;
-              startCarousel(code, sel.character);
-            } else if(!carouselStarted) {
-              // Only update waiting screen if carousel hasn't started yet
-              updateWaitingLobby(code, sel.character, remoteState);
-            }
-          });
-          fbStartHeartbeat(code, sel.character);
-        } catch(e) {
-          confirmBtn.disabled=false; confirmBtn.textContent="Create room →";
-          console.error("[DD] Create failed:", e);
-        }
-      };
-    }
-  }
-  render();
-}
-
-// ── WAITING LOBBY ────────────────────────────────────────────────────────────
-function showWaitingLobby(code, myCharacter, playerCount) {
-  // Always use app.state — it should be current by the time this is called
-  updateWaitingLobby(code, myCharacter, app.state || {playerCount, characterSelections:{}});
-}
-
-function updateWaitingLobby(code, myCharacter, state) {
-  const joined = Object.keys(state.characterSelections||{}).length;
-  const total = state.playerCount || 2;
-  // Sort by joinOrder so slots always appear in correct sequence regardless of Firebase key order
-  const entries = Object.entries(state.characterSelections||{})
-    .sort((a,b) => (a[1].joinOrder||0) - (b[1].joinOrder||0));
-
-  showLobby(`
-    <div class="lobby-inner">
-      <div class="lobby-wipe lobby-wipe-a"></div>
-      <div class="lobby-wipe lobby-wipe-b"></div>
-      <div class="lobby-noise"></div>
-      <div class="lobby-content">
-        <div class="lobby-kicker">Didcot Dogs</div>
-        <div class="lobby-title">WAITING…</div>
-        <div class="lobby-waiting-code-wrap">
-          <div class="lobby-waiting-code-label">Share this code</div>
-          <div class="lobby-waiting-code">${code}</div>
-        </div>
-        <div class="lobby-waiting-players">
-          ${Array.from({length:total},(_,i)=>{
-            const entry = entries[i];
-            if(entry) {
-              const [char, data] = entry;
-              const col = PLAYER_COLOURS[data.colour]||"#888";
-              const fg = contrastText(col);
-              const isHost = data.joinOrder === 0;
-              const isMe = char === myCharacter;
-              return `<div class="lobby-waiting-slot lobby-waiting-slot-filled" style="background:${col};border-color:${col}">
-                <img src="./assets/${char.toLowerCase()}.png" alt="${char}" style="width:40px;height:40px;border-radius:50%;border:3px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.9)">
-                <span style="color:${fg};font-weight:700">${char}</span>
-                ${isHost?`<span class="lobby-host-badge" style="color:${fg}">HOST</span>`:""}
-                ${isMe&&!isHost?`<span class="lobby-host-badge" style="color:${fg}">YOU</span>`:""}
-              </div>`;
-            }
-            return `<div class="lobby-waiting-slot lobby-waiting-slot-empty">
-              <div class="waiting-dots" style="display:flex;gap:4px;justify-content:center">
-                <div class="waiting-dot"></div><div class="waiting-dot"></div><div class="waiting-dot"></div>
-              </div>
-            </div>`;
-          }).join("")}
-        </div>
-        <div class="lobby-waiting-sub">${joined}/${total} players joined</div>
-        <div style="margin-top:16px">
-          <button id="waiting-back-btn" class="action-btn subtle" type="button">← Back to menu</button>
-        </div>
-      </div>
-    </div>`);
-
-  document.getElementById("waiting-back-btn").onclick = () => {
-    doReturnToMenu();
-  };
-}
-
-// ── JOIN FLOW ────────────────────────────────────────────────────────────────
-function showJoinLobby(code, remoteState) {
-  const taken = Object.keys(remoteState.characterSelections||{});
-  const takenColours = Object.values(remoteState.characterSelections||{}).map(v=>v.colour);
-
-  let sel = { character: null, colour: null };
-
-  function render() {
-    const canConfirm = sel.character && sel.colour;
-    const colourNames = Object.keys(PLAYER_COLOURS);
-
-    showLobby(`
-      <div class="lobby-inner">
-        <div class="lobby-wipe lobby-wipe-a"></div>
-        <div class="lobby-wipe lobby-wipe-b"></div>
-        <div class="lobby-noise"></div>
-        <div class="lobby-content">
-          <div class="lobby-kicker">Didcot Dogs — ${code}</div>
-          <div class="lobby-title">JOIN GAME</div>
-          <div class="lobby-game-info">
-            <span>${remoteState.playerCount} players</span>
-            <span>·</span>
-            <span>${remoteState.journeyTarget} destination${remoteState.journeyTarget===1?"":"s"} each</span>
-          </div>
-
-          <div class="lobby-section">
-            <div class="lobby-section-label">Pick your dog</div>
-            <div class="lobby-char-grid">
-              ${ALL_CHARACTERS.map(c => {
-                const isTaken = taken.includes(c);
-                return `<button type="button" class="lobby-char-btn${sel.character===c?" active":""}${isTaken?" taken":""}" data-char="${c}" ${isTaken?"disabled":""}>
-                  <div class="lobby-char-frame">
-                    <img src="./assets/${c.toLowerCase()}.png" alt="${c}">
-                  </div>
-                  <div class="lobby-char-name">${c}${isTaken?" ✓":""}</div>
-                </button>`;
-              }).join("")}
-            </div>
-          </div>
-
-          <div class="lobby-section">
-            <div class="lobby-section-label">Pick your colour</div>
-            <div class="lobby-colour-grid">
-              ${colourNames.map(name => {
-                const isTaken = takenColours.includes(name);
-                const hex=PLAYER_COLOURS[name], fg=contrastText(hex);
-                return `<button type="button" class="lobby-colour-btn${sel.colour===name?" active":""}${isTaken?" taken":""}" data-colour="${name}" ${isTaken?"disabled":""} style="background:${isTaken?"#1a1a2e":hex};color:${isTaken?"rgba(255,255,255,0.25)":fg};border-color:${sel.colour===name?"rgba(255,230,0,0.8)":"transparent"};${isTaken?"text-decoration:line-through":""}">
-                  ${name}
-                </button>`;
-              }).join("")}
-            </div>
-          </div>
-
-          <div class="lobby-actions">
-            <button id="lobby-back-btn" class="action-btn subtle" type="button">← Menu</button>
-            <button id="lobby-confirm-btn" class="action-btn primary" type="button" ${canConfirm?"":"disabled"}>
-              ${canConfirm?"Join room →":"Select dog + colour"}
-            </button>
-          </div>
-        </div>
-      </div>`);
-
-    document.querySelectorAll(".lobby-char-btn:not([disabled])").forEach(btn => {
-      btn.onclick = () => { sel.character = btn.dataset.char; render(); };
-    });
-    document.querySelectorAll(".lobby-colour-btn:not([disabled])").forEach(btn => {
-      btn.onclick = () => { sel.colour = btn.dataset.colour; render(); };
-    });
-    document.getElementById("lobby-back-btn").onclick = () => { hideLobby(); };
-
-    const confirmBtn = document.getElementById("lobby-confirm-btn");
-    if(confirmBtn && !confirmBtn.disabled) {
-      confirmBtn.onclick = async () => {
-        confirmBtn.disabled = true; confirmBtn.textContent = "Joining…";
-        // Check character not taken since render
-        const freshSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
-        const freshState = freshSnap.val();
-        const nowTaken = Object.keys(freshState.characterSelections||{});
-        if(nowTaken.includes(sel.character)) {
-          // Show oops message and re-render
-          sel.character = null;
-          const takenNow = Object.values(freshState.characterSelections||{}).map(v=>v.colour);
-          if(takenNow.includes(sel.colour)) sel.colour = null;
-          confirmBtn.disabled = false; confirmBtn.textContent = "Join room →";
-          render();
-          showMobileToast("Oops! That dog was just taken. Pick another.");
-          return;
-        }
-        // joinOrder = number of players already confirmed
-        const joinOrder = nowTaken.length;
-        const N = freshState.journeyTarget || 5;
-        // Restore destPool array (Firebase may return as object with numeric keys)
-        const rawPool = freshState.destPool || [];
-        const pool = Array.isArray(rawPool) ? rawPool
-          : Object.keys(rawPool).sort((a,b)=>+a-+b).map(k=>rawPool[k]);
-        const destQueue = pool.slice(joinOrder * N, (joinOrder + 1) * N);
-
-        // Write characterSelections entry
-        await _firebaseSet(dbRef(`rooms/${code}/state/characterSelections/${sel.character}`),
-          { colour: sel.colour, joinOrder });
-        // Write player state entry keyed by character name
-        const startNode = app.rulesData?.startNode || "Didcot";
-        const playerEntry = {
-          ...createPlayerState(startNode),
-          destinationQueue: destQueue,
-          joinOrder,
-        };
-        await _firebaseSet(dbRef(`rooms/${code}/state/players/${sel.character}`), playerEntry);
-        await fbUpdatePresence(code, sel.character);
-        // Stop the greyout subscriber NOW — before any further async work.
-        // Without this it keeps firing on every state change, calling render()
-        // which rebuilds the lobby HTML and clobbers the waiting screen.
-        confirmed = true;
-        app.localHero = sel.character;
-        app.roomCode = code;
-        sessionStorage.setItem("dd_room_code", code);
-        sessionStorage.setItem("dd_hero", sel.character);
-        sessionStorage.setItem("dd_colour", sel.colour);
-        // Fetch a fresh confirmed snapshot AFTER both writes complete.
-        // Using freshState here would give app.state a copy that predates our own
-        // players[char] write, so the joiner couldn't see themselves in the game.
-        const confirmedSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
-        app.state = { ...restoreArrays({ ...confirmedSnap.val() }), controlledHero: sel.character };
-        // Show waiting and subscribe — guard against carousel firing multiple times
-        showWaitingLobby(code, sel.character, freshState.playerCount);
-        fbStartHeartbeat(code, sel.character);
-        let carouselStarted = false;
-        fbSubscribeRoomExclusive(code, liveState => {
-          if(!liveState) return;
-          // Always keep localHero set — never let it go null
-          app.localHero = sel.character;
-          app.roomCode = code;
-          app.state = { ...restoreArrays({...liveState}), controlledHero: sel.character };
-          const joinedCount = Object.keys(liveState.characterSelections||{}).length;
-          if(joinedCount >= liveState.playerCount && liveState.phase !== "playing" && !carouselStarted) {
-            carouselStarted = true;
-            startCarousel(code, sel.character);
-          } else if(!carouselStarted) {
-            updateWaitingLobby(code, sel.character, liveState);
-          }
-        });
-      };
-    }
-  }
-  // Subscribe to live updates so taken chars grey out in real time
-  // Capture unsubscribe so we can cancel it after the player confirms
-  let greyoutUnsubscribe = null;
-  let confirmed = false;
-  greyoutUnsubscribe = _firebaseOnValue(dbRef(`rooms/${code}/state`), snap => {
-    if(confirmed) return; // stop processing after confirm
-    const liveState = snap.exists() ? snap.val() : null;
-    if(!liveState) return;
-    const nowTaken = Object.keys(liveState.characterSelections||{});
-    const nowTakenColours = Object.values(liveState.characterSelections||{}).map(v=>v.colour);
-    if(sel.character && nowTaken.includes(sel.character)) { sel.character=null; }
-    if(sel.colour && nowTakenColours.includes(sel.colour)) { sel.colour=null; }
-    Object.assign(remoteState, liveState);
-    render();
-  });
-
-  // Patch render() to pass unsubscribe handle into confirm onclick
-  // We already set confirmed=true in the confirm flow below
-  render();
-}
-
-// ── CAROUSEL / TURN ORDER REVEAL ─────────────────────────────────────────────
-function startCarousel(code, myCharacter) {
-  const state = app.state;
-  const players = Object.keys(state.characterSelections||{});
-  const isCreator = Object.entries(state.characterSelections||{})
-    .find(([,v])=>v.joinOrder===0)?.[0] === myCharacter;
-
-  if(isCreator) {
-    // Creator generates authoritative order and writes to Firebase
-    const order = shuffle([...players]);
-    _firebaseSet(dbRef(`rooms/${code}/state/playerOrder`), order);
-    _firebaseSet(dbRef(`rooms/${code}/state/currentPlayer`), order[0]);
-    _firebaseSet(dbRef(`rooms/${code}/state/phase`), "playing");
-    // Creator can show carousel immediately with their order
-    runCarousel(code, myCharacter, order);
-  } else {
-    // Joiner waits for creator to write playerOrder, then uses that exact order
-    const maxWait = 20;
-    let waited = 0;
-    function pollForOrder() {
-      _firebaseGet(dbRef(`rooms/${code}/state`)).then(snap => {
-        const s = snap.val();
-        // Firebase may return array as numeric-keyed object — normalise
-        const rawOrder = s?.playerOrder;
-        const order = rawOrder
-          ? (Array.isArray(rawOrder)
-              ? rawOrder
-              : Object.keys(rawOrder).sort((a,b)=>+a-+b).map(k=>rawOrder[k]))
-          : null;
-        if(order && order.length) {
-          app.state = { ...restoreArrays({...s}), controlledHero: myCharacter };
-          runCarousel(code, myCharacter, order);
-        } else if(waited++ < maxWait) {
-          setTimeout(pollForOrder, 300);
-        } else {
-          // Fallback: use own shuffle after timeout
-          console.warn("[DD] playerOrder not found after polling, using local shuffle");
-          runCarousel(code, myCharacter, shuffle([...players]));
-        }
-      });
-    }
-    pollForOrder();
-  }
-}
-
-function runCarousel(code, myCharacter, order) {
-  showCarousel(order, myCharacter, () => {
-    hideLobby();
-    // Poll Firebase until playerOrder + currentPlayer are confirmed written
-    async function waitForGameState(attempts=0) {
-      const freshSnap = await _firebaseGet(dbRef(`rooms/${code}/state`));
-      // restoreArrays BEFORE the guard — Firebase may return playerOrder as a
-      // numeric-keyed object which is truthy but has no .length, causing
-      // gameIsRunning() to return false and the board to stay blank.
-      const freshState = restoreArrays({ ...freshSnap.val() });
-      if((!freshState.playerOrder?.length || !freshState.currentPlayer) && attempts < 15) {
-        setTimeout(() => waitForGameState(attempts+1), 300);
-        return;
-      }
-      // Set localHero explicitly before setting state (guards against null hero)
-      app.localHero = myCharacter;
-      app.roomCode = code;
-      app.state = { ...freshState, controlledHero: myCharacter };
-      hideScreen("room-screen");
-      showMobileHud();
-      resetBoardView();
-      showStartToast(myCharacter);
-      renderAll();
-      showCurrentDestinationReveal(myCharacter);
-      updateRoomHud();
-      // Single canonical game subscriber — replaces any previous listeners
-      fbSubscribeRoomExclusive(code, remoteState => {
-        if(!remoteState||!remoteState.players) return;
-        app.state = { ...restoreArrays({...remoteState}), controlledHero: myCharacter };
-        renderAll(); updateRoomHud();
-      });
-      watchForPlayerDepartures(code);
-    }
-    waitForGameState();
-  });
-}
-
-function showCarousel(order, myCharacter, onDone) {
-  // Build carousel overlay
-  let overlay = document.getElementById("carousel-overlay");
-  if(!overlay) {
-    overlay = document.createElement("div");
-    overlay.id = "carousel-overlay";
-    overlay.className = "carousel-overlay";
-    document.getElementById("game-shell").appendChild(overlay);
-  }
-
-  const portraits = order.map(c => `
-    <div class="carousel-portrait">
-      <img src="./assets/${c.toLowerCase()}.png" alt="${c}">
-      <div class="carousel-portrait-name">${c}</div>
-    </div>`).join("");
-
-  overlay.innerHTML = `
-    <div class="carousel-inner">
-      <div class="carousel-kicker">Get ready…</div>
-      <div class="carousel-title">TURN ORDER</div>
-      <div class="carousel-reel-wrap">
-        <div class="carousel-reel" id="carousel-reel">${portraits.repeat(4)}</div>
-      </div>
-      <div id="carousel-result" class="carousel-result" style="opacity:0"></div>
-      <button id="carousel-start-btn" class="action-btn primary carousel-btn" type="button" style="opacity:0;pointer-events:none">Let's play!</button>
-    </div>`;
-  overlay.classList.add("open");
-
-  // Animate: spin for 3s then land on first player
-  const reel = document.getElementById("carousel-reel");
-  const portraitWidth = 120; // matches CSS
-  const totalPortraits = order.length * 4;
-  const targetIndex = order.length * 3; // land on 3rd repetition = first player
-  const targetOffset = targetIndex * portraitWidth;
-
-  let start = null;
-  const duration = 3000;
-  function easeOut(t) { return 1 - Math.pow(1-t, 4); }
-
-  function animStep(ts) {
-    if(!start) start = ts;
-    const elapsed = ts - start;
-    const t = Math.min(1, elapsed / duration);
-    const ease = easeOut(t);
-    const offset = ease * targetOffset;
-    reel.style.transform = `translateX(-${offset}px)`;
-    if(t < 1) {
-      requestAnimationFrame(animStep);
-    } else {
-      // Show result
-      const result = document.getElementById("carousel-result");
-      const btn = document.getElementById("carousel-start-btn");
-      result.innerHTML = `
-        <div class="carousel-order">
-          ${order.map((c,i) => {
-            const col = PLAYER_COLOURS[app.state.characterSelections?.[c]?.colour]||"#fff";
-            return `<div class="carousel-order-item" style="animation-delay:${i*0.15}s">
-              <span class="carousel-order-num" style="color:${col}">${i+1}</span>
-              <img src="./assets/${c.toLowerCase()}.png" alt="${c}" style="border-color:${col}">
-              <span class="carousel-order-name" style="color:${col}">${c}${c===myCharacter?" (you)":""}</span>
-            </div>`;
-          }).join("")}
-        </div>`;
-      result.style.opacity = "1";
-      result.style.animation = "identityIn 400ms ease forwards";
-      btn.style.opacity = "1";
-      btn.style.pointerEvents = "auto";
-      btn.onclick = () => {
-        overlay.classList.remove("open");
-        onDone();
-      };
-    }
-  }
-  requestAnimationFrame(animStep);
-}
-
-// ── WIRE ROOM BUTTONS — replace old logic ────────────────────────────────────
-function wireRoomButtons(){
-  const createBtn=document.getElementById("room-create-btn");
-  const joinBtn=document.getElementById("room-join-btn");
-  const joinInput=document.getElementById("room-join-input");
-  const errorEl=document.getElementById("room-error");
-
-  createBtn.disabled=false; createBtn.textContent="Create game";
-  joinBtn.disabled=false; joinBtn.textContent="Join";
-  if(errorEl) errorEl.textContent="";
+  createBtn.disabled = false; createBtn.textContent = "Create game";
+  joinBtn.disabled   = false; joinBtn.textContent   = "Join";
+  if(errorEl) errorEl.textContent = "";
 
   createBtn.onclick = () => {
     hideScreen("room-screen");
@@ -1997,24 +1432,24 @@ function wireRoomButtons(){
   };
 
   joinBtn.onclick = async () => {
-    const code=(joinInput.value||"").toUpperCase().trim();
-    if(code.length!==4){ errorEl.textContent="Enter a 4-character code."; return; }
-    joinBtn.disabled=true; joinBtn.textContent="Joining…"; errorEl.textContent="";
+    const code = (joinInput.value||"").toUpperCase().trim();
+    if(code.length !== 4) { errorEl.textContent = "Enter a 4-character code."; return; }
+    joinBtn.disabled = true; joinBtn.textContent = "Joining…"; errorEl.textContent = "";
     try {
-      const firebaseState=await fbJoinRoom(code);
-      if(!firebaseState||!firebaseState.playerCount) throw new Error("Room not found or already started.");
-      const joined=Object.keys(firebaseState.characterSelections||{}).length;
-      if(joined>=firebaseState.playerCount) throw new Error("Room is full.");
+      const firebaseState = await fbJoinRoom(code);
+      if(!firebaseState || !firebaseState.playerCount) throw new Error("Room not found or already started.");
+      const joined = Object.keys(firebaseState.characterSelections||{}).length;
+      if(joined >= firebaseState.playerCount) throw new Error("Room is full.");
       hideScreen("room-screen");
       showJoinLobby(code, firebaseState);
-    } catch(err){
-      errorEl.textContent=err.message;
-      joinBtn.disabled=false; joinBtn.textContent="Join";
+    } catch(err) {
+      errorEl.textContent = err.message;
+      joinBtn.disabled = false; joinBtn.textContent = "Join";
     }
   };
 
-  joinInput.onkeydown=e=>{if(e.key==="Enter")joinBtn.click();};
-  joinInput.oninput=()=>{joinInput.value=joinInput.value.toUpperCase();};
+  joinInput.onkeydown = e => { if(e.key === "Enter") joinBtn.click(); };
+  joinInput.oninput   = () => { joinInput.value = joinInput.value.toUpperCase(); };
 }
 
 function restoreArrays(state) {
