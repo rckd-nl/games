@@ -87,13 +87,13 @@ async function initFirebase() {
   _firebaseServerTimestamp = fb.serverTimestamp;
 
   const firebaseApp = initializeApp({
-    apiKey:            "AIzaSyADtUD_GrSbfzss3CeO79VbDeAOmIwxGfI",
-    authDomain:        "didcot-dogs.firebaseapp.com",
-    databaseURL:       "https://didcot-dogs-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId:         "didcot-dogs",
-    storageBucket:     "didcot-dogs.firebasestorage.app",
-    messagingSenderId: "1087104000704",
-    appId:             "1:1087104000704:web:13dbe3478e3a0cc9e5c325"
+    apiKey:            "AIzaSyBhABCZpnZaKlLvxl4-637bGeB3qCoAnoU",
+    authDomain:        "dogs-of-didcot-27ae6.firebaseapp.com",
+    databaseURL:       "https://dogs-of-didcot-27ae6-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId:         "dogs-of-didcot-27ae6",
+    storageBucket:     "dogs-of-didcot-27ae6.firebasestorage.app",
+    messagingSenderId: "288843673622",
+    appId:             "1:288843673622:web:d2556cf191672826e04537"
   });
 
   _db = fb.getDatabase(firebaseApp);
