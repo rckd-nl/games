@@ -1008,6 +1008,22 @@ body::before {
 .lobby-dog-btn:nth-child(5) img{animation:dogJiggle2 2.6s steps(1,end) infinite; animation-delay:0.2s}
 .lobby-dog-btn:nth-child(6) img{animation:dogJiggle3 4.4s steps(1,end) infinite; animation-delay:1.4s}
 .lobby-dog-btn img{transform-origin:50% 70%;transition:none}
+
+/* ── Falling dog images — DOM elements inside #screen-room ── */
+.falling-dog {
+  position: absolute;
+  pointer-events: none;
+  animation: dogFall linear infinite;
+  opacity: 0;
+  z-index: 1;
+  transform-origin: center center;
+}
+@keyframes dogFall {
+  0%   { transform: translateY(-100px) rotate(var(--dog-r0)); opacity: 0; }
+  6%   { opacity: var(--dog-op); }
+  90%  { opacity: var(--dog-op); }
+  100% { transform: translateY(110vh) rotate(var(--dog-r1)); opacity: 0; }
+}
 </style>
 </head>
 <body>
@@ -1152,8 +1168,8 @@ body::before {
 // Version: v4.0 / Turn 7
 // Clean rewrite from spec. Firebase: dogs-of-didcot-27ae6
 
-console.log("[DoD] v8.3 loading");
-const APP_VERSION = "v8.3"; // turn 8
+console.log("[DoD] v8.4 loading");
+const APP_VERSION = "v8.4"; // turn 8
 
 // ─── Firebase ────────────────────────────────────────────────────────────────
 let db = null;
@@ -1276,84 +1292,52 @@ function buildDeck() {
 
 // ─── Falling dogs canvas ─────────────────────────────────────────────────────
 function initFallingDogs() {
-  // Guard: only one canvas + one animation loop ever
-  let cv = $("dogs-canvas");
-  if(cv && cv._dogsRunning) return; // already running — do nothing
-  if(!cv) {
-    cv = document.createElement("canvas");
-    cv.id = "dogs-canvas";
-    cv.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:1";
-    document.body.appendChild(cv);
+  const screen = document.getElementById("screen-room");
+  if(!screen) return;
+  // Remove any existing falling dogs
+  screen.querySelectorAll(".falling-dog").forEach(e => e.remove());
+
+  const count = 20;
+  for(let i = 0; i < count; i++) {
+    const dog = DOGS[~~(Math.random() * DOGS.length)];
+    const img = document.createElement("img");
+    img.className = "falling-dog";
+    img.src = dog.img;
+    img.alt = "";
+
+    // Random position, size, speed, rotation, opacity
+    const size   = 38 + Math.random() * 48;
+    const left   = Math.random() * 96; // % across screen
+    const dur    = 3.5 + Math.random() * 5;
+    const delay  = -(Math.random() * dur); // negative delay = starts mid-fall
+    const r0     = -25 + Math.random() * 50;
+    const r1     = r0 + (-40 + Math.random() * 80);
+    const op     = 0.18 + Math.random() * 0.22;
+
+    img.style.cssText = [
+      `width:${size}px`,
+      `height:${size}px`,
+      `left:${left}%`,
+      `top:0`,
+      `object-fit:contain`,
+      `animation-duration:${dur}s`,
+      `animation-delay:${delay}s`,
+      `--dog-r0:${r0}deg`,
+      `--dog-r1:${r1}deg`,
+      `--dog-op:${op}`,
+    ].join(";");
+
+    screen.appendChild(img);
   }
-  cv._dogsRunning = true;
-  const ctx = cv.getContext("2d");
-  const resize = () => { cv.width = innerWidth; cv.height = innerHeight; };
-  resize();
-  window.addEventListener("resize", resize);
-
-  // Load all images first — only start drawing when at least one is ready
-  let readyCount = 0;
-  const imgs = DOGS.map(d => {
-    const i = new Image();
-    i._ready = false;
-    i.onload  = () => { i._ready = true; readyCount++; };
-    i.onerror = () => { i._ready = false; readyCount++; }; // count even failures
-    i.src = d.img;
-    return i;
-  });
-
-  const dogs = Array.from({length: 18}, () => ({
-    x:   Math.random() * innerWidth,
-    y:   Math.random() * -innerHeight * 1.2,
-    spd: 0.5 + Math.random() * 1.4,
-    sz:  36 + Math.random() * 44,
-    rot: (Math.random() - 0.5) * 0.07,
-    ang: 0,
-    sw:  (Math.random() - 0.5) * 0.7,
-    swp: Math.random() * Math.PI * 2,
-    img: imgs[~~(Math.random() * imgs.length)]
-  }));
-
-  let frameId = null;
-  function draw() {
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    dogs.forEach(d => {
-      d.y   += d.spd;
-      d.ang += d.rot;
-      d.swp += 0.018;
-      d.x   += Math.sin(d.swp) * d.sw;
-      if (d.y > cv.height + 80) {
-        d.y = -80;
-        d.x = Math.random() * cv.width;
-        // Pick a new random dog image on each respawn
-        d.img = imgs[~~(Math.random() * imgs.length)];
-      }
-      // Only draw if this image has loaded
-      if (!d.img._ready) return;
-      try {
-        ctx.save();
-        ctx.globalAlpha = 0.28;
-        ctx.translate(d.x, d.y);
-        ctx.rotate(d.ang);
-        ctx.drawImage(d.img, -d.sz / 2, -d.sz / 2, d.sz, d.sz);
-        ctx.restore();
-      } catch(e) { /* image draw failed — skip this frame */ }
-    });
-    frameId = requestAnimationFrame(draw);
-  }
-
-  // Start immediately — dogs with loaded images will show, others appear as they load
-  draw();
 }
+
 
 // Stop falling dogs (called when entering game screen)
 function stopFallingDogs() {
-  const cv = $("dogs-canvas");
-  if(cv) { cv._dogsRunning = false; cv.style.display = "none"; }
+  const screen = document.getElementById("screen-room");
+  if(screen) screen.querySelectorAll(".falling-dog").forEach(e => e.remove());
 }
 function resumeFallingDogs() {
-  const cv = $("dogs-canvas");
-  if(cv) { cv.style.display = ""; cv._dogsRunning = false; } // reset guard so re-call works
   initFallingDogs();
 }
 
