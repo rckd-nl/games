@@ -1233,7 +1233,9 @@ function initFallingDogs() {
   const ctx = cv.getContext("2d");
   const resize = () => { cv.width=innerWidth; cv.height=innerHeight; };
   resize(); window.addEventListener("resize",resize);
-  const imgs = DOGS.map(d=>{ const i=new Image(); i.src=d.img; return i; });
+  // Pre-load all dog images before starting animation
+  let loaded=0;
+  const imgs = DOGS.map(d=>{ const i=new Image(); i.onload=()=>{loaded++;}; i.onerror=()=>{loaded++;}; i.src=d.img; return i; });
   const dogs = Array.from({length:16},()=>({
     x:Math.random()*innerWidth, y:Math.random()*-innerHeight,
     spd:.4+Math.random()*1.2, sz:32+Math.random()*36,
@@ -2056,7 +2058,16 @@ let lobbyOv=null;
 function getLobby(){if(!lobbyOv){lobbyOv=mk("div");lobbyOv.id="lobby-overlay";lobbyOv.className="lobby-overlay";document.body.appendChild(lobbyOv);}return lobbyOv;}
 function showLobby(html){
   const o=getLobby();
-  o.innerHTML=`<div class="lobby-wipe-layer lobby-wipe-layer-a"></div><div class="lobby-wipe-layer lobby-wipe-layer-b"></div>${html}`;
+  // Wipe layers injected ONCE — never touch them on re-render so CSS animation runs uninterrupted
+  if(!o.querySelector(".lobby-wipe-layer-a")){
+    const wa=document.createElement("div"); wa.className="lobby-wipe-layer lobby-wipe-layer-a";
+    const wb=document.createElement("div"); wb.className="lobby-wipe-layer lobby-wipe-layer-b";
+    o.appendChild(wa); o.appendChild(wb);
+  }
+  // Only update the content div, not the whole overlay
+  let cont=o.querySelector(".lobby-content-wrap");
+  if(!cont){ cont=document.createElement("div"); cont.className="lobby-content-wrap"; cont.style.cssText="position:relative;z-index:2;width:100%;min-height:100%"; o.appendChild(cont); }
+  cont.innerHTML=html;
   o.classList.add("open");
 }
 function hideLobby(){getLobby().classList.remove("open");}
@@ -2094,7 +2105,9 @@ function showCreateLobby2(){
       </div>
       <div class="lobby-actions">
         <button class="lobby-btn-back" id="lb-back" type="button">← Menu</button>
-        <button class="lobby-btn-confirm" id="lb-confirm" type="button" ${ok?"":"disabled"}>${ok?"Create room →":"Select dog + colour"}</button>
+        <button class="lobby-btn-confirm" id="lb-confirm" type="button" ${ok?"":"disabled"} style="${ok&&sel.colour?`background:${PLAYER_COLOURS[sel.colour]};border-color:${PLAYER_COLOURS[sel.colour]};color:${contrastFor(PLAYER_COLOURS[sel.colour])}`:''}">
+        ${ok?"Create room →":"Select dog + colour"}
+      </button>
       </div>
     </div></div>`);
 
@@ -2102,10 +2115,21 @@ function showCreateLobby2(){
     DOGS.forEach(d=>{const btn=mk("button","lobby-dog-btn"+(sel.dog===d.id?" sel":""));btn.innerHTML=`<img src="${d.img}" alt="${d.name}" onerror="this.style.display='none'"><div class="dog-name">${d.name}</div>`;btn.onclick=()=>{sel.dog=d.id;r();};dg.appendChild(btn);});
 
     const cg=$("lcols");
-    colNames.forEach(name=>{const hex=PLAYER_COLOURS[name],fg=contrastFor(hex);const btn=mk("button","lobby-colour-btn"+(sel.colour===name?" sel":""));btn.style.cssText=`background:${hex};color:${fg};border-color:${sel.colour===name?"var(--ink)":"transparent"}`;btn.textContent=name;btn.onclick=()=>{sel.colour=name;r();};cg.appendChild(btn);});
+    colNames.forEach(name=>{
+      const hex=PLAYER_COLOURS[name],fg=contrastFor(hex);
+      const isSel=sel.colour===name;
+      const btn=mk("button","lobby-colour-btn"+(isSel?" sel":""));
+      btn.style.cssText=`background:${hex};color:${fg};border-color:${isSel?"#fff":"transparent"};box-shadow:${isSel?`0 0 0 3px ${hex},0 0 0 5px #fff`:"none"}`;
+      btn.textContent=name;
+      btn.onclick=()=>{sel.colour=name;r();};
+      cg.appendChild(btn);
+    });
 
     renderNumPicker("lplayers",[2,3,4,5,6],sel.players,v=>{sel.players=v;r();});
-    renderNumPicker("ljourneys",Array.from({length:Math.floor(pool.length/sel.players)},(_,i)=>i+1),sel.journeys,v=>{sel.journeys=v;r();},Math.floor(pool.length/sel.players));
+    const effectivePool = pool.length>0 ? pool : DEST_POOL;
+    const maxJ2=Math.floor(effectivePool.length/sel.players)||1;
+    if(sel.journeys>maxJ2) sel.journeys=maxJ2;
+    renderNumPicker("ljourneys",Array.from({length:maxJ2},(_,i)=>i+1),sel.journeys,v=>{sel.journeys=v;r();},maxJ2);
     renderNumPicker("lmystery",[0,1,2,3,4,5,6,7,8],sel.mystery,v=>{sel.mystery=v;r();});
 
     $("lb-back").onclick=()=>{hideLobby();showScreen("screen-room");};
@@ -2136,7 +2160,9 @@ function showJoinLobby(code,remoteState){
       <div id="join-err" style="color:var(--red);font-size:.85rem;min-height:18px;text-align:center"></div>
       <div class="lobby-actions">
         <button class="lobby-btn-back" id="lb-back" type="button">← Menu</button>
-        <button class="lobby-btn-confirm" id="lb-confirm" type="button" ${ok?"":"disabled"}>${ok?"Join room →":"Select dog + colour"}</button>
+        <button class="lobby-btn-confirm" id="lb-confirm" type="button" ${ok?"":"disabled"} style="${ok&&sel.colour?`background:${PLAYER_COLOURS[sel.colour]};border-color:${PLAYER_COLOURS[sel.colour]};color:${contrastFor(PLAYER_COLOURS[sel.colour])}`:''}">
+        ${ok?"Join room →":"Select dog + colour"}
+      </button>
       </div>
     </div></div>`);
 
@@ -2400,6 +2426,7 @@ function doReturnToMenu(){
   hideLobby();
   const wo=$("win-overlay"); if(wo) wo.classList.remove("active");
   showScreen("screen-room");
+  initFallingDogs();
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
