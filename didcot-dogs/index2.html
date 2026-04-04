@@ -296,6 +296,8 @@ body::before {
   border:3px solid var(--border);
   background:var(--paper);
   cursor:pointer;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:6px;padding:8px 4px;
   transition:transform .12s,border-color .12s,box-shadow .12s;
@@ -320,6 +322,8 @@ body::before {
   height:48px;border-radius:8px;
   border:3px solid transparent;
   cursor:pointer;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
   font-family:var(--font-ui);font-size:.75rem;font-weight:700;
   letter-spacing:.04em;text-transform:uppercase;
   transition:transform .1s,border-color .1s;
@@ -335,6 +339,8 @@ body::before {
   border:2px solid var(--border);background:var(--paper);
   font-family:var(--font-ui);font-size:1.3rem;font-weight:700;color:var(--ink);
   cursor:pointer;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
   transition:background .1s,border-color .1s,transform .1s;
 }
 .lobby-num-btn:hover{background:var(--cream2);border-color:var(--muted)}
@@ -355,6 +361,8 @@ body::before {
   background:var(--red);border:2px solid var(--red2);
   color:#fff;font-family:var(--font-ui);font-size:1.1rem;font-weight:700;
   cursor:pointer;box-shadow:2px 2px 0 var(--red2);
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
   transition:transform .1s,box-shadow .1s,opacity .12s;
 }
 .lobby-btn-confirm:hover:not(:disabled){transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--red2)}
@@ -1168,8 +1176,8 @@ body::before {
 // Version: v4.0 / Turn 7
 // Clean rewrite from spec. Firebase: dogs-of-didcot-27ae6
 
-console.log("[DoD] v8.4 loading");
-const APP_VERSION = "v8.4"; // turn 8
+console.log("[DoD] v8.6 loading");
+const APP_VERSION = "v8.6"; // turn 8
 
 // ─── Firebase ────────────────────────────────────────────────────────────────
 let db = null;
@@ -2165,12 +2173,11 @@ function renderNumPicker(containerId,options,selected,onSelect,dimAbove=99){
     const dim=v>dimAbove;
     const btn=mk("button","lobby-num-btn"+(selected===v?" sel":"")+(dim?" dim":""));
     btn.textContent=v;
-    // Use pointer/touch events rather than relying on disabled for selectability
-    // Dim buttons are visually greyed but NOT disabled — prevents mobile tap issues
     btn.style.opacity=dim?"0.3":"";
     btn.style.cursor=dim?"not-allowed":"pointer";
-    btn.addEventListener("click",()=>{ if(!dim) onSelect(v); });
-    btn.addEventListener("touchend",(e)=>{ e.preventDefault(); if(!dim) onSelect(v); });
+    // touch-action:manipulation tells iOS this is a tap — fires click immediately, no scroll delay
+    btn.style.touchAction="manipulation";
+    btn.onclick=()=>{ if(!dim) onSelect(v); };
     c.appendChild(btn);
   });
 }
@@ -2410,7 +2417,7 @@ async function createRoom(sel){
     currentPlayer:null,
     playerOrder:[],
     characterSelections:{[sel.dog]:{colour:sel.colour,joinOrder:0}},
-    players:{[sel.dog]:{currentNode:"Didcot",previousNode:null,chain:shuffled.slice(0,N),chainIdx:0,completedChain:false,journeyRoutes:[],inventory:[],skipTurns:0,routeCostBonus:0}},
+    players:{[sel.dog]:{currentNode:"Didcot",previousNode:null,chain:Object.fromEntries(shuffled.slice(0,N).map((v,i)=>[i,v])),chainIdx:0,completedChain:false,journeyRoutes:[],inventory:[],skipTurns:0,routeCostBonus:0}},
     hands,
     drawPile:deck,
     discardPile:[],
@@ -2425,6 +2432,8 @@ async function createRoom(sel){
   while(attempts<10){ code=genCode(); const ex=await fbGet(dbRef(`rooms/${code}/state`)); if(!ex.exists()) break; attempts++; }
   await fbSet(dbRef(`rooms/${code}/state`),sanitise(state));
   G.roomCode=code; G.myId=sel.dog;
+  // Clear any stale session before writing new one
+  sessionStorage.removeItem("dod_room"); sessionStorage.removeItem("dod_id");
   sessionStorage.setItem("dod_room",code); sessionStorage.setItem("dod_id",sel.dog);
   startRoomSubscriber(code);
 }
@@ -2433,7 +2442,8 @@ async function joinRoom(code,sel,remoteState){
   const joined=Object.keys(remoteState.characterSelections||{}).length;
   const N=remoteState.journeyTarget||3;
   const pool=toArr(remoteState.destPool||[]);
-  const chain=pool.slice(joined*N,(joined+1)*N);
+  const chainArr=pool.slice(joined*N,(joined+1)*N);
+  const chain=Object.fromEntries(chainArr.map((v,i)=>[i,v]));
   const deck=[...toArr(remoteState.drawPile||[])];
   const startHand=deck.splice(0,4);
   const updates={
@@ -2445,6 +2455,8 @@ async function joinRoom(code,sel,remoteState){
   };
   await fbUpdate(dbRef(`rooms/${code}/state`),sanitise(updates));
   G.roomCode=code; G.myId=sel.dog;
+  // Clear any stale session before writing new one
+  sessionStorage.removeItem("dod_room"); sessionStorage.removeItem("dod_id");
   sessionStorage.setItem("dod_room",code); sessionStorage.setItem("dod_id",sel.dog);
   startRoomSubscriber(code);
 }
@@ -2543,6 +2555,16 @@ function normalise(raw){
     p.inventory=toArr(p.inventory||[]);
     if(!p.skipTurns) p.skipTurns=0;
     if(!p.routeCostBonus) p.routeCostBonus=0;
+    // Rebuild chain from destPool if Firebase dropped the array
+    if(!p.chain||p.chain.length===0){
+      const pool=toArr(s.destPool||[]);
+      const N=s.journeyTarget||3;
+      const order=p.joinOrder||0;
+      if(pool.length>0){
+        p.chain=pool.slice(order*N,(order+1)*N);
+        console.warn("[DoD] Rebuilt chain for",id,"from destPool:",p.chain);
+      }
+    }
   });
   if(s.hands) Object.keys(s.hands).forEach(id=>{s.hands[id]=toArr(s.hands[id]);});
   return s;
