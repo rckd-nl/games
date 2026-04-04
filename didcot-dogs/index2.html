@@ -3,239 +3,2458 @@
 <head>
 <!--
   DOGS OF DIDCOT
-  ================================================
-  Version: v3.0  |  Turn: 6
-  ================================================
+  Version: v4.0 / Turn 7
+  Full rewrite from spec.
+  Warm chaotic map aesthetic. Professor Minty.
+  Cream/parchment bg. Full card hand strip.
+  Firebase: dogs-of-didcot-27ae6
+  
   CHANGELOG
-  v3.0 (turn 6)
-    - Cleaned HTML — removed dead nodes from earlier builds
-    - Dead hero-overlay (Eric/Tango hardcode) removed
-    - Dead static waiting-screen content removed
-    - Hardcoded start-toast "YOU ARE ERIC!" removed
-    - Lobby system (showCreateLobby/showJoinLobby) drives
-      all screens dynamically via #lobby-overlay
-    - Firebase config in app.v2.js updated to
-      dogs-of-didcot-27ae6
-    - Professor Minty via Typekit (only external dependency)
-    - SVG, data, and images still loaded from assets/ data/
-  ================================================
+  v4.0 (turn 7)
+    - Complete rewrite of JS from spec
+    - Warm/chaotic hand-drawn map aesthetic
+    - Professor Minty font throughout
+    - Card hand strip with actual card graphics
+    - Big dog portraits front and centre
+    - Full 2-6 player lobby
+    - Mystery events, poop, zoomies all included
+    - Draw-2-pick-1 mechanic
+    - Phase-driven lobby (waiting/countdown/playing)
+    - Single Firebase subscriber per client
+    - Route colour badges on board
+    - Token formation positioning for multi-player
+    - Session resume via sessionStorage
 -->
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <title>Dogs of Didcot</title>
 <link rel="stylesheet" href="https://use.typekit.net/gff4ipy.css">
-<link rel="stylesheet" href="./css/didcot-dogs.v2.css" />
-<link rel="stylesheet" href="./css/room.css" />
+<style>
+/* ═══════════════════════════════════════════════
+   DOGS OF DIDCOT — v4.0
+   Warm chaotic map aesthetic. Professor Minty.
+   Cream/parchment bg, loud ink colours, card hand.
+═══════════════════════════════════════════════ */
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root {
+  --cream:   #f4f0e4;
+  --cream2:  #ede8d8;
+  --paper:   #e8e2ce;
+  --ink:     #1a1208;
+  --ink2:    #2e2510;
+  --red:     #c8321a;
+  --red2:    #a02010;
+  --gold:    #c9820a;
+  --gold2:   #a56808;
+  --green:   #2a6e3a;
+  --blue:    #1a3e7c;
+  --muted:   #6b5e42;
+  --border:  #b8a882;
+  --shadow:  rgba(26,18,8,0.18);
+
+  --font-display: "professor-minty", sans-serif;
+  --font-body:    "professor-minty", sans-serif;
+
+  /* Route colours — vivid ink */
+  --rc-red:    #c8321a;
+  --rc-orange: #d4620a;
+  --rc-blue:   #1a4eb0;
+  --rc-green:  #1e7a38;
+  --rc-black:  #1a1208;
+  --rc-pink:   #b82878;
+  --rc-yellow: #c8a008;
+
+  /* Card colour gradients */
+  --card-red:    linear-gradient(160deg,#e87060 0%,#c8321a 100%);
+  --card-orange: linear-gradient(160deg,#f0a060 0%,#d4620a 100%);
+  --card-blue:   linear-gradient(160deg,#6090d8 0%,#1a4eb0 100%);
+  --card-green:  linear-gradient(160deg,#60b870 0%,#1e7a38 100%);
+  --card-black:  linear-gradient(160deg,#606060 0%,#1a1208 100%);
+  --card-pink:   linear-gradient(160deg,#e880b8 0%,#b82878 100%);
+  --card-yellow: linear-gradient(160deg,#f0d060 0%,#c8a008 100%);
+  --card-rainbow:linear-gradient(135deg,#e87060,#f0d060,#60b870,#6090d8,#e880b8);
+
+  /* Player colours */
+  --pc-red:    #c8321a;
+  --pc-orange: #d4620a;
+  --pc-yellow: #c8a008;
+  --pc-green:  #1e7a38;
+  --pc-teal:   #1a7a6a;
+  --pc-blue:   #1a4eb0;
+  --pc-purple: #7a28a8;
+  --pc-pink:   #b82878;
+  --pc-white:  #e8e2ce;
+  --pc-black:  #1a1208;
+}
+
+html,body {
+  height:100%;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+
+/* ── GRAIN OVERLAY ── */
+body::before {
+  content:'';
+  position:fixed;
+  inset:0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events:none;
+  z-index:9999;
+  opacity:0.6;
+}
+
+/* ══════════════════════════════════════
+   SCREENS
+══════════════════════════════════════ */
+.screen {
+  position:fixed;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;
+  transition:opacity .3s;z-index:100;
+}
+.screen.active{opacity:1;pointer-events:all}
+
+/* ══════════════════════════════════════
+   ROOM SCREEN
+══════════════════════════════════════ */
+#screen-room {
+  flex-direction:column;
+  background: var(--cream);
+  z-index:200;
+}
+
+.room-bg {
+  position:absolute;inset:0;overflow:hidden;
+}
+.room-bg-stripe {
+  position:absolute;height:100%;width:60px;
+  transform:skewX(-12deg);
+  opacity:.07;
+}
+.room-bg-stripe:nth-child(1){background:var(--red);left:10%}
+.room-bg-stripe:nth-child(2){background:var(--blue);left:25%}
+.room-bg-stripe:nth-child(3){background:var(--green);left:42%}
+.room-bg-stripe:nth-child(4){background:var(--gold);left:60%}
+.room-bg-stripe:nth-child(5){background:var(--rc-pink);left:76%}
+
+.room-content {
+  position:relative;z-index:2;
+  display:flex;flex-direction:column;align-items:center;
+  gap:20px;width:min(420px,92vw);
+}
+
+.room-masthead {
+  text-align:center;margin-bottom:8px;
+}
+.room-title {
+  font-family:var(--font-display);
+  font-size:clamp(3.5rem,9vw,6.5rem);
+  font-weight:700;
+  color:var(--ink);
+  line-height:.9;
+  letter-spacing:-.02em;
+  text-shadow: 3px 3px 0 var(--red2), 6px 6px 0 rgba(26,18,8,.1);
+}
+.room-sub {
+  font-family:var(--font-body);
+  font-size:.95rem;
+  color:var(--muted);
+  margin-top:6px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+
+/* Falling dogs canvas behind room screen */
+#dogs-canvas {
+  position:fixed;inset:0;
+  pointer-events:none;z-index:1;
+}
+
+.room-card {
+  width:100%;
+  background:var(--paper);
+  border:2px solid var(--border);
+  border-radius:12px;
+  padding:20px;
+  box-shadow: 4px 4px 0 var(--border), 8px 8px 0 rgba(26,18,8,.06);
+}
+
+.room-btn-create {
+  width:100%;min-height:58px;
+  background:var(--red);
+  border:2px solid var(--red2);
+  border-radius:10px;
+  color:#fff;
+  font-family:var(--font-display);
+  font-size:1.5rem;
+  font-weight:700;
+  cursor:pointer;
+  box-shadow:3px 3px 0 var(--red2);
+  transition:transform .1s,box-shadow .1s;
+  letter-spacing:.03em;
+}
+.room-btn-create:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--red2)}
+.room-btn-create:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--red2)}
+
+.room-divider {
+  display:flex;align-items:center;gap:12px;
+  color:var(--muted);font-size:.82rem;letter-spacing:.08em;text-transform:uppercase;
+}
+.room-divider::before,.room-divider::after{
+  content:'';flex:1;height:1px;background:var(--border);
+}
+
+.room-join-row{display:flex;gap:8px}
+.room-code-input {
+  flex:1;min-height:52px;
+  background:var(--cream);
+  border:2px solid var(--border);border-radius:10px;
+  color:var(--ink);
+  font-family:var(--font-display);
+  font-size:1.8rem;font-weight:700;
+  text-align:center;letter-spacing:.3em;
+  outline:none;
+  transition:border-color .15s;
+}
+.room-code-input:focus{border-color:var(--red)}
+.room-code-input::placeholder{color:var(--border);font-size:1.1rem;letter-spacing:.15em}
+.room-btn-join {
+  min-height:52px;padding:0 20px;
+  background:var(--ink);
+  border:2px solid var(--ink2);border-radius:10px;
+  color:var(--cream);
+  font-family:var(--font-display);
+  font-size:1.1rem;font-weight:700;
+  cursor:pointer;
+  box-shadow:2px 2px 0 var(--ink2);
+  transition:transform .1s,box-shadow .1s;
+  white-space:nowrap;
+}
+.room-btn-join:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--ink2)}
+.room-btn-join:active{transform:translate(1px,1px);box-shadow:0 0 0 var(--ink2)}
+.room-error{color:var(--red);font-size:.85rem;text-align:center;min-height:18px;margin-top:4px}
+
+/* ══════════════════════════════════════
+   LOBBY OVERLAY
+   Injected by JS — full screen over room
+══════════════════════════════════════ */
+#lobby-overlay {
+  position:fixed;inset:0;z-index:300;
+  background:var(--cream);
+  display:none;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+#lobby-overlay.open{display:block}
+
+.lobby-wrap {
+  min-height:100%;
+  display:flex;align-items:flex-start;justify-content:center;
+  padding:32px 16px 48px;
+}
+.lobby-inner {
+  width:min(700px,100%);
+  display:flex;flex-direction:column;gap:24px;
+}
+
+.lobby-header{text-align:center}
+.lobby-eyebrow {
+  font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:6px;
+}
+.lobby-title {
+  font-family:var(--font-display);
+  font-size:clamp(2.4rem,6vw,4rem);
+  font-weight:700;color:var(--ink);
+  line-height:.95;
+  text-shadow:2px 2px 0 rgba(26,18,8,.12);
+}
+
+.lobby-section-label {
+  font-size:.78rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:10px;
+}
+
+/* Dog picker */
+.lobby-dog-grid {
+  display:grid;grid-template-columns:repeat(6,1fr);gap:10px;
+}
+@media(max-width:500px){.lobby-dog-grid{grid-template-columns:repeat(3,1fr)}}
+.lobby-dog-btn {
+  aspect-ratio:1;border-radius:14px;
+  border:3px solid var(--border);
+  background:var(--paper);
+  cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;padding:8px 4px;
+  transition:transform .12s,border-color .12s,box-shadow .12s;
+  position:relative;overflow:hidden;
+}
+.lobby-dog-btn img{width:70%;height:70%;object-fit:contain}
+.lobby-dog-btn .dog-name{font-size:.68rem;font-weight:700;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.lobby-dog-btn:hover:not(.taken):not(.sel){transform:translateY(-3px);border-color:var(--red);box-shadow:0 6px 0 var(--border)}
+.lobby-dog-btn.sel{border-color:var(--red);background:#fff8f4;transform:translateY(-2px);box-shadow:0 4px 0 var(--red2)}
+.lobby-dog-btn.taken{opacity:.32;cursor:not-allowed}
+.lobby-dog-btn .taken-stamp{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);font-size:1.4rem;color:var(--red);
+  transform:rotate(-20deg);opacity:.8;
+}
+
+/* Colour picker */
+.lobby-colour-grid {
+  display:grid;grid-template-columns:repeat(5,1fr);gap:8px;
+}
+.lobby-colour-btn {
+  height:48px;border-radius:8px;
+  border:3px solid transparent;
+  cursor:pointer;
+  font-family:var(--font-display);font-size:.75rem;font-weight:700;
+  letter-spacing:.04em;text-transform:uppercase;
+  transition:transform .1s,border-color .1s;
+}
+.lobby-colour-btn:hover:not(.taken){transform:scale(1.06)}
+.lobby-colour-btn.sel{border-color:var(--ink)!important;transform:scale(1.06);box-shadow:0 0 0 2px rgba(26,18,8,.3)}
+.lobby-colour-btn.taken{opacity:.28;cursor:not-allowed;text-decoration:line-through}
+
+/* Number pickers */
+.lobby-num-row{display:flex;flex-wrap:wrap;gap:8px}
+.lobby-num-btn {
+  width:48px;height:48px;border-radius:8px;
+  border:2px solid var(--border);background:var(--paper);
+  font-family:var(--font-display);font-size:1.3rem;font-weight:700;color:var(--ink);
+  cursor:pointer;
+  transition:background .1s,border-color .1s,transform .1s;
+}
+.lobby-num-btn:hover{background:var(--cream2);border-color:var(--muted)}
+.lobby-num-btn.sel{background:var(--ink);color:var(--cream);border-color:var(--ink2);transform:scale(1.08)}
+.lobby-num-btn.dim{opacity:.28;cursor:not-allowed}
+
+/* Lobby action row */
+.lobby-actions{display:flex;justify-content:space-between;gap:12px;margin-top:8px}
+.lobby-btn-back {
+  min-height:50px;padding:0 20px;border-radius:10px;
+  border:2px solid var(--border);background:var(--paper);
+  font-family:var(--font-display);font-size:1rem;color:var(--muted);cursor:pointer;
+  transition:background .12s;
+}
+.lobby-btn-back:hover{background:var(--cream2)}
+.lobby-btn-confirm {
+  flex:1;min-height:50px;border-radius:10px;
+  background:var(--red);border:2px solid var(--red2);
+  color:#fff;font-family:var(--font-display);font-size:1.1rem;font-weight:700;
+  cursor:pointer;box-shadow:2px 2px 0 var(--red2);
+  transition:transform .1s,box-shadow .1s,opacity .12s;
+}
+.lobby-btn-confirm:hover:not(:disabled){transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--red2)}
+.lobby-btn-confirm:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+
+/* Summary pill */
+.lobby-game-info{
+  display:flex;gap:10px;flex-wrap:wrap;font-size:.82rem;color:var(--muted);
+}
+.lobby-info-pill{
+  padding:4px 12px;border-radius:99px;
+  border:1.5px solid var(--border);background:var(--paper);
+  font-weight:700;color:var(--ink);
+}
+
+/* Waiting lobby */
+.lobby-waiting-code {
+  font-family:var(--font-display);
+  font-size:clamp(3.5rem,12vw,6rem);
+  font-weight:700;color:var(--red);
+  letter-spacing:.2em;text-align:center;
+  text-shadow:3px 3px 0 var(--red2);
+}
+.lobby-waiting-slots{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.lobby-slot-filled,.lobby-slot-empty{
+  width:96px;padding:12px 8px;border-radius:12px;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  font-size:.78rem;font-weight:700;
+}
+.lobby-slot-filled{border:2px solid}
+.lobby-slot-empty{border:2px dashed var(--border);background:var(--paper);color:var(--muted)}
+.lobby-slot-filled img{width:52px;height:52px;object-fit:contain;border-radius:50%;border:3px solid rgba(0,0,0,.15);background:rgba(255,255,255,.8)}
+.lobby-slot-badge{
+  font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;
+  padding:2px 8px;border-radius:99px;background:rgba(0,0,0,.15);
+}
+.lobby-waiting-sub{
+  font-size:.9rem;color:var(--muted);text-align:center;
+}
+.waiting-dots{display:flex;gap:8px;justify-content:center}
+.waiting-dot{
+  width:10px;height:10px;border-radius:50%;background:var(--muted);
+  animation:dotpulse 1.4s ease-in-out infinite;
+}
+.waiting-dot:nth-child(2){animation-delay:.2s}
+.waiting-dot:nth-child(3){animation-delay:.4s}
+@keyframes dotpulse{
+  0%,100%{transform:scale(.65);opacity:.35}
+  50%{transform:scale(1.1);opacity:1}
+}
+
+.lobby-start-btn {
+  width:100%;min-height:60px;
+  background:var(--green);border:2px solid #1a5228;
+  border-radius:12px;color:#fff;
+  font-family:var(--font-display);font-size:1.4rem;font-weight:700;
+  cursor:pointer;box-shadow:3px 3px 0 #1a5228;
+  transition:transform .1s,box-shadow .1s;
+}
+.lobby-start-btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 #1a5228}
+
+/* ══════════════════════════════════════
+   TURN BANNER
+══════════════════════════════════════ */
+#turn-banner {
+  position:fixed;top:12px;left:50%;
+  transform:translateX(-50%) translateY(-80px);
+  background:var(--ink);color:var(--cream);
+  font-family:var(--font-display);font-size:1.1rem;font-weight:700;
+  padding:10px 28px;border-radius:99px;
+  box-shadow:3px 3px 0 rgba(26,18,8,.25);
+  z-index:500;letter-spacing:.04em;
+  transition:transform .4s cubic-bezier(.34,1.56,.64,1);
+  white-space:nowrap;pointer-events:none;
+}
+#turn-banner.show{transform:translateX(-50%) translateY(0)}
+
+/* ══════════════════════════════════════
+   GAME SCREEN
+══════════════════════════════════════ */
+#screen-game {
+  flex-direction:row;
+  align-items:stretch;
+  padding:0;z-index:50;
+  background:var(--cream2);
+}
+
+/* ── BOARD ── */
+#board-area {
+  flex:1;position:relative;
+  overflow:hidden;
+  background:
+    radial-gradient(ellipse at center, #f8f4e8 0%, var(--cream2) 100%);
+  border-right:2px solid var(--border);
+}
+#board-svg-host{
+  width:100%;height:100%;display:block;
+}
+#board-svg-host svg{
+  width:100%;height:100%;display:block;
+}
+/* Override SVG node colours so we can style them */
+#board-svg-host #Nodes circle{
+  fill:#fff !important;
+  stroke:#1a1208 !important;
+  stroke-width:4 !important;
+}
+#board-svg-host text{
+  font-family:var(--font-display) !important;
+  fill:var(--ink) !important;
+  pointer-events:none;
+}
+/* Route base style */
+#board-svg-host path.route-base{
+  vector-effect:non-scaling-stroke;
+}
+
+/* SVG state classes */
+.route-eligible{
+  animation:eligiblePulse .9s ease-in-out infinite;
+  filter:drop-shadow(0 0 8px rgba(200,50,26,.85));
+}
+.route-claimed{
+  stroke-width:11 !important;
+  animation:claimedShimmer 1.2s ease-in-out infinite;
+}
+@keyframes eligiblePulse{
+  0%,100%{stroke-opacity:1}50%{stroke-opacity:.6}
+}
+@keyframes claimedShimmer{
+  0%,100%{stroke-opacity:1;filter:drop-shadow(0 0 4px rgba(255,255,255,.3))}
+  50%{stroke-opacity:.85;filter:drop-shadow(0 0 8px rgba(255,255,255,.5))}
+}
+.node-target-pulse{
+  animation:targetPulse 1.3s linear infinite !important;
+}
+@keyframes targetPulse{
+  0%  {fill:#c8321a !important;stroke:#c8321a !important}
+  20% {fill:#d4620a !important;stroke:#d4620a !important}
+  40% {fill:#c8a008 !important;stroke:#c8a008 !important}
+  60% {fill:#1e7a38 !important;stroke:#1e7a38 !important}
+  80% {fill:#1a4eb0 !important;stroke:#1a4eb0 !important}
+  100%{fill:#b82878 !important;stroke:#b82878 !important}
+}
+.mystery-ring{animation:mystRing 1.5s ease-in-out infinite}
+@keyframes mystRing{
+  0%,100%{opacity:.45;transform:scale(1)}
+  50%{opacity:1;transform:scale(1.2)}
+}
+
+/* ── LEFT PANEL ── */
+#left-panel {
+  width:260px;flex-shrink:0;
+  background:var(--paper);
+  border-right:2px solid var(--border);
+  display:flex;flex-direction:column;
+  overflow:hidden;padding:0;
+}
+.panel-header{
+  padding:14px 16px 10px;
+  border-bottom:2px solid var(--border);
+  background:var(--cream2);
+}
+.panel-header h2{
+  font-family:var(--font-display);
+  font-size:1.4rem;font-weight:700;
+  color:var(--ink);letter-spacing:.02em;
+}
+.panel-body{
+  flex:1;overflow-y:auto;padding:14px 14px 8px;
+  display:flex;flex-direction:column;gap:14px;
+}
+.panel-section-lbl{
+  font-size:.72rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:6px;
+}
+
+/* Player cards in left panel */
+.player-card {
+  border-radius:10px;border:2px solid var(--border);
+  background:var(--cream);padding:10px 12px;
+  display:flex;align-items:center;gap:10px;
+  transition:border-color .2s,background .2s;
+  border-left-width:4px;
+}
+.player-card.my-turn{border-color:var(--green) !important;background:#f0faf2}
+.player-card.act-turn{border-color:var(--red) !important;background:#fff8f4;
+  box-shadow:0 0 0 2px rgba(200,50,26,.12)}
+.pc-portrait{
+  width:38px;height:38px;border-radius:8px;
+  overflow:hidden;flex-shrink:0;
+  background:rgba(255,255,255,.8);
+  border:1.5px solid var(--border);
+}
+.pc-portrait img{width:100%;height:100%;object-fit:contain}
+.pc-info{flex:1;min-width:0}
+.pc-name{font-family:var(--font-display);font-size:.9rem;font-weight:700;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-meta{font-size:.7rem;color:var(--muted)}
+.pc-turn-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--red);flex-shrink:0;
+  animation:dotpulse 1s ease-in-out infinite;
+}
+
+/* Destination info */
+.dest-box{
+  background:var(--cream);border:2px solid var(--border);
+  border-radius:10px;padding:10px 12px;border-left:4px solid var(--red);
+}
+.dest-box-label{font-size:.68rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.dest-box-title{font-family:var(--font-display);font-size:1rem;font-weight:700;color:var(--red)}
+.dest-box-desc{font-size:.75rem;color:var(--muted);line-height:1.45;margin-top:4px}
+.dest-box-prog{font-size:.7rem;color:var(--muted);margin-top:5px}
+
+/* Draw button */
+.btn-draw{
+  width:100%;min-height:72px;border-radius:10px;
+  background:var(--ink);border:2px solid var(--ink2);
+  color:var(--cream);
+  font-family:var(--font-display);
+  cursor:pointer;box-shadow:2px 2px 0 var(--ink2);
+  transition:transform .1s,box-shadow .1s,opacity .12s;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;
+}
+.btn-draw:hover:not(:disabled){transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--ink2)}
+.btn-draw:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}
+.btn-draw-l1{font-size:1.5rem;font-weight:700;letter-spacing:.05em;line-height:1}
+.btn-draw-l2{font-size:.8rem;letter-spacing:.12em;opacity:.65}
+
+/* Draw-2-pick-1 */
+.draw-choice-wrap{display:flex;flex-direction:column;gap:10px}
+.draw-choice-lbl{font-family:var(--font-display);font-size:.9rem;color:var(--gold);text-align:center;font-weight:700}
+.draw-choice-cards{display:flex;gap:8px}
+.draw-choice-card{
+  flex:1;min-height:80px;border-radius:10px;
+  border:2px solid rgba(0,0,0,.15);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);font-size:.9rem;font-weight:700;
+  color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3);
+  transition:transform .1s,box-shadow .1s;
+  box-shadow:2px 2px 0 rgba(0,0,0,.15);
+}
+.draw-choice-card:hover{transform:translateY(-4px);box-shadow:2px 6px 0 rgba(0,0,0,.2)}
+
+/* Pile visuals */
+.piles-row{display:flex;gap:16px;align-items:flex-start}
+.pile-wrap{position:relative;width:44px}
+.pile-card{
+  position:absolute;width:40px;height:56px;border-radius:7px;
+  border:1.5px solid rgba(0,0,0,.18);
+  box-shadow:0 2px 6px rgba(0,0,0,.2);
+}
+.pile-card-back{background:linear-gradient(160deg,#2e3a5a 0%,#1a1208 100%)}
+.pile-card-face{}
+.pile-empty{
+  width:40px;height:56px;border-radius:7px;
+  border:2px dashed var(--border);
+  background:var(--cream2);
+}
+.pile-badge{
+  position:absolute;top:-6px;right:-6px;
+  min-width:20px;height:20px;border-radius:99px;
+  background:var(--red);color:#fff;
+  font-size:.68rem;font-weight:800;
+  display:flex;align-items:center;justify-content:center;
+  padding:0 4px;z-index:5;
+  border:1.5px solid #fff;
+}
+.pile-lbl{
+  position:absolute;bottom:-16px;left:0;right:0;
+  text-align:center;font-size:.62rem;font-weight:700;
+  color:var(--muted);letter-spacing:.06em;text-transform:uppercase;
+}
+
+/* Action hint */
+.action-hint{
+  font-size:.8rem;color:var(--muted);text-align:center;
+  min-height:18px;padding:2px 0;
+}
+
+/* ── RIGHT PANEL ── */
+#right-panel {
+  width:220px;flex-shrink:0;
+  background:var(--paper);
+  border-left:2px solid var(--border);
+  display:flex;flex-direction:column;
+  overflow:hidden;
+}
+
+/* ── HAND STRIP ── */
+#hand-strip {
+  position:fixed;bottom:0;left:260px;right:220px;
+  background:var(--paper);
+  border-top:2px solid var(--border);
+  padding:10px 16px 12px;
+  z-index:60;
+  display:flex;align-items:flex-end;gap:8px;
+  overflow-x:auto;scrollbar-width:none;
+  min-height:90px;
+}
+#hand-strip::-webkit-scrollbar{display:none}
+.hand-card {
+  position:relative;
+  width:58px;height:84px;
+  border-radius:10px;
+  border:2px solid rgba(0,0,0,.18);
+  flex-shrink:0;
+  box-shadow:2px 3px 0 rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.35);
+  display:flex;align-items:flex-end;padding:6px;
+  font-family:var(--font-display);font-size:.68rem;font-weight:700;
+  color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);
+  text-transform:capitalize;
+  cursor:default;
+  transition:transform .15s;
+}
+.hand-card::before{
+  content:'';position:absolute;inset:5px;
+  border-radius:6px;border:1px solid rgba(255,255,255,.35);
+  pointer-events:none;
+}
+.hand-card .cnt{
+  position:absolute;top:5px;right:5px;
+  width:22px;height:22px;border-radius:50%;
+  background:rgba(255,255,255,.92);color:var(--ink);
+  font-size:.72rem;font-weight:800;
+  display:flex;align-items:center;justify-content:center;
+}
+.hand-card.new{animation:cardIn .4s cubic-bezier(.18,.88,.28,1.18)}
+@keyframes cardIn{
+  0%{transform:translateY(30px) scale(.85);opacity:0}
+  100%{transform:none;opacity:1}
+}
+/* Card colour styles */
+.hc-red{background:var(--card-red)}
+.hc-orange{background:var(--card-orange)}
+.hc-blue{background:var(--card-blue)}
+.hc-green{background:var(--card-green)}
+.hc-black{background:var(--card-black)}
+.hc-pink{background:var(--card-pink)}
+.hc-yellow{background:var(--card-yellow);color:var(--ink)}
+.hc-rainbow{background:var(--card-rainbow);color:var(--ink)}
+
+/* Board needs padding for hand strip */
+#board-area{padding-bottom:90px}
+#left-panel{padding-bottom:90px}
+#right-panel{padding-bottom:90px}
+
+/* ══════════════════════════════════════
+   MODALS
+══════════════════════════════════════ */
+.modal-ov {
+  position:fixed;inset:0;
+  background:rgba(26,18,8,.55);
+  display:flex;align-items:center;justify-content:center;
+  z-index:600;
+  opacity:0;pointer-events:none;
+  transition:opacity .2s;
+  padding:16px;
+  backdrop-filter:blur(2px);
+}
+.modal-ov.open{opacity:1;pointer-events:all}
+.modal-box {
+  background:var(--cream);
+  border:3px solid var(--ink);
+  border-radius:16px;
+  padding:24px;
+  width:min(480px,100%);
+  max-height:85vh;overflow-y:auto;
+  box-shadow:6px 6px 0 var(--ink2);
+  animation:modalIn .25s cubic-bezier(.18,.88,.28,1.1);
+}
+@keyframes modalIn{
+  0%{transform:translateY(20px) scale(.94);opacity:0}
+  100%{transform:none;opacity:1}
+}
+.modal-title{
+  font-family:var(--font-display);font-size:1.6rem;font-weight:700;
+  color:var(--ink);margin-bottom:6px;
+}
+.modal-body{
+  font-size:.88rem;color:var(--muted);line-height:1.55;margin-bottom:16px;
+}
+.modal-btns{display:flex;gap:10px;justify-content:flex-end}
+.modal-emoji{font-size:2.8rem;text-align:center;margin-bottom:8px}
+
+/* Route claim modal */
+.cost-banner{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--paper);border-radius:8px;padding:10px 14px;
+  margin-bottom:14px;border:1.5px solid var(--border);
+}
+.pay-option{
+  background:var(--paper);border:2px solid var(--border);
+  border-radius:10px;padding:12px;margin-bottom:8px;
+  cursor:pointer;display:flex;align-items:center;gap:10px;
+  transition:border-color .12s,background .12s;
+}
+.pay-option:hover{border-color:var(--red);background:#fff8f4}
+.pay-option.sel{border-color:var(--red);background:#fff0ec}
+.pay-cards-row{display:flex;gap:5px;flex-wrap:wrap;flex:1}
+.pay-card{
+  width:40px;height:56px;border-radius:7px;
+  border:1.5px solid rgba(0,0,0,.15);
+  display:flex;align-items:flex-end;padding:4px;
+  font-size:.62rem;font-weight:700;
+  color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);
+  text-transform:capitalize;
+  box-shadow:1px 2px 0 rgba(0,0,0,.15);
+}
+
+/* Destination complete modal */
+.dest-modal-content{text-align:center}
+.dest-modal-node{
+  font-family:var(--font-display);font-size:2rem;
+  color:var(--red);margin-bottom:8px;
+}
+.dest-modal-desc{font-size:.9rem;color:var(--muted);line-height:1.55;margin-bottom:12px}
+
+/* Mystery event modal */
+.mystery-modal .modal-title{color:var(--gold);text-shadow:1px 1px 0 var(--gold2)}
+
+/* Win screen */
+.win-overlay{
+  position:fixed;inset:0;z-index:800;
+  background:var(--cream);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .4s;
+}
+.win-overlay.active{opacity:1;pointer-events:all}
+.win-inner{
+  text-align:center;display:flex;flex-direction:column;align-items:center;gap:20px;
+  padding:32px;
+}
+.win-portrait{
+  width:160px;height:160px;border-radius:24px;
+  background:var(--paper);border:4px solid var(--ink);
+  box-shadow:6px 6px 0 var(--ink2);
+  overflow:hidden;display:flex;align-items:center;justify-content:center;
+}
+.win-portrait img{width:88%;height:88%;object-fit:contain}
+.win-headline{
+  font-family:var(--font-display);font-size:clamp(3rem,8vw,5.5rem);
+  font-weight:700;line-height:.9;color:var(--red);
+  text-shadow:4px 4px 0 var(--red2),8px 8px 0 rgba(26,18,8,.1);
+}
+.win-sub{font-size:1.1rem;color:var(--muted)}
+
+/* ══════════════════════════════════════
+   BUTTONS (shared)
+══════════════════════════════════════ */
+.btn {
+  display:inline-flex;align-items:center;justify-content:center;
+  border:2px solid;border-radius:10px;
+  font-family:var(--font-display);font-weight:700;
+  cursor:pointer;
+  transition:transform .1s,box-shadow .1s,opacity .12s;
+}
+.btn:active{transform:translate(1px,1px)!important;box-shadow:none!important}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn-primary{
+  background:var(--red);border-color:var(--red2);color:#fff;
+  box-shadow:2px 2px 0 var(--red2);
+  padding:12px 24px;font-size:1rem;
+}
+.btn-primary:hover:not(:disabled){transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--red2)}
+.btn-ghost{
+  background:var(--paper);border-color:var(--border);color:var(--muted);
+  padding:10px 18px;font-size:.9rem;
+}
+.btn-ghost:hover:not(:disabled){background:var(--cream2);color:var(--ink)}
+.btn-danger{
+  background:#922010;border-color:#6a1808;color:#fff;
+  box-shadow:2px 2px 0 #6a1808;padding:12px 24px;font-size:1rem;
+}
+.btn-sm{padding:8px 16px!important;font-size:.85rem!important}
+
+/* ══════════════════════════════════════
+   MOBILE
+══════════════════════════════════════ */
+@media(max-width:768px){
+  #screen-game{flex-direction:column}
+  #left-panel{width:100%;height:auto;border-right:none;border-bottom:2px solid var(--border);flex-direction:row;overflow-x:auto;padding-bottom:0}
+  #right-panel{display:none}
+  #hand-strip{left:0;right:0;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+  #board-area{padding-bottom:90px}
+  .panel-body{flex-direction:row;padding:10px;gap:10px;overflow-x:auto;overflow-y:hidden}
+  .panel-header{flex-shrink:0;border-right:1px solid var(--border);border-bottom:none;writing-mode:horizontal-tb}
+  #turn-banner{font-size:.9rem}
+  .lobby-dog-grid{grid-template-columns:repeat(3,1fr)}
+  .lobby-colour-grid{grid-template-columns:repeat(5,1fr)}
+}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+</style>
 </head>
 <body>
-  <div id="app">
-    <div id="game-shell">
 
-      <!-- ROOM SCREEN
-           Default state. JS: wireRoomButtons() wires the two
-           buttons. showCreateLobby() / showJoinLobby() append
-           #lobby-overlay to #game-shell and hide this screen. -->
-      <div id="room-screen" class="active">
-        <div class="room-loop">
-          <div class="hero-wipe hero-wipe-a"></div>
-          <div class="hero-wipe hero-wipe-b"></div>
-          <div class="hero-wipe hero-wipe-c"></div>
-          <div class="hero-noise"></div>
-        </div>
-        <div class="room-inner">
-          <div class="room-kicker">Didcot Dogs</div>
-          <div class="room-title">PLAY</div>
-          <button id="room-create-btn" type="button">Create game</button>
-          <div class="room-or">or join a game</div>
-          <div class="room-join-wrap">
-            <input id="room-join-input" type="text" maxlength="4" placeholder="CODE"
-              autocomplete="off" autocorrect="off" spellcheck="false" />
-            <button id="room-join-btn" type="button">Join</button>
-          </div>
-          <div id="room-error"></div>
+<!-- ROOM SCREEN -->
+<div id="screen-room" class="screen active">
+  <div class="room-bg">
+    <div class="room-bg-stripe"></div>
+    <div class="room-bg-stripe"></div>
+    <div class="room-bg-stripe"></div>
+    <div class="room-bg-stripe"></div>
+    <div class="room-bg-stripe"></div>
+  </div>
+  <div class="room-content">
+    <div class="room-masthead">
+      <div class="room-title">Dogs of Didcot</div>
+      <div class="room-sub">The great escape around Didcot</div>
+    </div>
+    <div class="room-card">
+      <button class="room-btn-create" id="room-create-btn" type="button">🐾 Create game</button>
+      <div class="room-divider" style="margin:16px 0">or join with a code</div>
+      <div class="room-join-row">
+        <input class="room-code-input" id="room-join-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" autocorrect="off" spellcheck="false"/>
+        <button class="room-btn-join" id="room-join-btn" type="button">Join →</button>
+      </div>
+      <div class="room-error" id="room-error"></div>
+    </div>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="screen-game" class="screen">
+
+  <!-- Left panel -->
+  <aside id="left-panel">
+    <div class="panel-header"><h2>🐾 Dogs of Didcot</h2></div>
+    <div class="panel-body">
+      <div>
+        <div class="panel-section-lbl">Players</div>
+        <div id="player-cards-cont" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+      <div id="dest-box" class="dest-box">
+        <div class="dest-box-label">Your destination</div>
+        <div class="dest-box-title">—</div>
+      </div>
+      <div>
+        <div class="panel-section-lbl">Card piles</div>
+        <div class="piles-row">
+          <div id="pile-draw" style="position:relative;height:72px;width:52px"></div>
+          <div id="pile-discard" style="position:relative;height:72px;width:52px"></div>
         </div>
       </div>
-
-      <!-- RESUMING SCREEN
-           Shown briefly during session restore from sessionStorage.
-           JS: showScreen("resuming-screen") / hideScreen("resuming-screen") -->
-      <div id="resuming-screen">
-        <div class="resuming-inner">
-          <div class="resuming-title">Resuming game&#8230;</div>
-          <div class="waiting-dots">
-            <div class="waiting-dot"></div>
-            <div class="waiting-dot"></div>
-            <div class="waiting-dot"></div>
-          </div>
-        </div>
+      <div id="draw-section">
+        <button id="draw-btn" class="btn-draw" type="button" onclick="App.draw()">
+          <span class="btn-draw-l1">DRAW</span>
+          <span class="btn-draw-l2">CARDS</span>
+        </button>
       </div>
+      <div class="action-hint" id="action-hint">Waiting…</div>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="doReturnToMenu()" style="margin-top:auto">← Menu</button>
+    </div>
+  </aside>
 
-      <!-- ROUTE MODAL
-           Payment UI for claiming a route.
-           JS: openRouteModal() / closeRouteModal() -->
-      <div id="route-modal-overlay" class="route-modal-overlay">
-        <div id="route-modal" class="route-modal">
-          <div class="route-modal-header">
-            <div id="route-modal-title" class="route-modal-title">Route</div>
-            <button id="route-modal-close" class="route-modal-close" type="button" aria-label="Close">&times;</button>
-          </div>
-          <div id="route-modal-subtitle" class="route-modal-subtitle">Choose how to play this route.</div>
-          <div id="route-modal-body" class="route-modal-body"></div>
-          <div class="route-modal-actions">
-            <button id="route-modal-cancel" class="action-btn subtle" type="button">Cancel</button>
-            <button id="route-modal-confirm" class="action-btn primary" type="button" disabled>Confirm</button>
-          </div>
-        </div>
+  <!-- Board -->
+  <main id="board-area">
+    <div id="board-svg-host" style="width:100%;height:100%"></div>
+  </main>
+
+  <!-- Right panel -->
+  <aside id="right-panel">
+    <div class="panel-header"><h2>Journey</h2></div>
+    <div class="panel-body">
+      <div id="dest-sequences-cont" style="display:flex;flex-direction:column;gap:16px"></div>
+    </div>
+  </aside>
+
+  <!-- Hand strip -->
+  <div id="hand-strip"></div>
+
+</div>
+
+<!-- TURN BANNER -->
+<div id="turn-banner"></div>
+
+<!-- MODALS -->
+
+<!-- Route claim -->
+<div id="modal-claim" class="modal-ov">
+  <div class="modal-box">
+    <div class="modal-title" id="claim-route-name">Route</div>
+    <div class="cost-banner">
+      <span style="font-size:.88rem;color:var(--muted)">Cost</span>
+      <span id="claim-cost-line" style="font-weight:700"></span>
+    </div>
+    <div id="claim-pay-list"></div>
+    <div class="modal-btns" style="margin-top:12px">
+      <button class="btn btn-ghost btn-sm" id="claim-cancel-btn" type="button">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="claim-confirm-btn" type="button" disabled>Claim route →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mystery event -->
+<div id="modal-event" class="modal-ov">
+  <div class="modal-box mystery-modal">
+    <div class="modal-emoji" id="ev-emoji">🎲</div>
+    <div class="modal-title" id="ev-title">Event</div>
+    <div class="modal-body" id="ev-body"></div>
+    <div id="ev-extra"></div>
+    <div class="modal-btns" style="margin-top:12px">
+      <button class="btn btn-primary" id="ev-ok" type="button">OK!</button>
+    </div>
+  </div>
+</div>
+
+<!-- Destination arrived -->
+<div id="modal-dest" class="modal-ov">
+  <div class="modal-box dest-modal-content">
+    <div class="modal-emoji">🎉</div>
+    <div class="dest-modal-node" id="dest-m-title">Arrived!</div>
+    <div class="dest-modal-desc" id="dest-m-desc"></div>
+    <div class="modal-btns" style="justify-content:center;margin-top:8px">
+      <button class="btn btn-primary" id="dest-m-ok" type="button">Next stop →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Win screen -->
+<div id="win-overlay" class="win-overlay">
+  <div class="win-inner">
+    <div class="win-portrait"><img id="win-portrait-img" src="" alt="winner"></div>
+    <div class="win-headline" id="win-headline">YOU WIN!</div>
+    <div class="win-sub" id="win-sub"></div>
+    <button class="btn btn-primary" id="win-play-again" type="button" style="margin-top:8px">Play again</button>
+  </div>
+</div>
+
+<!-- Fullscreen button -->
+<button id="fs-btn" type="button" style="position:fixed;top:12px;right:12px;z-index:50;background:rgba(26,18,8,.1);border:1.5px solid var(--border);border-radius:8px;padding:6px 12px;font-family:var(--font-display);font-size:.82rem;color:var(--muted);cursor:pointer">⛶ Fullscreen</button>
+
+<script type="module">
+// DOGS OF DIDCOT — app.js
+// Version: v4.0 / Turn 7
+// Clean rewrite from spec. Firebase: dogs-of-didcot-27ae6
+
+console.log("[DoD] v4.0 loading");
+
+// ─── Firebase ────────────────────────────────────────────────────────────────
+let db = null;
+let fbSet, fbGet, fbRef, fbOnValue, fbOff, fbUpdate;
+
+async function initFirebase() {
+  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+  const fb = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js");
+  fbSet = fb.set; fbGet = fb.get; fbRef = fb.ref;
+  fbOnValue = fb.onValue; fbOff = fb.off; fbUpdate = fb.update;
+  const app = initializeApp({
+    apiKey: "AIzaSyBhABCZpnZaKlLvxl4-637bGeB3qCoAnoU",
+    authDomain: "dogs-of-didcot-27ae6.firebaseapp.com",
+    databaseURL: "https://dogs-of-didcot-27ae6-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "dogs-of-didcot-27ae6",
+    storageBucket: "dogs-of-didcot-27ae6.firebasestorage.app",
+    messagingSenderId: "288843673622",
+    appId: "1:288843673622:web:d2556cf191672826e04537"
+  });
+  db = fb.getDatabase(app);
+  console.log("[DoD] Firebase ready");
+}
+
+function dbRef(path) { return fbRef(db, path); }
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+const DOGS = [
+  { id:"sam",   name:"Sam",   img:"assets/sam.png"   },
+  { id:"tango", name:"Tango", img:"assets/tango.png" },
+  { id:"eric",  name:"Eric",  img:"assets/eric.png"  },
+  { id:"rusty", name:"Rusty", img:"assets/rusty.png" },
+  { id:"otis",  name:"Otis",  img:"assets/otis.png"  },
+  { id:"leroy", name:"Leroy", img:"assets/leroy.png" }
+];
+
+const PLAYER_COLOURS = {
+  Red:"#c8321a", Orange:"#d4620a", Yellow:"#c8a008",
+  Green:"#1e7a38", Teal:"#1a7a6a", Blue:"#1a4eb0",
+  Purple:"#7a28a8", Pink:"#b82878", Cream:"#b8a882", Black:"#1a1208"
+};
+
+const ROUTE_COLOUR_HEX = {
+  red:"#c8321a", orange:"#d4620a", blue:"#1a4eb0",
+  green:"#1e7a38", black:"#2e2510", pink:"#b82878", yellow:"#c8a008"
+};
+
+const CARD_CLASS = {
+  red:"hc-red", orange:"hc-orange", blue:"hc-blue", green:"hc-green",
+  black:"hc-black", pink:"hc-pink", yellow:"hc-yellow", rainbow:"hc-rainbow"
+};
+
+const DEST_POOL = [
+  "Chilton","Abingdon","Clifton_Hampden","Dorchester","Blewbury",
+  "Wittenham_Clumps","Wallingford","East_Hagbourne","Brightwell-cum-Sotwell","Milton_Interchange"
+];
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// ─── App state ───────────────────────────────────────────────────────────────
+const G = {
+  rulesData: null,
+  destData: null,
+  eventsData: null,
+  svg: null,
+  roomCode: null,
+  myId: null,       // dog id e.g. "sam"
+  listeners: [],
+  pendingClaim: null,
+  selPayment: null,
+  drawPending: false,
+  actionLock: false,
+  boardView: { scale:1, panX:0, panY:0, base:null }
+};
+
+// ─── Utils ───────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const mk = (tag,cls,attrs={}) => { const e=document.createElement(tag); if(cls) e.className=cls; Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v)); return e; };
+const mkSvg = (tag,attrs={}) => { const e=document.createElementNS(SVG_NS,tag); Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v)); return e; };
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const shuf = a => { const b=[...a]; for(let i=b.length-1;i>0;i--){const j=~~(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]]} return b; };
+const genCode = () => { const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({length:4},()=>c[~~(Math.random()*c.length)]).join(""); };
+const toArr = v => { if(!v) return []; if(Array.isArray(v)) return v; const ks=Object.keys(v); if(!ks.length) return []; if(ks.every(k=>!isNaN(k))) return ks.sort((a,b)=>+a-+b).map(k=>v[k]); return v; };
+const fmt = id => String(id||"").replace(/_/g," ");
+const contrastFor = hex => { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (0.299*r+0.587*g+0.114*b)>140?"#1a1208":"#ffffff"; };
+const pcHex = id => PLAYER_COLOURS[id]||"#888";
+
+function addListener(r, cb) { const u = fbOnValue(r, cb); G.listeners.push(u); return u; }
+function cleanup() { G.listeners.forEach(u => typeof u==="function"&&u()); G.listeners=[]; }
+
+function showScreen(id) { document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active")); const e=$(id); if(e) e.classList.add("active"); }
+
+function parseRoute(id) { const p=id.split("_to_"); return {a:p[0],b:p[1]}; }
+function routeConnects(id,node) { const {a,b}=parseRoute(id); return a===node||b===node; }
+function otherNode(id,node) { const {a,b}=parseRoute(id); return a===node?b:b===node?a:null; }
+function routesAdjacent(a,b) { const pa=parseRoute(a),pb=parseRoute(b); return pa.a===pb.a||pa.a===pb.b||pa.b===pb.a||pa.b===pb.b; }
+
+// ─── Game data helpers ────────────────────────────────────────────────────────
+function getPlayer(state, id) { return state.players?.[id] || null; }
+function myPlayer(state) { return getPlayer(state, G.myId); }
+function isMyTurn(state) { return !G.roomCode || state.currentPlayer === G.myId; }
+
+function activeDest(player) {
+  const N = player.chain?.length || 0;
+  const idx = player.chainIdx || 0;
+  if(idx >= N) return "Didcot";
+  return player.chain[idx];
+}
+
+function countCards(hand) {
+  return hand.reduce((acc,c)=>{acc[c]=(acc[c]||0)+1;return acc;},{});
+}
+
+function buildDeck() {
+  const r = G.rulesData;
+  const cols = r.drawColours || [];
+  const cpc = r.deck?.copiesPerColour ?? 8;
+  const rc  = r.deck?.rainbowCount ?? 6;
+  return shuf([...cols.flatMap(c=>Array(cpc).fill(c)), ...Array(rc).fill("rainbow")]);
+}
+
+// ─── Falling dogs canvas ─────────────────────────────────────────────────────
+function initFallingDogs() {
+  let cv = $("dogs-canvas");
+  if(!cv) { cv=document.createElement("canvas"); cv.id="dogs-canvas"; cv.style.cssText="position:fixed;inset:0;pointer-events:none;z-index:1"; document.body.appendChild(cv); }
+  const ctx = cv.getContext("2d");
+  const resize = () => { cv.width=innerWidth; cv.height=innerHeight; };
+  resize(); window.addEventListener("resize",resize);
+  const imgs = DOGS.map(d=>{ const i=new Image(); i.src=d.img; return i; });
+  const dogs = Array.from({length:16},()=>({
+    x:Math.random()*innerWidth, y:Math.random()*-innerHeight,
+    spd:.4+Math.random()*1.2, sz:32+Math.random()*36,
+    rot:(Math.random()-.5)*.06, ang:0,
+    sw:(Math.random()-.5)*.6, swp:Math.random()*Math.PI*2,
+    img:imgs[~~(Math.random()*imgs.length)]
+  }));
+  (function draw(){
+    ctx.clearRect(0,0,cv.width,cv.height);
+    dogs.forEach(d=>{
+      d.y+=d.spd; d.ang+=d.rot; d.swp+=.018; d.x+=Math.sin(d.swp)*d.sw;
+      if(d.y>cv.height+60){d.y=-60;d.x=Math.random()*cv.width}
+      ctx.save(); ctx.globalAlpha=.22; ctx.translate(d.x,d.y); ctx.rotate(d.ang);
+      ctx.drawImage(d.img,-d.sz/2,-d.sz/2,d.sz,d.sz);
+      ctx.restore();
+    });
+    requestAnimationFrame(draw);
+  })();
+}
+
+// ─── Board pan/zoom ───────────────────────────────────────────────────────────
+function applyBoardView() {
+  const svg = G.svg; if(!svg||!G.boardView.base) return;
+  const b=G.boardView.base, s=G.boardView.scale;
+  const vw=b.w/s, vh=b.h/s;
+  const mx=(b.w-vw)/2, my=(b.h-vh)/2;
+  G.boardView.panX=Math.max(-mx,Math.min(mx,G.boardView.panX));
+  G.boardView.panY=Math.max(-my,Math.min(my,G.boardView.panY));
+  const cx=b.x+b.w/2, cy=b.y+b.h/2;
+  svg.setAttribute("viewBox",`${cx-vw/2+G.boardView.panX} ${cy-vh/2+G.boardView.panY} ${vw} ${vh}`);
+}
+function resetView() { G.boardView.scale=1;G.boardView.panX=0;G.boardView.panY=0;applyBoardView(); }
+
+function setupGestures() {
+  const bw = $("board-area"); if(!bw) return;
+  let mode=null,sp=null,spi=null;
+  const svgPt=(cx,cy)=>{ const r=bw.getBoundingClientRect(),vb=G.svg.viewBox.baseVal; return {x:vb.x+(cx-r.left)*vb.width/r.width,y:vb.y+(cy-r.top)*vb.height/r.height}; };
+  bw.addEventListener("touchstart",e=>{
+    if(e.touches.length===1){mode="pan";sp={fc:{x:e.touches[0].clientX,y:e.touches[0].clientY},px:G.boardView.panX,py:G.boardView.panY};}
+    if(e.touches.length===2){mode="pinch";const dx=e.touches[1].clientX-e.touches[0].clientX,dy=e.touches[1].clientY-e.touches[0].clientY,mx=(e.touches[0].clientX+e.touches[1].clientX)/2,my2=(e.touches[0].clientY+e.touches[1].clientY)/2;spi={dist:Math.hypot(dx,dy),sc:G.boardView.scale,px:G.boardView.panX,py:G.boardView.panY,mid:svgPt(mx,my2),mcl:{x:mx,y:my2}};}
+  },{passive:false});
+  bw.addEventListener("touchmove",e=>{
+    e.preventDefault();
+    if(mode==="pan"&&e.touches.length===1&&sp){const b=G.boardView.base,r=bw.getBoundingClientRect(),spx=(b.w/G.boardView.scale)/r.width;G.boardView.panX=sp.px-(e.touches[0].clientX-sp.fc.x)*spx;G.boardView.panY=sp.py-(e.touches[0].clientY-sp.fc.y)*((b.h/G.boardView.scale)/r.height);applyBoardView();}
+    if(mode==="pinch"&&e.touches.length===2&&spi){const dx=e.touches[1].clientX-e.touches[0].clientX,dy=e.touches[1].clientY-e.touches[0].clientY,nd=Math.hypot(dx,dy),ns=Math.max(1,Math.min(3,spi.sc*(nd/spi.dist))),mx=(e.touches[0].clientX+e.touches[1].clientX)/2,my2=(e.touches[0].clientY+e.touches[1].clientY)/2;const b=G.boardView.base,r=bw.getBoundingClientRect();G.boardView.scale=ns;G.boardView.panX=spi.mid.x-(b.x+b.w/2)-(mx-r.left-r.width/2)*(b.w/ns)/r.width;G.boardView.panY=spi.mid.y-(b.y+b.h/2)-(my2-r.top-r.height/2)*(b.h/ns)/r.height;applyBoardView();}
+  },{passive:false});
+  bw.addEventListener("touchend",e=>{if(e.touches.length===0){mode=null;sp=null;spi=null;}else if(e.touches.length===1){mode="pan";sp={fc:{x:e.touches[0].clientX,y:e.touches[0].clientY},px:G.boardView.panX,py:G.boardView.panY};spi=null;}});
+}
+
+// ─── SVG helpers ─────────────────────────────────────────────────────────────
+function nodeCenter(id) {
+  const el = G.svg.querySelector(`#${CSS.escape(id)}`); if(!el) throw new Error(`Node ${id} not found`);
+  if(el.tagName.toLowerCase()==="circle") return {x:+el.getAttribute("cx"),y:+el.getAttribute("cy")};
+  const b=el.getBBox(); return {x:b.x+b.width/2,y:b.y+b.height/2};
+}
+function ensureLayer(id,top=false) {
+  let l=G.svg.querySelector(`#${CSS.escape(id)}`);
+  if(!l){l=mkSvg("g",{id});G.svg.appendChild(l);}
+  else if(top) G.svg.appendChild(l);
+  return l;
+}
+
+// ─── Token rendering ──────────────────────────────────────────────────────────
+function renderTokens(state) {
+  const layer = ensureLayer("token-layer",true);
+  const players = Object.keys(state.players||{});
+  // Group by node
+  const byNode = {};
+  players.forEach(id=>{ const p=getPlayer(state,id); if(!p) return; const n=p.currentNode; if(!byNode[n])byNode[n]=[]; byNode[n].push(id); });
+
+  players.forEach(id => {
+    const p=getPlayer(state,id); if(!p) return;
+    const dog=DOGS.find(d=>d.id===id);
+    const playerColHex = pcHex(state.characterSelections?.[id]?.colour);
+    const node=p.currentNode, group=byNode[node]||[id];
+    const idx=group.indexOf(id), total=group.length;
+    const c=nodeCenter(node);
+    const r=20,angle=total===1?0:(-Math.PI/2)+(2*Math.PI*idx/total);
+    const x=total===1?c.x:c.x+r*Math.cos(angle);
+    const y=total===1?c.y:c.y+r*Math.sin(angle);
+
+    let g=G.svg.querySelector(`#tok-${id}`);
+    if(!g){
+      g=mkSvg("g",{id:`tok-${id}`}); layer.appendChild(g);
+      const circ=mkSvg("circle",{r:"18",fill:"#fff","stroke-width":"4"});
+      circ.style.stroke=playerColHex;
+      const img=mkSvg("image",{x:"-14",y:"-14",width:"28",height:"28","clip-path":`url(#tok-clip-${id})`});
+      img.setAttribute("href",dog?.img||"");
+      // Clip path
+      let defs=G.svg.querySelector("defs"); if(!defs){defs=mkSvg("defs");G.svg.insertBefore(defs,G.svg.firstChild);}
+      if(!defs.querySelector(`#tok-clip-${id}`)){const cp=mkSvg("clipPath",{id:`tok-clip-${id}`});cp.appendChild(mkSvg("circle",{cx:"0",cy:"0",r:"14"}));defs.appendChild(cp);}
+      g.appendChild(circ); g.appendChild(img);
+    }
+    g.setAttribute("transform",`translate(${x},${y})`);
+  });
+  // Remove stale tokens
+  layer.querySelectorAll("[id^='tok-']").forEach(el=>{
+    const id=el.id.replace("tok-","");
+    if(!players.includes(id)) el.remove();
+  });
+}
+
+// ─── Route rendering ──────────────────────────────────────────────────────────
+function renderRoutes(state) {
+  if(!G.rulesData||!state.routes) return;
+  const myP = myPlayer(state);
+  const myNode = myP?.currentNode;
+  const myPrev = myP?.previousNode;
+  const isMine = isMyTurn(state);
+
+  Object.keys(G.rulesData.routes||{}).forEach(rid=>{
+    const el=G.svg.querySelector(`#${CSS.escape(rid)}`); if(!el) return;
+    const rs=state.routes[rid]; if(!rs) return;
+    el.classList.remove("route-eligible","route-claimed");
+    el.style.strokeWidth="8";
+    el.style.stroke=ROUTE_COLOUR_HEX[rs.colour]||"#555";
+    el.style.strokeOpacity="0.7";
+    el.style.cursor="default";
+
+    if(rs.claimedBy){
+      const colHex=pcHex(state.characterSelections?.[rs.claimedBy]?.colour);
+      el.style.stroke=colHex;
+      el.style.strokeWidth="11";
+      el.style.strokeOpacity="1";
+      el.classList.add("route-claimed");
+      return;
+    }
+
+    // Check eligibility
+    if(isMine&&myNode){
+      const to=otherNode(rid,myNode);
+      if(to&&to!==myPrev&&!rs.claimedBy){
+        el.classList.add("route-eligible");
+        el.style.cursor="pointer";
+        el.style.strokeOpacity="1";
+      }
+    }
+  });
+
+  renderCostBadges(state);
+  renderTargetPulse(state);
+  renderMysteryNodes(state);
+  renderDestNodes(state);
+}
+
+function renderCostBadges(state) {
+  let layer=ensureLayer("cost-layer"); layer.innerHTML="";
+  Object.keys(G.rulesData.routes||{}).forEach(rid=>{
+    const rs=state.routes?.[rid]; if(!rs||rs.claimedBy) return;
+    const el=G.svg.querySelector(`#${CSS.escape(rid)}`); if(!el||!el.getTotalLength) return;
+    const len=el.getTotalLength(),mid=el.getPointAtLength(len/2);
+    const cost=G.rulesData.routes[rid].length;
+    const hex=ROUTE_COLOUR_HEX[rs.colour]||"#555";
+    const g=mkSvg("g",{class:"cost-badge",transform:`translate(${mid.x},${mid.y})`,style:"cursor:pointer"});
+    g.appendChild(mkSvg("circle",{r:"11",fill:"#fff",stroke:hex,"stroke-width":"2"}));
+    const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"11","font-weight":"800",fill:hex});
+    t.textContent=cost; g.appendChild(t);
+    g.addEventListener("click",e=>{e.stopPropagation();handleRouteClick(rid,state);});
+    layer.appendChild(g);
+  });
+}
+
+function renderTargetPulse(state) {
+  G.svg.querySelectorAll(".node-target-pulse").forEach(e=>e.classList.remove("node-target-pulse"));
+  const p=myPlayer(state); if(!p) return;
+  const t=activeDest(p); if(!t) return;
+  const el=G.svg.querySelector(`#${CSS.escape(t)}`);
+  if(el) el.classList.add("node-target-pulse");
+}
+
+function renderDestNodes(state) {
+  const p=myPlayer(state);
+  const active=p?activeDest(p):null;
+  const ng=G.svg.querySelector("#Nodes"); if(!ng) return;
+  ng.querySelectorAll("circle").forEach(c=>{
+    const id=c.id;
+    if(!id||id===active) return;
+    if(DEST_POOL.includes(id)){c.style.fill="#e87060";c.style.stroke="#c8321a";}
+    else{c.style.fill="";c.style.stroke="";}
+  });
+}
+
+function renderMysteryNodes(state) {
+  let layer=ensureLayer("mystery-layer",true); layer.innerHTML="";
+  (state.mysteryNodes||[]).forEach(nid=>{
+    try {
+      const c=nodeCenter(nid);
+      const g=mkSvg("g",{transform:`translate(${c.x},${c.y})`});
+      const ring=mkSvg("circle",{r:"24",fill:"none",stroke:"#c8a008","stroke-width":"2.5",class:"mystery-ring"});
+      ring.style.fill="none"; ring.style.stroke="#c8a008";
+      const bg=mkSvg("circle",{r:"19"}); bg.style.fill="#f4f0e4"; bg.style.stroke="#c8a008"; bg.style.strokeWidth="2";
+      const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"18","font-weight":"800",style:"font-family:var(--font-display);fill:#c9820a;pointer-events:none"});
+      t.textContent="?";
+      g.appendChild(ring);g.appendChild(bg);g.appendChild(t);
+      layer.appendChild(g);
+    } catch(e){}
+  });
+  // Poop markers (only visible to placer)
+  const myP=myPlayer(state);
+  Object.entries(state.poopedNodes||{}).forEach(([nid,placedBy])=>{
+    if(placedBy!==G.myId) return;
+    try {
+      const c=nodeCenter(nid);
+      const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"18",style:"pointer-events:none",transform:`translate(${c.x},${c.y-28})`});
+      t.textContent="💩"; layer.appendChild(t);
+    } catch(e){}
+  });
+}
+
+// ─── Animate token ────────────────────────────────────────────────────────────
+function animateToken(id, routeId, from, to) {
+  return new Promise(resolve=>{
+    const el=G.svg.querySelector(`#${CSS.escape(routeId)}`);
+    const tok=G.svg.querySelector(`#tok-${id}`);
+    if(!el||!tok||!el.getTotalLength){resolve();return;}
+    const tot=el.getTotalLength(),sp=el.getPointAtLength(0),ep=el.getPointAtLength(tot);
+    const fc=nodeCenter(from),tc=nodeCenter(to);
+    const fwd=Math.hypot(sp.x-fc.x,sp.y-fc.y)<Math.hypot(ep.x-fc.x,ep.y-fc.y);
+    const t0=performance.now();
+    (function step(now){
+      const t=Math.min(1,(now-t0)/800),e=t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+      const p=fwd?e:1-e,pt=el.getPointAtLength(tot*p);
+      tok.setAttribute("transform",`translate(${pt.x},${pt.y})`);
+      if(t<1) requestAnimationFrame(step); else resolve();
+    })(t0);
+  });
+}
+
+// ─── Turn banner ─────────────────────────────────────────────────────────────
+let bannerTimer=null;
+function showBanner(text){
+  const b=$("turn-banner"); if(!b) return;
+  b.textContent=text; b.classList.add("show");
+  if(bannerTimer) clearTimeout(bannerTimer);
+  bannerTimer=setTimeout(()=>b.classList.remove("show"),2600);
+}
+
+// ─── Render game UI ───────────────────────────────────────────────────────────
+function renderAll(state) {
+  if(!state||!G.svg) return;
+  renderRoutes(state);
+  renderTokens(state);
+  renderLeftPanel(state);
+  renderRightPanel(state);
+  renderHand(state);
+  renderActionHint(state);
+}
+
+function renderLeftPanel(state) {
+  const cont=$("player-cards-cont"); if(!cont) return;
+  cont.innerHTML="";
+  const order=toArr(state.playerOrder);
+  if(!order.length) return;
+  order.forEach(id=>{
+    const p=getPlayer(state,id); if(!p) return;
+    const dog=DOGS.find(d=>d.id===id);
+    const colHex=pcHex(state.characterSelections?.[id]?.colour);
+    const isAct=state.currentPlayer===id, isMe=id===G.myId;
+    const card=mk("div","player-card");
+    card.style.borderLeftColor=colHex;
+    if(isAct&&isMe) card.classList.add("my-turn");
+    else if(isAct) card.classList.add("act-turn");
+    card.innerHTML=`<div class="pc-portrait"><img src="${dog?.img||""}" alt="${id}" onerror="this.style.display='none'"></div>
+      <div class="pc-info">
+        <div class="pc-name">${dog?.name||id}</div>
+        <div class="pc-meta">Stop ${Math.min((p.chainIdx||0)+1,(p.chain||[]).length)}/${(p.chain||[]).length} · ${Object.keys(state.hands?.[id]||{}).length} cards</div>
+        ${p.routeCostBonus>0?`<div class="pc-meta" style="color:var(--gold)">+${p.routeCostBonus} card cost</div>`:""}
+        ${p.inventory?.includes("zoom")?`<div class="pc-meta">⚡ Zoomies ready</div>`:""}
+        ${p.inventory?.includes("poop")?`<div class="pc-meta">💩 Holding poop</div>`:""}
+      </div>${isAct?`<div class="pc-turn-dot"></div>`:""}`;
+    cont.appendChild(card);
+  });
+
+  // Dest box
+  const myP=myPlayer(state);
+  const destBox=$("dest-box"); if(!destBox||!myP) return;
+  const t=activeDest(myP);
+  const d=G.destData?.destinations?.[t];
+  const chain=myP.chain||[], idx=myP.chainIdx||0;
+  if(myP.completedChain||idx>=chain.length){
+    destBox.innerHTML=`<div class="dest-box-label">Final destination</div><div class="dest-box-title">Return to Didcot!</div><div class="dest-box-desc">Complete your journey — get home!</div><div class="dest-box-prog">All ${chain.length} stops done</div>`;
+    destBox.style.borderLeftColor="var(--green)";
+  } else {
+    destBox.innerHTML=`<div class="dest-box-label">Destination ${idx+1} of ${chain.length}</div><div class="dest-box-title">${d?.title||fmt(t)}</div><div class="dest-box-desc">${d?.description||""}</div>`;
+    destBox.style.borderLeftColor="var(--red)";
+  }
+
+  // Pile counts
+  renderPiles(state);
+}
+
+const PAW=`<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" style="width:16px;height:16px;opacity:.2"><ellipse cx="20" cy="26" rx="9" ry="7" fill="currentColor"/><ellipse cx="11" cy="19" rx="4.5" ry="3.5" fill="currentColor"/><ellipse cx="29" cy="19" rx="4.5" ry="3.5" fill="currentColor"/><ellipse cx="15" cy="13" rx="3.5" ry="2.8" fill="currentColor"/><ellipse cx="25" cy="13" rx="3.5" ry="2.8" fill="currentColor"/></svg>`;
+
+function renderPiles(state) {
+  const draw=$("pile-draw"), disc=$("pile-discard"); if(!draw||!disc) return;
+  const dc=toArr(state.drawPile||[]).length, dd=toArr(state.discardPile||[]);
+  draw.innerHTML=""; disc.innerHTML="";
+  // Draw pile
+  const dw=mk("div","pile-wrap"); dw.style.height="56px";
+  const cnt=Math.min(dc,3);
+  if(cnt===0){const e=mk("div","pile-empty");dw.appendChild(e);}
+  else for(let i=0;i<cnt;i++){const c=mk("div","pile-card pile-card-back");c.style.top=`${i*-2}px`;c.style.transform=`rotate(${(i-1)*3}deg)`;if(i===cnt-1)c.innerHTML=PAW;dw.appendChild(c);}
+  const db=mk("div","pile-badge");db.textContent=dc;dw.appendChild(db);
+  const dl=mk("div","pile-lbl");dl.textContent="Draw";dw.appendChild(dl);
+  draw.appendChild(dw);
+  // Discard
+  const aw=mk("div","pile-wrap"); aw.style.height="56px";
+  const tops=dd.slice(-3);
+  if(!tops.length){const e=mk("div","pile-empty");aw.appendChild(e);}
+  else tops.forEach((col,i)=>{
+    const c=mk("div","pile-card");
+    const cls=CARD_CLASS[col]||"hc-black";
+    c.className=`pile-card hand-card ${cls}`;
+    c.style.width="40px";c.style.height="56px";c.style.top=`${i*-1}px`;c.style.transform=`rotate(${(i-1)*5}deg)`;
+    c.style.position="absolute";
+    aw.appendChild(c);
+  });
+  const ab=mk("div","pile-badge");ab.textContent=dd.length;ab.style.background="var(--muted)";aw.appendChild(ab);
+  const al=mk("div","pile-lbl");al.textContent="Discard";aw.appendChild(al);
+  disc.appendChild(aw);
+}
+
+function renderRightPanel(state) {
+  const cont=$("dest-sequences-cont"); if(!cont) return;
+  cont.innerHTML="";
+  const order=toArr(state.playerOrder);
+  order.forEach(id=>{
+    const p=getPlayer(state,id); if(!p) return;
+    if(id!==G.myId) return; // Only show own sequence
+    const chain=p.chain||[], idx=p.chainIdx||0;
+    const wrap=mk("div"); wrap.style.cssText="display:grid;gap:8px";
+    for(let i=0;i<=chain.length;i++){
+      const did=i<chain.length?chain[i]:"Didcot";
+      const d=G.destData?.destinations?.[did];
+      const card=mk("div");
+      if(i<idx){
+        card.className="dest-card-done";
+        card.style.cssText="padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--paper);opacity:.6;font-size:.78rem;color:var(--muted);text-decoration:line-through";
+        card.textContent="✓ "+(d?.title||fmt(did));
+      } else if(i===idx){
+        card.className="dest-card-active";
+        card.style.cssText="padding:10px 12px;border-radius:8px;border:2px solid var(--red);background:#fff8f4;font-size:.85rem;color:var(--ink)";
+        card.innerHTML=`<div style="font-family:var(--font-display);font-size:.95rem;font-weight:700;color:var(--red)">${d?.title||fmt(did)}</div><div style="font-size:.72rem;color:var(--muted);margin-top:3px">${d?.description||""}</div>`;
+      } else {
+        card.style.cssText="padding:8px 12px;border-radius:8px;border:1.5px dashed var(--border);background:var(--paper);font-family:var(--font-display);font-size:1.1rem;color:var(--border);text-align:center";
+        card.textContent="?";
+      }
+      wrap.appendChild(card);
+    }
+    cont.appendChild(wrap);
+  });
+}
+
+function renderHand(state) {
+  const strip=$("hand-strip"); if(!strip) return;
+  const hand=toArr(state.hands?.[G.myId]||[]);
+  const counts=countCards(hand);
+  strip.innerHTML="";
+  ["red","orange","blue","green","black","pink","yellow","rainbow"].forEach(col=>{
+    const n=counts[col]||0; if(!n) return;
+    const card=mk("div",`hand-card ${CARD_CLASS[col]}`);
+    if(col==="yellow"||col==="rainbow") card.style.color="var(--ink)";
+    card.innerHTML=`<span style="position:relative;z-index:1;text-transform:capitalize">${col}</span><span class="cnt">${n}</span>`;
+    strip.appendChild(card);
+  });
+  if(!hand.length){
+    const e=mk("div");e.style.cssText="color:var(--muted);font-size:.82rem;display:flex;align-items:center;padding:0 8px";e.textContent="No cards yet";
+    strip.appendChild(e);
+  }
+}
+
+function renderActionHint(state) {
+  const h=$("action-hint"); if(!h) return;
+  const mine=isMyTurn(state);
+  if(!mine){const n=state.players?.[state.currentPlayer]; const dog=DOGS.find(d=>d.id===state.currentPlayer); h.textContent=`${dog?.name||state.currentPlayer}'s turn…`; return;}
+  h.textContent="Your turn — draw a card or tap a route";
+}
+
+function renderDrawBtn(state) {
+  const btn=$("draw-btn"); if(!btn) return;
+  const mine=isMyTurn(state)&&!G.actionLock&&!G.drawPending;
+  btn.disabled=!mine;
+}
+
+// ─── Route interaction ────────────────────────────────────────────────────────
+function wireRouteClicks(state) {
+  Object.keys(G.rulesData?.routes||{}).forEach(rid=>{
+    const el=G.svg.querySelector(`#${CSS.escape(rid)}`); if(!el) return;
+    el.addEventListener("click",()=>handleRouteClick(rid,state));
+  });
+}
+
+function handleRouteClick(rid, state) {
+  if(!isMyTurn(state)||G.actionLock||G.drawPending) return;
+  const myP=myPlayer(state); if(!myP) return;
+  const rs=state.routes?.[rid]; if(!rs||rs.claimedBy) return;
+  const to=otherNode(rid,myP.currentNode); if(!to) return;
+  if(to===myP.previousNode) return;
+  // Payment options
+  const hand=toArr(state.hands?.[G.myId]||[]);
+  const cost=Math.max(1,(G.rulesData.routes[rid].length||1)+(myP.routeCostBonus||0));
+  const col=rs.colour;
+  const cc=hand.filter(c=>c===col).length, rc=hand.filter(c=>c==="rainbow").length;
+  const opts=[];
+  const minR=Math.max(0,cost-cc), maxR=Math.min(rc,cost);
+  for(let r=minR;r<=maxR;r++){const uc=cost-r;if(uc<=cc)opts.push({col,uc,ur:r});}
+  if(!opts.length){showToast("Not enough cards for this route!");return;}
+  G.pendingClaim={rid,to,from:myP.currentNode};
+  G.selPayment=null;
+  openClaimModal(rid,col,cost,opts,state);
+}
+
+function openClaimModal(rid,col,cost,opts,state) {
+  const ov=$("modal-claim"); if(!ov) return;
+  const colHex=ROUTE_COLOUR_HEX[col]||"#555";
+  $("claim-route-name").textContent=fmt(rid).replace(" to "," → ");
+  $("claim-cost-line").innerHTML=`<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${colHex};margin-right:6px;vertical-align:middle"></span>${cost} ${col} card${cost!==1?"s":""}`;
+  const list=$("claim-pay-list"); list.innerHTML="";
+  opts.forEach((opt,i)=>{
+    const row=mk("div","pay-option");
+    row.dataset.idx=i;
+    const cards=mk("div","pay-cards-row");
+    [...Array(opt.uc).fill(opt.col),...Array(opt.ur).fill("rainbow")].forEach(c=>{
+      const card=mk("div",`pay-card ${CARD_CLASS[c]}`);
+      card.textContent=c; cards.appendChild(card);
+    });
+    row.appendChild(cards);
+    row.addEventListener("click",()=>{
+      document.querySelectorAll(".pay-option").forEach(r=>r.classList.remove("sel"));
+      row.classList.add("sel");
+      G.selPayment=opt;
+      $("claim-confirm-btn").disabled=false;
+    });
+    list.appendChild(row);
+  });
+  $("claim-confirm-btn").disabled=true;
+  ov.classList.add("open");
+}
+
+function closeClaimModal(){$("modal-claim")?.classList.remove("open");G.pendingClaim=null;G.selPayment=null;}
+
+async function confirmClaim(state) {
+  if(!G.pendingClaim||!G.selPayment||G.actionLock) return;
+  G.actionLock=true;
+  closeClaimModal();
+  const {rid,from,to}=G.pendingClaim, pay=G.selPayment;
+  const myP=myPlayer(state);
+  if(!myP){G.actionLock=false;return;}
+
+  // Remove cards
+  let hand=[...toArr(state.hands?.[G.myId]||[])];
+  const spent=[...Array(pay.uc).fill(pay.col),...Array(pay.ur).fill("rainbow")];
+  const rem=[...spent];
+  hand=hand.filter(c=>{const i=rem.indexOf(c);if(i!==-1){rem.splice(i,1);return false;}return true;});
+
+  // Update local state snapshot for animation
+  const newRoutes={...(state.routes||{})};
+  newRoutes[rid]={...newRoutes[rid],claimedBy:G.myId};
+  const newPlayers={...(state.players||{})};
+  newPlayers[G.myId]={...myP,currentNode:to,previousNode:from,journeyRoutes:[...(myP.journeyRoutes||[]),rid]};
+  const newHands={...(state.hands||{})};
+  newHands[G.myId]=hand;
+  const newDiscard=[...toArr(state.discardPile||[]),...spent];
+
+  // Animate then write
+  renderRoutes({...state,routes:newRoutes});
+  await animateToken(G.myId,rid,from,to);
+
+  // Check poop trap
+  const poopedNodes={...state.poopedNodes||{}};
+  let poopTriggered=false;
+  if(poopedNodes[to]&&poopedNodes[to]!==G.myId){
+    delete poopedNodes[to];
+    newPlayers[G.myId]={...newPlayers[G.myId],skipTurns:(newPlayers[G.myId].skipTurns||0)+3};
+    poopTriggered=true;
+  }
+
+  // Check mystery node
+  const mNodes=[...toArr(state.mysteryNodes||[])];
+  const isMystery=mNodes.includes(to);
+
+  // Check destination arrival
+  const chain=toArr(myP.chain||[]);
+  const idx=myP.chainIdx||0;
+  const target=activeDest(myP);
+  let newChainIdx=idx, completedChain=myP.completedChain||false, journeyRoutes=[...(myP.journeyRoutes||[]),rid];
+  let arrivedAtDest=to===target;
+
+  if(arrivedAtDest){
+    if(to==="Didcot"&&completedChain){
+      // WIN
+      await writeGameState(state,{routes:newRoutes,players:newPlayers,hands:newHands,discardPile:newDiscard,poopedNodes},true);
+      G.actionLock=false;
+      showWinScreen(G.myId);
+      return;
+    }
+    newChainIdx=idx+1;
+    if(newChainIdx>=chain.length) completedChain=true;
+    // Release journey routes
+    journeyRoutes.forEach(r=>{if(newRoutes[r]){newRoutes[r]={...newRoutes[r],claimedBy:null};rerollRouteColour(newRoutes,r);}});
+    journeyRoutes=[];
+    newPlayers[G.myId]={...newPlayers[G.myId],chainIdx:newChainIdx,completedChain,previousNode:null,journeyRoutes:[]};
+  } else {
+    newPlayers[G.myId]={...newPlayers[G.myId],currentNode:to,previousNode:from,journeyRoutes};
+  }
+
+  // Mystery node rotation
+  if(isMystery){
+    const idx2=mNodes.indexOf(to); if(idx2!==-1) mNodes.splice(idx2,1);
+    const eligible=Object.keys(G.rulesData.nodes?.[0]?{}:G.rulesData.nodes?.reduce?.((a,n)=>{a[n]=1;return a;},{})||{});
+    const allNodes=G.rulesData.nodes||[];
+    const excl=[...(state.playerOrder||[]).map(id=>getPlayer(state,id)?.currentNode).filter(Boolean),...DEST_POOL,G.rulesData.startNode||"Didcot",...mNodes];
+    const pool=allNodes.filter(n=>!excl.includes(n));
+    const newNode=shuf(pool)[0]; if(newNode) mNodes.push(newNode);
+  }
+
+  const nextPlayer=getNextPlayer(state);
+  const updates={routes:newRoutes,players:newPlayers,hands:newHands,discardPile:newDiscard,mysteryNodes:mNodes,poopedNodes,currentPlayer:nextPlayer};
+  await writeGameState(state,updates);
+  G.actionLock=false;
+
+  if(poopTriggered) showToast("💩 You stepped in poop! 3 turns skipped.");
+  if(isMystery) { const ev=pickEvent(); await showEventModal(ev,state,updates); }
+  if(arrivedAtDest) showDestModal(to,state);
+}
+
+function rerollRouteColour(routes,rid){
+  const palette=G.rulesData.routeColours||[];
+  const blocked=Object.keys(routes).filter(r=>r!==rid&&routesAdjacent(rid,r)).map(r=>routes[r].colour);
+  const opts=shuf(palette.filter(c=>!blocked.includes(c)));
+  routes[rid]={...routes[rid],colour:opts[0]||palette[~~(Math.random()*palette.length)]};
+}
+
+function getNextPlayer(state){
+  const order=toArr(state.playerOrder); if(!order.length) return state.currentPlayer;
+  const idx=order.indexOf(state.currentPlayer);
+  const next=order[(idx+1)%order.length];
+  const nextP=getPlayer(state,next);
+  if(nextP&&(nextP.skipTurns||0)>0){
+    // Consume skip turns server-side — handled in writeGameState
+    return next;
+  }
+  return next;
+}
+
+async function writeGameState(oldState, updates, gameOver=false){
+  if(!G.roomCode){
+    // Solo/local — just merge into working state
+    Object.assign(oldState,updates);
+    if(gameOver) oldState.status="finished";
+    renderAll(oldState);
+    return;
+  }
+  const payload={...oldState,...updates,updatedAt:Date.now()};
+  if(gameOver) payload.status="finished";
+  // Handle skip turns for next player
+  const np=payload.players?.[payload.currentPlayer];
+  if(np&&(np.skipTurns||0)>0){
+    np.skipTurns=(np.skipTurns||0)-1;
+    payload.players[payload.currentPlayer]=np;
+    // Still advance turn
+    payload.currentPlayer=getNextPlayer(payload);
+  }
+  try{ await fbSet(dbRef(`rooms/${G.roomCode}/state`),sanitise(payload)); }
+  catch(e){console.error("[DoD] write failed",e);}
+}
+
+function sanitise(obj){
+  // Firebase doesn't accept undefined — strip it
+  return JSON.parse(JSON.stringify(obj,(k,v)=>v===undefined?null:v));
+}
+
+// ─── Draw card ────────────────────────────────────────────────────────────────
+async function doDrawCards(state) {
+  if(!isMyTurn(state)||G.actionLock||G.drawPending) return;
+  G.actionLock=true;
+  const deck=[...toArr(state.drawPile||[])];
+  const discard=[...toArr(state.discardPile||[])];
+  if(!deck.length&&!discard.length){G.actionLock=false;showToast("No cards left — turn passes.");endTurnNoAction(state);return;}
+  if(!deck.length){const sd=shuf(discard);deck.push(...sd);discard.length=0;}
+
+  const cardA=deck.pop();
+  let cardB=null;
+  if(deck.length){if(!deck.length&&discard.length){const sd=shuf(discard);deck.push(...sd);discard.length=0;}cardB=deck.pop();}
+
+  G.actionLock=false;
+  if(!cardB){
+    // One card — auto take
+    const hand=[...toArr(state.hands?.[G.myId]||[]),cardA];
+    const next=getNextPlayer(state);
+    await writeGameState(state,{drawPile:deck,discardPile:discard,hands:{...state.hands,[G.myId]:hand},currentPlayer:next});
+    return;
+  }
+  // Two cards — show pick UI
+  G.drawPending=true;
+  showDrawChoice(cardA,cardB,state,deck,discard);
+}
+
+function showDrawChoice(cardA,cardB,state,deck,discard){
+  const section=$("draw-section"); if(!section) return;
+  section.innerHTML=`<div class="draw-choice-wrap">
+    <div class="draw-choice-lbl">Pick one card</div>
+    <div class="draw-choice-cards">
+      <button class="draw-choice-card ${CARD_CLASS[cardA]}" id="pick-a" style="${cardA==="yellow"||cardA==="rainbow"?"color:var(--ink)":""}">${cardA}</button>
+      <button class="draw-choice-card ${CARD_CLASS[cardB]}" id="pick-b" style="${cardB==="yellow"||cardB==="rainbow"?"color:var(--ink)":""}">${cardB}</button>
+    </div>
+    <div style="font-size:.72rem;color:var(--muted);text-align:center">Other goes to discard</div>
+  </div>`;
+  const resolve=async(chosen,other)=>{
+    G.drawPending=false;
+    const hand=[...toArr(state.hands?.[G.myId]||[]),chosen];
+    const newDiscard=[...discard,other];
+    const next=getNextPlayer(state);
+    await writeGameState(state,{drawPile:deck,discardPile:newDiscard,hands:{...state.hands,[G.myId]:hand},currentPlayer:next});
+    restoreDrawBtn();
+  };
+  $("pick-a").onclick=()=>resolve(cardA,cardB);
+  $("pick-b").onclick=()=>resolve(cardB,cardA);
+}
+
+function restoreDrawBtn(){
+  const section=$("draw-section"); if(!section) return;
+  section.innerHTML=`<button id="draw-btn" class="btn-draw" type="button" onclick="App.draw()">
+    <span class="btn-draw-l1">DRAW</span>
+    <span class="btn-draw-l2">CARDS</span>
+  </button>`;
+}
+
+async function endTurnNoAction(state){
+  const next=getNextPlayer(state);
+  await writeGameState(state,{currentPlayer:next});
+}
+
+// ─── Mystery events ───────────────────────────────────────────────────────────
+function pickEvent(){
+  const evs=G.eventsData?.events||[];
+  return evs[~~(Math.random()*evs.length)]||{id:"oh_whups",title:"OH WHUPS",body:"Lost half your cards.",emoji:"😬"};
+}
+
+function showEventModal(event,state,updatedState){
+  return new Promise(resolve=>{
+    const ov=$("modal-event"); if(!ov){resolve();return;}
+    $("ev-emoji").textContent=event.emoji;
+    $("ev-title").textContent=event.title;
+    $("ev-body").textContent=event.body;
+    const extra=$("ev-extra"); extra.innerHTML="";
+    ov.classList.add("open");
+
+    const ok=$("ev-ok");
+    ok.disabled=false;
+    ok.textContent="OK!";
+
+    const done=()=>{ov.classList.remove("open");applyEventEffect(event,state,updatedState);resolve();};
+
+    switch(event.id){
+      case "oh_whups": buildOhWhupsUI(extra,state,ok,done); break;
+      case "bright_brown": buildBrightBrownUI(extra,state,ok,done); break;
+      case "gimme_gimme": buildGimmeGimmeUI(extra,state,ok,done); break;
+      case "bin_dipper": buildBinDipperUI(extra,state,ok,done); break;
+      default: ok.onclick=done;
+    }
+  });
+}
+
+function applyEventEffect(event,state,updatedState){
+  const myP=updatedState.players?.[G.myId]; if(!myP) return;
+  const myHand=[...toArr(updatedState.hands?.[G.myId]||[])];
+  switch(event.id){
+    case "nowhere_to_poo": myP.skipTurns=(myP.skipTurns||0)+3; break;
+    case "just_sniffin": myP.routeCostBonus=Math.min(2,(myP.routeCostBonus||0)+1); break;
+    case "zoomies": myP.inventory=[...(myP.inventory||[]),"zoom"]; break;
+    case "poop": myP.inventory=[...(myP.inventory||[]),"poop"]; break;
+    case "hitch_a_lift": {
+      const t=activeDest(myP);
+      if(t&&t!=="Didcot"){myP.currentNode=t;myP.previousNode=null;const ch=toArr(myP.chain||[]);const idx2=myP.chainIdx||0;if(idx2+1>=ch.length)myP.completedChain=true;else myP.chainIdx=(idx2+1);(myP.journeyRoutes||[]).forEach(r=>{if(updatedState.routes?.[r]){updatedState.routes[r].claimedBy=null;rerollRouteColour(updatedState.routes,r);}});myP.journeyRoutes=[];myP.previousNode=null;}break;
+    }
+    case "rainbow_warrior": {
+      const opps=toArr(updatedState.playerOrder||[]).filter(id=>id!==G.myId);
+      let tot=0;opps.forEach(id=>{const h=toArr(updatedState.hands?.[id]||[]);const rbs=h.filter(c=>c==="rainbow");updatedState.hands[id]=h.filter(c=>c!=="rainbow");myHand.push(...rbs);tot+=rbs.length;});
+      updatedState.hands[G.myId]=myHand;showToast(`🌈 Swiped ${tot} rainbow card(s)!`);break;
+    }
+  }
+  updatedState.players[G.myId]=myP;
+  if(G.roomCode) fbSet(dbRef(`rooms/${G.roomCode}/state`),sanitise(updatedState)).catch(console.error);
+  else renderAll(updatedState);
+}
+
+function buildOhWhupsUI(extra,state,ok,done){
+  const hand=toArr(state.hands?.[G.myId]||[]);
+  const must=Math.ceil(hand.length/2);
+  if(!hand.length){ok.onclick=done;return;}
+  const sel=new Set();
+  ok.disabled=true;ok.textContent=`Discard ${must} cards`;
+  const cards=hand.map((col,i)=>({col,i}));
+  const grid=mk("div"); grid.style.cssText="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0";
+  cards.forEach(({col,i})=>{
+    const btn=mk("button",`hand-card ${CARD_CLASS[col]}`);
+    btn.style.cssText="width:44px;height:62px;cursor:pointer;border-radius:8px;font-size:.65rem;position:relative;border:2px solid rgba(0,0,0,.15)";
+    btn.textContent=col;
+    btn.onclick=()=>{
+      if(sel.has(i)){sel.delete(i);btn.style.outline="";}
+      else if(sel.size<must){sel.add(i);btn.style.outline="3px solid var(--gold)";}
+      ok.disabled=sel.size<must;
+    };
+    grid.appendChild(btn);
+  });
+  extra.appendChild(grid);
+  ok.onclick=()=>{
+    const newHand=hand.filter((_,i)=>!sel.has(i));
+    const spend=hand.filter((_,i)=>sel.has(i));
+    state.hands[G.myId]=newHand;
+    state.discardPile=[...toArr(state.discardPile||[]),...spend];
+    done();
+  };
+}
+
+function buildBrightBrownUI(extra,state,ok,done){
+  let chosen=null; ok.disabled=true;
+  const grid=mk("div"); grid.style.cssText="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0";
+  ["red","orange","blue","green","black","pink","yellow"].forEach(col=>{
+    const btn=mk("button",`hand-card ${CARD_CLASS[col]}`);
+    btn.style.cssText="width:44px;height:62px;cursor:pointer;border-radius:8px;font-size:.65rem;border:2px solid rgba(0,0,0,.15)";
+    btn.textContent=col;
+    btn.onclick=()=>{chosen=col;grid.querySelectorAll("button").forEach(b=>b.style.outline="");btn.style.outline="3px solid var(--gold)";ok.disabled=false;};
+    grid.appendChild(btn);
+  });
+  extra.appendChild(grid);
+  ok.onclick=()=>{
+    if(!chosen) return;
+    const myH=toArr(state.hands?.[G.myId]||[]);
+    const opps=toArr(state.playerOrder||[]).filter(id=>id!==G.myId);
+    let tot=0;opps.forEach(id=>{const h=toArr(state.hands?.[id]||[]);const take=h.filter(c=>c===chosen);state.hands[id]=h.filter(c=>c!==chosen);myH.push(...take);tot+=take.length;});
+    state.hands[G.myId]=myH;showToast(`Stole ${tot} ${chosen} card(s)!`);done();
+  };
+}
+
+function buildGimmeGimmeUI(extra,state,ok,done){
+  let target=null; ok.disabled=true;
+  const opps=toArr(state.playerOrder||[]).filter(id=>id!==G.myId);
+  if(!opps.length){ok.disabled=false;ok.onclick=done;return;}
+  opps.forEach(id=>{
+    const dog=DOGS.find(d=>d.id===id);
+    const colHex=pcHex(state.characterSelections?.[id]?.colour);
+    const btn=mk("button"); btn.style.cssText="display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:8px;border:2px solid var(--border);background:var(--paper);cursor:pointer;margin-bottom:8px;font-family:var(--font-display)";
+    btn.innerHTML=`<img src="${dog?.img||""}" style="width:36px;height:36px;border-radius:50%;border:2px solid ${colHex};background:rgba(255,255,255,.8)"><span style="color:${colHex};font-weight:700">${dog?.name||id}</span><span style="margin-left:auto;color:var(--muted);font-size:.8rem">${toArr(state.hands?.[id]||[]).length} cards</span>`;
+    btn.onclick=()=>{target=id;extra.querySelectorAll("button").forEach(b=>b.style.outline="");btn.style.outline=`3px solid ${colHex}`;ok.disabled=false;};
+    extra.appendChild(btn);
+  });
+  ok.onclick=()=>{
+    if(!target) return;
+    const myH=toArr(state.hands?.[G.myId]||[]);
+    const oppH=toArr(state.hands?.[target]||[]);
+    const steal=shuf(oppH).slice(0,3);
+    steal.forEach(c=>{const i=oppH.indexOf(c);if(i!==-1)oppH.splice(i,1);myH.push(c);});
+    state.hands[G.myId]=myH;state.hands[target]=oppH;
+    showToast(`Stole ${steal.length} card(s) from ${DOGS.find(d=>d.id===target)?.name||target}!`);done();
+  };
+}
+
+function buildBinDipperUI(extra,state,ok,done){
+  const pile=toArr(state.discardPile||[]);
+  if(!pile.length){extra.innerHTML="<div style='color:var(--muted);font-size:.85rem'>The discard pile is empty!</div>";ok.disabled=false;ok.onclick=done;return;}
+  const max=Math.min(5,pile.length);
+  const sel=new Set();
+  ok.disabled=true;ok.textContent=`Pick ${max} cards`;
+  const grid=mk("div"); grid.style.cssText="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0";
+  pile.forEach((col,i)=>{
+    const btn=mk("button",`hand-card ${CARD_CLASS[col]}`);
+    btn.style.cssText="width:44px;height:62px;cursor:pointer;border-radius:8px;font-size:.65rem;border:2px solid rgba(0,0,0,.15)";
+    btn.textContent=col;
+    btn.onclick=()=>{
+      if(sel.has(i)){sel.delete(i);btn.style.outline="";}
+      else if(sel.size<max){sel.add(i);btn.style.outline="3px solid var(--gold)";}
+      ok.disabled=sel.size<max;
+    };
+    grid.appendChild(btn);
+  });
+  extra.appendChild(grid);
+  ok.onclick=()=>{
+    const picked=pile.filter((_,i)=>sel.has(i));
+    const newPile=pile.filter((_,i)=>!sel.has(i));
+    const newHand=[...toArr(state.hands?.[G.myId]||[]),...picked];
+    state.discardPile=newPile;state.hands[G.myId]=newHand;
+    showToast(`Grabbed ${picked.length} card(s) from the bin!`);done();
+  };
+}
+
+// ─── Destination arrived modal ────────────────────────────────────────────────
+function showDestModal(nodeId,state){
+  const d=G.destData?.destinations?.[nodeId];
+  const ov=$("modal-dest"); if(!ov) return;
+  $("dest-m-title").textContent=`Arrived at ${d?.title||fmt(nodeId)}!`;
+  $("dest-m-desc").textContent=d?.description||"";
+  ov.classList.add("open");
+  $("dest-m-ok").onclick=()=>ov.classList.remove("open");
+}
+
+// ─── Win screen ───────────────────────────────────────────────────────────────
+function showWinScreen(winnerId){
+  const ov=$("win-overlay"); if(!ov) return;
+  const dog=DOGS.find(d=>d.id===winnerId);
+  const isMe=winnerId===G.myId;
+  $("win-portrait-img").src=dog?.img||"";
+  $("win-headline").textContent=isMe?"YOU WIN!":"YOU LOSE!";
+  $("win-sub").textContent=isMe?`${dog?.name||winnerId} wins! What a dog.`:`${dog?.name||winnerId} got home first.`;
+  ov.classList.add("active");
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+let toastTimer=null;
+function showToast(text){
+  let t=$("toast"); if(!t){t=mk("div");t.id="toast";t.style.cssText="position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--cream);font-family:var(--font-display);font-size:.9rem;padding:10px 20px;border-radius:99px;z-index:900;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;box-shadow:2px 2px 0 rgba(26,18,8,.3)";document.body.appendChild(t);}
+  t.textContent=text;t.style.opacity="1";
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{t.style.opacity="0";},2200);
+}
+
+// ─── Lobby ────────────────────────────────────────────────────────────────────
+let lobbyOv=null;
+function getLobby(){if(!lobbyOv){lobbyOv=mk("div");lobbyOv.id="lobby-overlay";lobbyOv.className="lobby-overlay";document.body.appendChild(lobbyOv);}return lobbyOv;}
+function showLobby(html){const o=getLobby();o.innerHTML=html;o.classList.add("open");}
+function hideLobby(){getLobby().classList.remove("open");}
+
+function showCreateLobby(){
+  const pool=G.rulesData?.destinationPool||DEST_POOL;
+  const maxJ=Math.floor(pool.length/2);
+  const colNames=Object.keys(PLAYER_COLOURS);
+  let sel={dog:null,colour:null,players:2,journeys:3,mystery:4};
+
+  function r(){
+    const maxForP=Math.floor(pool.length/sel.players);
+    if(sel.journeys>maxForP) sel.journeys=maxForP;
+    const canConfirm=sel.dog&&sel.colour;
+    showLobby(`<div class="lobby-wrap"><div class="lobby-inner">
+      <div class="lobby-header"><div class="lobby-eyebrow">Didcot Dogs</div><div class="lobby-title">CREATE GAME</div></div>
+      <div><div class="lobby-section-label">Pick your dog</div><div class="lobby-dog-grid" id="ldogs"></div></div>
+      <div><div class="lobby-section-label">Pick your colour</div><div class="lobby-colour-grid" id="lcols"></div></div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <div><div class="lobby-section-label">Players</div><div class="lobby-num-row" id="lplayers"></div></div>
+        <div><div class="lobby-section-label">Destinations each</div><div class="lobby-num-row" id="ljourneys"></div></div>
+        <div><div class="lobby-section-label">Mystery boxes</div><div class="lobby-num-row" id="lmystery"></div></div>
       </div>
-
-      <!-- DESTINATION REVEAL MODAL
-           Shown when a new destination unlocks.
-           JS: openDestinationReveal() / closeDestinationReveal() -->
-      <div id="destination-reveal-overlay" class="destination-reveal-overlay">
-        <div class="destination-reveal-card">
-          <div id="destination-reveal-title" class="destination-reveal-title">Destination</div>
-          <div id="destination-reveal-body" class="destination-reveal-body">Description</div>
-          <button id="destination-reveal-close" class="action-btn primary" type="button">Continue</button>
-        </div>
+      <div class="lobby-actions">
+        <button class="lobby-btn-back" id="lb-back" type="button">← Menu</button>
+        <button class="lobby-btn-confirm" id="lb-confirm" type="button" ${canConfirm?"":"disabled"}>${canConfirm?"Create room →":"Select dog + colour"}</button>
       </div>
+    </div></div>`);
 
-      <!-- TOP BAR (desktop only, hidden on mobile via CSS) -->
-      <div id="top-bar">
-        <div id="title-block">
-          <div id="game-title">Didcot Dogs</div>
-          <div id="game-subtitle">A quirky route game around Didcot</div>
-        </div>
-        <button id="fullscreen-btn" type="button">Full screen</button>
+    // Dog grid
+    const dg=$("ldogs");
+    DOGS.forEach(d=>{
+      const btn=mk("button","lobby-dog-btn"+(sel.dog===d.id?" sel":""));
+      btn.innerHTML=`<img src="${d.img}" alt="${d.name}"><div class="dog-name">${d.name}</div>`;
+      btn.onclick=()=>{sel.dog=d.id;r();};
+      dg.appendChild(btn);
+    });
+
+    // Colour grid
+    const cg=$("lcols");
+    colNames.forEach(name=>{
+      const hex=PLAYER_COLOURS[name],fg=contrastFor(hex);
+      const btn=mk("button","lobby-colour-btn"+(sel.colour===name?" sel":""));
+      btn.style.cssText=`background:${hex};color:${fg};border-color:${sel.colour===name?"var(--ink)":"transparent"}`;
+      btn.textContent=name;
+      btn.onclick=()=>{sel.colour=name;r();};
+      cg.appendChild(btn);
+    });
+
+    // Number pickers
+    [[2,3,4,5,6],"lplayers","players"],[...Array(maxJ).keys()].map(i=>i+1)].forEach(([opts,eid,key])=>{
+      if(!$(eid)) return;
+      (Array.isArray(opts)?opts:opts).forEach(v=>{
+        const maxForP=key==="journeys"?Math.floor(pool.length/sel.players):99;
+        const dim=key==="journeys"&&v>maxForP;
+        const btn=mk("button","lobby-num-btn"+(sel[key]===v?" sel":"")+(dim?" dim":""));
+        btn.textContent=v; btn.disabled=dim;
+        btn.onclick=()=>{if(!dim){sel[key]=v;r();}};
+        $(eid).appendChild(btn);
+      });
+    });
+
+    $("lb-back").onclick=()=>{hideLobby();showScreen("screen-room");};
+    const conf=$("lb-confirm");
+    if(conf&&!conf.disabled){
+      conf.onclick=async()=>{
+        conf.disabled=true;conf.textContent="Creating…";
+        try{ await createRoom(sel); }
+        catch(e){conf.disabled=false;conf.textContent="Create room →";showToast("Error: "+e.message);}
+      };
+    }
+  }
+  r();
+}
+
+// Fix the number picker loop — rewrite cleanly
+function renderNumPicker(containerId,options,selected,onSelect,dimAbove=99){
+  const c=$(containerId); if(!c) return;
+  c.innerHTML="";
+  options.forEach(v=>{
+    const dim=v>dimAbove;
+    const btn=mk("button","lobby-num-btn"+(selected===v?" sel":"")+(dim?" dim":""));
+    btn.textContent=v;btn.disabled=dim;
+    btn.onclick=()=>{if(!dim)onSelect(v);};
+    c.appendChild(btn);
+  });
+}
+
+function showCreateLobby2(){
+  const pool=G.rulesData?.destinationPool||DEST_POOL;
+  const colNames=Object.keys(PLAYER_COLOURS);
+  let sel={dog:null,colour:null,players:2,journeys:3,mystery:4};
+
+  function r(){
+    const maxJ=Math.floor(pool.length/sel.players);
+    if(sel.journeys>maxJ) sel.journeys=Math.min(sel.journeys,maxJ)||1;
+    const ok=sel.dog&&sel.colour;
+    showLobby(`<div class="lobby-wrap"><div class="lobby-inner">
+      <div class="lobby-header"><div class="lobby-eyebrow">Didcot Dogs</div><div class="lobby-title">CREATE GAME</div></div>
+      <div><div class="lobby-section-label">Pick your dog</div><div class="lobby-dog-grid" id="ldogs"></div></div>
+      <div><div class="lobby-section-label">Pick your colour</div><div class="lobby-colour-grid" id="lcols"></div></div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <div><div class="lobby-section-label">Players (2–6)</div><div class="lobby-num-row" id="lplayers"></div></div>
+        <div><div class="lobby-section-label">Destinations each</div><div class="lobby-num-row" id="ljourneys"></div></div>
+        <div><div class="lobby-section-label">Mystery boxes</div><div class="lobby-num-row" id="lmystery"></div></div>
       </div>
-
-      <!-- MOBILE HUD
-           Hidden until showMobileHud() is called after game launch.
-           Grid layout: see didcot-dogs.v2.css #mobile-hud rules. -->
-      <div id="mobile-hud">
-        <div id="mobile-hud-turn" class="mobile-hud-pill">&#8212;</div>
-        <div id="mobile-hud-draw" class="mobile-hud-pile"></div>
-        <div id="mobile-hud-discard" class="mobile-hud-pile"></div>
-        <div id="mobile-hud-destination" class="mobile-hud-pill">Target: &#8212;</div>
-        <button id="mobile-menu-btn" class="mobile-hud-btn mobile-hud-btn-menu" type="button">&#8592; Menu</button>
-        <button id="mobile-open-sheet-btn" class="mobile-hud-btn" type="button">Draw card</button>
-        <button id="mobile-reset-view-btn" class="mobile-hud-btn" type="button">Routes</button>
+      <div class="lobby-actions">
+        <button class="lobby-btn-back" id="lb-back" type="button">← Menu</button>
+        <button class="lobby-btn-confirm" id="lb-confirm" type="button" ${ok?"":"disabled"}>${ok?"Create room →":"Select dog + colour"}</button>
       </div>
+    </div></div>`);
 
-      <!-- MOBILE SHEET
-           Slide-up panel for hand / destinations on mobile.
-           JS: openMobileSheet() / closeMobileSheet() / toggleMobileSheet() -->
-      <div id="mobile-sheet">
-        <button id="mobile-sheet-handle" type="button" aria-label="Toggle mobile panel"></button>
-        <div id="mobile-sheet-content">
-          <div id="mobile-sheet-summary"></div>
-          <div id="mobile-sheet-selected-route"></div>
-          <div id="mobile-sheet-actions"></div>
-          <div id="mobile-sheet-hand"></div>
-          <div id="mobile-sheet-destination"></div>
-        </div>
+    const dg=$("ldogs");
+    DOGS.forEach(d=>{const btn=mk("button","lobby-dog-btn"+(sel.dog===d.id?" sel":""));btn.innerHTML=`<img src="${d.img}" alt="${d.name}" onerror="this.style.display='none'"><div class="dog-name">${d.name}</div>`;btn.onclick=()=>{sel.dog=d.id;r();};dg.appendChild(btn);});
+
+    const cg=$("lcols");
+    colNames.forEach(name=>{const hex=PLAYER_COLOURS[name],fg=contrastFor(hex);const btn=mk("button","lobby-colour-btn"+(sel.colour===name?" sel":""));btn.style.cssText=`background:${hex};color:${fg};border-color:${sel.colour===name?"var(--ink)":"transparent"}`;btn.textContent=name;btn.onclick=()=>{sel.colour=name;r();};cg.appendChild(btn);});
+
+    renderNumPicker("lplayers",[2,3,4,5,6],sel.players,v=>{sel.players=v;r();});
+    renderNumPicker("ljourneys",Array.from({length:Math.floor(pool.length/sel.players)},(_,i)=>i+1),sel.journeys,v=>{sel.journeys=v;r();},Math.floor(pool.length/sel.players));
+    renderNumPicker("lmystery",[0,1,2,3,4,5,6,7,8],sel.mystery,v=>{sel.mystery=v;r();});
+
+    $("lb-back").onclick=()=>{hideLobby();showScreen("screen-room");};
+    const conf=$("lb-confirm");
+    if(conf&&!conf.disabled)conf.onclick=async()=>{conf.disabled=true;conf.textContent="Creating…";try{await createRoom(sel);}catch(e){conf.disabled=false;conf.textContent="Create room →";showToast(e.message);}};
+  }
+  r();
+}
+
+function showJoinLobby(code,remoteState){
+  const taken=Object.keys(remoteState.characterSelections||{});
+  const takenCols=Object.values(remoteState.characterSelections||{}).map(v=>v.colour);
+  const colNames=Object.keys(PLAYER_COLOURS);
+  let sel={dog:null,colour:null};
+
+  function r(){
+    const ok=sel.dog&&sel.colour;
+    showLobby(`<div class="lobby-wrap"><div class="lobby-inner">
+      <div class="lobby-header"><div class="lobby-eyebrow">Joining room ${code}</div>
+      <div class="lobby-title">JOIN GAME</div>
+      <div class="lobby-game-info">
+        <span class="lobby-info-pill">${remoteState.playerCount} players</span>
+        <span class="lobby-info-pill">${remoteState.journeyTarget} destinations</span>
+        <span class="lobby-info-pill">${remoteState.mysteryCount} mystery boxes</span>
+      </div></div>
+      <div><div class="lobby-section-label">Pick your dog</div><div class="lobby-dog-grid" id="ldogs"></div></div>
+      <div><div class="lobby-section-label">Pick your colour</div><div class="lobby-colour-grid" id="lcols"></div></div>
+      <div id="join-err" style="color:var(--red);font-size:.85rem;min-height:18px;text-align:center"></div>
+      <div class="lobby-actions">
+        <button class="lobby-btn-back" id="lb-back" type="button">← Menu</button>
+        <button class="lobby-btn-confirm" id="lb-confirm" type="button" ${ok?"":"disabled"}>${ok?"Join room →":"Select dog + colour"}</button>
       </div>
+    </div></div>`);
 
-      <!-- LEFT PANEL (desktop, hidden on mobile via CSS)
-           Turn badge, card pile visuals, hand, draw button.
-           Note: draw-card-btn section innerHTML may be replaced
-           by renderCardDrawChoice() with the pick-one UI. -->
-      <aside id="left-panel">
-        <div class="panel-title">Turn</div>
+    const dg=$("ldogs");
+    DOGS.forEach(d=>{
+      const isTaken=taken.includes(d.id);
+      const btn=mk("button","lobby-dog-btn"+(isTaken?" taken":"")+(sel.dog===d.id?" sel":""));
+      btn.innerHTML=`<img src="${d.img}" alt="${d.name}" onerror="this.style.display='none'"><div class="dog-name">${d.name}</div>${isTaken?`<div class="taken-stamp">✕</div>`:""}`;
+      if(!isTaken) btn.onclick=()=>{sel.dog=d.id;r();};
+      dg.appendChild(btn);
+    });
 
-        <div class="panel-section">
-          <div id="turn-player-badge" class="player-badge">&#8212; to play</div>
-        </div>
+    const cg=$("lcols");
+    colNames.forEach(name=>{
+      const isTaken=takenCols.includes(name);
+      const hex=PLAYER_COLOURS[name],fg=contrastFor(hex);
+      const btn=mk("button","lobby-colour-btn"+(isTaken?" taken":"")+(sel.colour===name?" sel":""));
+      btn.style.cssText=`background:${isTaken?"#ccc":hex};color:${isTaken?"#888":fg};border-color:${sel.colour===name?"var(--ink)":"transparent"};${isTaken?"text-decoration:line-through":""};`;
+      btn.textContent=name;
+      if(!isTaken) btn.onclick=()=>{sel.colour=name;r();};
+      cg.appendChild(btn);
+    });
 
-        <div class="panel-section desktop-piles-row">
-          <div id="desktop-draw-pile" class="desktop-pile-wrap"></div>
-          <div id="desktop-discard-pile" class="desktop-pile-wrap"></div>
-        </div>
+    $("lb-back").onclick=()=>{hideLobby();showScreen("screen-room");};
+    const conf=$("lb-confirm");
+    if(conf&&!conf.disabled)conf.onclick=async()=>{
+      conf.disabled=true;conf.textContent="Checking…";
+      // Race condition check
+      const snap=await fbGet(dbRef(`rooms/${code}/state`));
+      const fresh=snap.val()||{};
+      const nowTaken=Object.keys(fresh.characterSelections||{});
+      if(nowTaken.includes(sel.dog)){$("join-err").textContent="That dog was just taken!";conf.disabled=false;conf.textContent="Join room →";sel.dog=null;r();return;}
+      try{await joinRoom(code,sel,fresh);}catch(e){conf.disabled=false;conf.textContent="Join room →";showToast(e.message);}
+    };
+  }
+  r();
+}
 
-        <!-- Hidden count elements — used by renderCounts() -->
-        <div style="display:none">
-          <div id="draw-pile-count">0</div>
-          <div id="discard-pile-count">0</div>
-        </div>
+function showWaitingLobby(code,state){
+  const total=state.playerCount||2;
+  const entries=Object.entries(state.characterSelections||{}).sort((a,b)=>(a[1].joinOrder||0)-(b[1].joinOrder||0));
+  const joined=entries.length;
+  const isCreator=state.createdBy===G.myId;
 
-        <div class="panel-section">
-          <div class="mini-heading">Your hand</div>
-          <div id="active-hand" class="hand-grid"></div>
-        </div>
+  showLobby(`<div class="lobby-wrap"><div class="lobby-inner">
+    <div class="lobby-header">
+      <div class="lobby-eyebrow">Share this code with friends</div>
+      <div class="lobby-waiting-code">${code}</div>
+    </div>
+    <div class="lobby-waiting-slots" id="wslots"></div>
+    <div class="lobby-waiting-sub" id="wsub">${joined}/${total} players joined</div>
+    <div class="waiting-dots" style="justify-content:center"><div class="waiting-dot"></div><div class="waiting-dot"></div><div class="waiting-dot"></div></div>
+    ${isCreator&&joined>=total?`<button class="lobby-start-btn" id="start-btn" type="button">🚀 Start game!</button>`:""}
+    ${isCreator&&joined<total?`<div style="font-size:.82rem;color:var(--muted);text-align:center">Waiting for ${total-joined} more player${total-joined!==1?"s":""}…</div>`:`<div style="font-size:.82rem;color:var(--muted);text-align:center">Waiting for host to start…</div>`}
+    <div style="text-align:center;margin-top:16px"><button class="lobby-btn-back" id="lb-back" type="button">← Menu</button></div>
+  </div></div>`);
 
-        <!-- Hidden — used by renderSelectedRouteCard() -->
-        <div style="display:none">
-          <div id="selected-route-card" class="selected-route-card"></div>
-        </div>
+  const sc=$("wslots");
+  for(let i=0;i<total;i++){
+    const entry=entries[i];
+    if(entry){
+      const [id,data]=entry;
+      const dog=DOGS.find(d=>d.id===id);
+      const colHex=PLAYER_COLOURS[data.colour]||"#888",fg=contrastFor(colHex);
+      const slot=mk("div","lobby-slot-filled");
+      slot.style.cssText=`background:${colHex};border-color:${colHex};color:${fg}`;
+      slot.innerHTML=`<img src="${dog?.img||""}" alt="${id}"><div>${dog?.name||id}</div>${data.joinOrder===0?`<div class="lobby-slot-badge">HOST</div>`:""}${id===G.myId?`<div class="lobby-slot-badge">YOU</div>`:""}`;
+      sc.appendChild(slot);
+    } else {
+      const slot=mk("div","lobby-slot-empty");
+      slot.innerHTML=`<div class="waiting-dots" style="margin-bottom:4px"><div class="waiting-dot"></div><div class="waiting-dot"></div><div class="waiting-dot"></div></div><div>Waiting…</div>`;
+      sc.appendChild(slot);
+    }
+  }
 
-        <!-- Draw button section — JS may replace this section's
-             innerHTML with draw-choice-wrap during draw-2-pick-1.
-             restoreDrawButton() recreates it after choice resolves. -->
-        <div class="panel-section">
-          <button id="draw-card-btn" class="action-btn primary draw-card-btn-big" type="button">
-            <span class="draw-btn-line1">DRAW</span>
-            <span class="draw-btn-line2">CARDS</span>
-          </button>
-        </div>
+  $("lb-back").onclick=()=>doReturnToMenu();
+  if($("start-btn")) $("start-btn").onclick=async()=>{ await fbSet(dbRef(`rooms/${code}/state/phase`),"countdown"); };
+}
 
-        <!-- Debug panel — hidden, toggled by footer button -->
-        <div style="display:none"><div id="left-debug-inner"></div></div>
+function showCountdownLobby(code,n){
+  showLobby(`<div class="lobby-wrap" style="align-items:center;justify-content:center;min-height:100vh"><div class="lobby-inner" style="text-align:center">
+    <div class="lobby-eyebrow">Get ready!</div>
+    <div id="cdown-num" style="font-family:var(--font-display);font-size:12rem;line-height:1;color:var(--red);text-shadow:4px 4px 0 var(--red2)">${n}</div>
+  </div></div>`);
+}
 
-        <button id="reset-local-btn" class="action-btn subtle" style="display:none" type="button">Reset</button>
-      </aside>
+// ─── Room creation / joining ──────────────────────────────────────────────────
+async function createRoom(sel){
+  const pool=G.rulesData?.destinationPool||DEST_POOL;
+  const shuffled=shuf(pool);
+  const N=sel.journeys;
+  const allNodes=G.rulesData?.nodes||[];
+  const mCount=Math.min(sel.mystery,8);
+  const nonDest=allNodes.filter(n=>n!=="Didcot"&&!pool.includes(n));
+  const mysteryNodes=shuf(nonDest).slice(0,mCount);
+  const routeIds=Object.keys(G.rulesData?.routes||{});
+  const routes={};
+  const rCols=G.rulesData?.routeColours||[];
+  shuf(routeIds).forEach(id=>{
+    const blocked=Object.keys(routes).filter(o=>routesAdjacent(id,o)).map(o=>routes[o].colour);
+    const opts=shuf(rCols.filter(c=>!blocked.includes(c)));
+    routes[id]={colour:opts[0]||rCols[0],claimedBy:null};
+  });
+  const deck=buildDeck();
+  const hands={};
+  const startHand=deck.splice(0,4);
+  hands[sel.dog]=startHand;
+  const state={
+    phase:"waiting",
+    playerCount:sel.players,
+    journeyTarget:N,
+    mysteryCount:mCount,
+    createdBy:sel.dog,
+    currentPlayer:null,
+    playerOrder:[],
+    characterSelections:{[sel.dog]:{colour:sel.colour,joinOrder:0}},
+    players:{[sel.dog]:{currentNode:"Didcot",previousNode:null,chain:shuffled.slice(0,N),chainIdx:0,completedChain:false,journeyRoutes:[],inventory:[],skipTurns:0,routeCostBonus:0}},
+    hands,
+    drawPile:deck,
+    discardPile:[],
+    routes,
+    mysteryNodes,
+    poopedNodes:{},
+    destPool:shuffled,
+    updatedAt:Date.now()
+  };
 
-      <!-- BOARD
-           #board-svg-host receives inline SVG from injectBoardSvg().
-           Pan/zoom via setupMobileBoardGestures(). -->
-      <main id="board-wrap">
-        <div id="board-svg-host" aria-label="Didcot Dogs board"></div>
-      </main>
+  let code,attempts=0;
+  while(attempts<10){ code=genCode(); const ex=await fbGet(dbRef(`rooms/${code}/state`)); if(!ex.exists()) break; attempts++; }
+  await fbSet(dbRef(`rooms/${code}/state`),sanitise(state));
+  G.roomCode=code; G.myId=sel.dog;
+  sessionStorage.setItem("dod_room",code); sessionStorage.setItem("dod_id",sel.dog);
+  startRoomSubscriber(code);
+}
 
-      <!-- RIGHT PANEL (desktop, hidden on mobile via CSS)
-           Player summaries and destination sequence cards. -->
-      <aside id="right-panel">
-        <div class="panel-title">Journey Cards</div>
-        <div class="panel-section">
-          <div id="player-summary-wrap" class="player-summary-wrap"></div>
-        </div>
-        <div class="panel-section">
-          <div id="destination-sequences" class="destination-sequences"></div>
-        </div>
-      </aside>
+async function joinRoom(code,sel,remoteState){
+  const joined=Object.keys(remoteState.characterSelections||{}).length;
+  const N=remoteState.journeyTarget||3;
+  const pool=toArr(remoteState.destPool||[]);
+  const chain=pool.slice(joined*N,(joined+1)*N);
+  const deck=[...toArr(remoteState.drawPile||[])];
+  const startHand=deck.splice(0,4);
+  const updates={
+    [`characterSelections/${sel.dog}`]:{colour:sel.colour,joinOrder:joined},
+    [`players/${sel.dog}`]:{currentNode:"Didcot",previousNode:null,chain,chainIdx:0,completedChain:false,journeyRoutes:[],inventory:[],skipTurns:0,routeCostBonus:0},
+    [`hands/${sel.dog}`]:startHand,
+    drawPile:deck,
+    updatedAt:Date.now()
+  };
+  await fbUpdate(dbRef(`rooms/${code}/state`),sanitise(updates));
+  G.roomCode=code; G.myId=sel.dog;
+  sessionStorage.setItem("dod_room",code); sessionStorage.setItem("dod_id",sel.dog);
+  startRoomSubscriber(code);
+}
 
-      <!-- Status chip (desktop only, hidden on mobile via CSS) -->
-      <div id="status-chip">Loading board&#8230;</div>
+// ─── Room subscriber ──────────────────────────────────────────────────────────
+let _roomUnsub=null;
+let _countdownActive=false;
+let _gameActive=false;
 
-      <!-- DESKTOP FOOTER
-           Room code, player identity, turn indicator, debug toggle. -->
-      <div id="desktop-footer">
-        <div id="desktop-footer-left">
-          <div id="desktop-identity"></div>
-        </div>
-        <div id="desktop-footer-centre">
-          <div id="desktop-turn-indicator" class="desktop-turn-indicator"></div>
-        </div>
-        <div id="desktop-footer-right">
-          <button id="menu-btn" class="footer-btn" type="button">&#8592; Menu</button>
-          <button id="debug-toggle-btn" class="footer-btn footer-btn-subtle" type="button">Version info &#9662;</button>
-          <div id="left-debug" class="left-debug-hidden desktop-debug-popup"></div>
-        </div>
-      </div>
+function startRoomSubscriber(code){
+  if(_roomUnsub){_roomUnsub();_roomUnsub=null;}
+  _roomUnsub=fbOnValue(dbRef(`rooms/${code}/state`),snap=>{
+    if(!snap.exists()) return;
+    const raw=snap.val();
+    const state=normalise(raw);
+    switch(state.phase){
+      case "waiting": showWaitingLobby(code,state); break;
+      case "ready":   showWaitingLobby(code,state); if(state.createdBy===G.myId&&Object.keys(state.characterSelections||{}).length>=state.playerCount) fbSet(dbRef(`rooms/${code}/state/phase`),"countdown"); break;
+      case "countdown": runCountdown(code,state); break;
+      case "playing": launchGame(code,state); break;
+    }
+    // Auto-advance from waiting to ready when full
+    if(state.phase==="waiting"&&state.createdBy===G.myId){
+      const joined=Object.keys(state.characterSelections||{}).length;
+      if(joined>=state.playerCount) fbSet(dbRef(`rooms/${code}/state/phase`),"ready");
+    }
+  });
+}
 
-    </div><!-- /game-shell -->
-  </div><!-- /app -->
+function runCountdown(code,state){
+  if(_countdownActive) return;
+  _countdownActive=true;
+  let n=3; showCountdownLobby(code,n);
+  const tick=setInterval(()=>{
+    n--;
+    const el=$("cdown-num"); if(el) el.textContent=n;
+    if(n<=0){
+      clearInterval(tick);_countdownActive=false;
+      if(state.createdBy===G.myId){
+        // Creator sets player order and launches
+        const order=shuf(Object.keys(state.characterSelections||{}));
+        fbUpdate(dbRef(`rooms/${code}/state`),{playerOrder:order,currentPlayer:order[0],phase:"playing"});
+      }
+    }
+  },1000);
+}
 
-  <!--
-    Mobile bottom bar is injected into the DOM by
-    injectMobileBottomBar() in app.v2.js — no static element needed.
+function launchGame(code,rawState){
+  if(_gameActive) return;
+  _gameActive=true;
+  hideLobby();
+  const state=normalise(rawState);
+  showScreen("screen-game");
+  wireRouteClicks(state);
+  renderAll(state);
+  const mine=isMyTurn(state);
+  const dog=DOGS.find(d=>d.id===G.myId);
+  showBanner(mine?`🐾 Your turn, ${dog?.name||G.myId}!`:`${DOGS.find(d=>d.id===state.currentPlayer)?.name||state.currentPlayer}'s turn`);
+  // Hand off to live game subscriber
+  if(_roomUnsub){_roomUnsub();_roomUnsub=null;}
+  _roomUnsub=fbOnValue(dbRef(`rooms/${code}/state`),snap=>{
+    if(!snap.exists()) return;
+    const s=normalise(snap.val());
+    const wasMyTurn=isMyTurn(s);
+    renderAll(s);
+    renderDrawBtn(s);
+    if(!G.drawPending) restoreDrawBtn();
+    if(s.status==="finished"){ showWinScreen(s.winner||G.myId); return; }
+    const prevPlayer=s._prevPlayer;
+    if(s.currentPlayer!==prevPlayer){
+      const mine2=s.currentPlayer===G.myId;
+      const d=DOGS.find(d=>d.id===s.currentPlayer);
+      showBanner(mine2?`🐾 Your turn, ${d?.name||s.currentPlayer}!`:`${d?.name||s.currentPlayer}'s turn`);
+      wireRouteClicks(s);
+    }
+  });
+}
 
-    Dynamic overlays appended to #game-shell by JS:
-      #lobby-overlay    — create/join/waiting/ready/countdown screens
-      #identity-card    — "YOU ARE [name]" flash after game launch
-      #mystery-modal-overlay — mystery box events and quit confirm
-      #mobile-toast     — brief notification toasts on mobile
-      #end-screen-overlay   — win/lose celebration screen
-  -->
+function normalise(raw){
+  if(!raw) return {};
+  const s={...raw};
+  s.drawPile=toArr(s.drawPile);
+  s.discardPile=toArr(s.discardPile);
+  s.mysteryNodes=toArr(s.mysteryNodes);
+  s.playerOrder=toArr(s.playerOrder);
+  if(!s.poopedNodes) s.poopedNodes={};
+  if(!s.characterSelections) s.characterSelections={};
+  if(s.destPool) s.destPool=toArr(s.destPool);
+  if(s.players) Object.keys(s.players).forEach(id=>{
+    const p=s.players[id];
+    p.hand=toArr(p.hand);
+    p.chain=toArr(p.chain);
+    p.journeyRoutes=toArr(p.journeyRoutes);
+    p.completedDestinations=toArr(p.completedDestinations||[]);
+    p.inventory=toArr(p.inventory||[]);
+    if(!p.skipTurns) p.skipTurns=0;
+    if(!p.routeCostBonus) p.routeCostBonus=0;
+  });
+  if(s.hands) Object.keys(s.hands).forEach(id=>{s.hands[id]=toArr(s.hands[id]);});
+  return s;
+}
 
-  <script type="module" src="./js/app.v2.js?v=30"></script>
+// ─── Return to menu ───────────────────────────────────────────────────────────
+function doReturnToMenu(){
+  if(_roomUnsub){_roomUnsub();_roomUnsub=null;}
+  cleanup();
+  G.roomCode=null; G.myId=null; G.actionLock=false; G.drawPending=false;
+  _countdownActive=false; _gameActive=false;
+  sessionStorage.removeItem("dod_room"); sessionStorage.removeItem("dod_id");
+  hideLobby();
+  const wo=$("win-overlay"); if(wo) wo.classList.remove("active");
+  showScreen("screen-room");
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init(){
+  await initFirebase();
+
+  // Load data
+  try {
+    const [game,evts] = await Promise.all([
+      fetch("data/didcot-dogs-game.v1.json").then(r=>r.json()),
+      fetch("data/didcot-dogs-events.v1.json").then(r=>r.json())
+    ]);
+    const finalDest = game.winCondition?.finalDestination||"Didcot";
+    game.destinationPool = Object.keys(game.destinations||{}).filter(k=>k!==finalDest);
+    G.rulesData = game;
+    G.destData  = {destinations: game.destinations};
+    G.eventsData = evts;
+    console.log("[DoD] Data loaded. Routes:",Object.keys(game.routes||{}).length);
+  } catch(e){ console.error("[DoD] Data load failed:",e); }
+
+  // Load SVG
+  try {
+    const txt = await fetch("assets/didcot-dogs-board.v1.svg").then(r=>r.text());
+    const host=$("board-svg-host"); host.innerHTML=txt;
+    const svg=host.querySelector("svg");
+    svg.removeAttribute("width"); svg.removeAttribute("height");
+    svg.setAttribute("preserveAspectRatio","xMidYMid meet");
+    svg.style.cssText="width:100%;height:100%;display:block;background:transparent";
+    G.svg=svg;
+    // Compute viewBox bounds
+    try{const vb=svg.viewBox.baseVal;G.boardView.base={x:vb.x,y:vb.y,w:vb.width,h:vb.height};}catch(e){}
+    // Wire route clicks (will be re-wired on game start)
+    setupGestures();
+    console.log("[DoD] SVG loaded");
+  } catch(e){ console.error("[DoD] SVG load failed:",e); }
+
+  // Wire room buttons
+  $("room-create-btn").onclick=()=>showCreateLobby2();
+  const ji=$("room-join-input"), jb=$("room-join-btn"), je=$("room-error");
+  ji.oninput=()=>{ji.value=ji.value.toUpperCase().replace(/[^A-Z0-9]/g,"");};
+  ji.onkeydown=e=>{if(e.key==="Enter")jb.click();};
+  jb.onclick=async()=>{
+    const code=ji.value.trim().toUpperCase();
+    if(code.length!==4){je.textContent="Enter a 4-character code";return;}
+    jb.disabled=true;jb.textContent="Joining…";je.textContent="";
+    try{
+      const snap=await fbGet(dbRef(`rooms/${code}/state`));
+      if(!snap.exists()){je.textContent="Room not found";jb.disabled=false;jb.textContent="Join";return;}
+      const s=snap.val();
+      if(s.phase!=="waiting"){je.textContent="Game already started";jb.disabled=false;jb.textContent="Join";return;}
+      const joined=Object.keys(s.characterSelections||{}).length;
+      if(joined>=s.playerCount){je.textContent="Room is full";jb.disabled=false;jb.textContent="Join";return;}
+      G.roomCode=code;
+      jb.disabled=false;jb.textContent="Join";
+      showJoinLobby(code,normalise(s));
+    } catch(e){je.textContent=e.message;jb.disabled=false;jb.textContent="Join";}
+  };
+
+  // Wire modals
+  $("claim-cancel-btn").onclick=closeClaimModal;
+  $("claim-confirm-btn").onclick=async()=>{
+    // Need current state — fetch from Firebase or use last known
+    if(!G.roomCode){console.warn("No room for confirm");return;}
+    const snap=await fbGet(dbRef(`rooms/${G.roomCode}/state`));
+    const s=normalise(snap.val());
+    await confirmClaim(s);
+  };
+  $("dest-m-ok").onclick=()=>$("modal-dest").classList.remove("open");
+  $("win-play-again").onclick=doReturnToMenu;
+
+  // Session resume
+  const savedCode=sessionStorage.getItem("dod_room"), savedId=sessionStorage.getItem("dod_id");
+  if(savedCode&&savedId){
+    try{
+      const snap=await fbGet(dbRef(`rooms/${savedCode}/state`));
+      if(snap.exists()){
+        const s=normalise(snap.val());
+        if(s.phase==="playing"&&s.characterSelections?.[savedId]){
+          G.roomCode=savedCode; G.myId=savedId;
+          launchGame(savedCode,s); return;
+        }
+      }
+    } catch(e){}
+    sessionStorage.removeItem("dod_room"); sessionStorage.removeItem("dod_id");
+  }
+
+  // Fullscreen
+  $("fs-btn")?.addEventListener("click",async()=>{
+    if(!document.fullscreenElement) await document.documentElement.requestFullscreen().catch(()=>{});
+    else await document.exitFullscreen().catch(()=>{});
+  });
+
+  initFallingDogs();
+  showScreen("screen-room");
+  console.log("[DoD] Init complete");
+}
+
+window.App = { draw: ()=>{ if(!G.roomCode){console.warn("No room");return;} fbGet(dbRef(`rooms/${G.roomCode}/state`)).then(s=>doDrawCards(normalise(s.val()))).catch(console.error); } };
+
+document.addEventListener("DOMContentLoaded",init);
+
+</script>
 </body>
 </html>
