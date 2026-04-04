@@ -54,11 +54,11 @@
   --border:  #b8a882;
   --shadow:  rgba(26,18,8,0.18);
 
-  --font-hero: "gurkner-jump", sans-serif;      /* Big moments: title, headlines, events, win */
+  --font-hero: "variex", sans-serif;      /* Big moments: title, headlines, events, win */
   --font-ui:   "bree-serif", serif;             /* UI: buttons, labels, panels, cards, names */
   --font-map:  "old-man-eloquent", sans-serif;  /* Board: node labels, route badges */
   /* Legacy aliases kept so existing references still work */
-  --font-display: "gurkner-jump", sans-serif;
+  --font-display: "variex", sans-serif;
   --font-body:    "bree-serif", serif;
 
   /* Route colours — vivid ink */
@@ -1119,7 +1119,8 @@ body::before {
 // Version: v4.0 / Turn 7
 // Clean rewrite from spec. Firebase: dogs-of-didcot-27ae6
 
-console.log("[DoD] v4.0 loading");
+console.log("[DoD] v8.0 loading");
+const APP_VERSION = "v8.0"; // turn 8
 
 // ─── Firebase ────────────────────────────────────────────────────────────────
 let db = null;
@@ -1242,32 +1243,85 @@ function buildDeck() {
 
 // ─── Falling dogs canvas ─────────────────────────────────────────────────────
 function initFallingDogs() {
+  // Guard: only one canvas + one animation loop ever
   let cv = $("dogs-canvas");
-  if(!cv) { cv=document.createElement("canvas"); cv.id="dogs-canvas"; cv.style.cssText="position:fixed;inset:0;pointer-events:none;z-index:1"; document.body.appendChild(cv); }
+  if(cv && cv._dogsRunning) return; // already running — do nothing
+  if(!cv) {
+    cv = document.createElement("canvas");
+    cv.id = "dogs-canvas";
+    cv.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:1";
+    document.body.appendChild(cv);
+  }
+  cv._dogsRunning = true;
   const ctx = cv.getContext("2d");
-  const resize = () => { cv.width=innerWidth; cv.height=innerHeight; };
-  resize(); window.addEventListener("resize",resize);
-  // Pre-load all dog images before starting animation
-  let loaded=0;
-  const imgs = DOGS.map(d=>{ const i=new Image(); i.onload=()=>{loaded++;}; i.onerror=()=>{loaded++;}; i.src=d.img; return i; });
-  const dogs = Array.from({length:16},()=>({
-    x:Math.random()*innerWidth, y:Math.random()*-innerHeight,
-    spd:.4+Math.random()*1.2, sz:32+Math.random()*36,
-    rot:(Math.random()-.5)*.06, ang:0,
-    sw:(Math.random()-.5)*.6, swp:Math.random()*Math.PI*2,
-    img:imgs[~~(Math.random()*imgs.length)]
+  const resize = () => { cv.width = innerWidth; cv.height = innerHeight; };
+  resize();
+  window.addEventListener("resize", resize);
+
+  // Load all images first — only start drawing when at least one is ready
+  let readyCount = 0;
+  const imgs = DOGS.map(d => {
+    const i = new Image();
+    i._ready = false;
+    i.onload  = () => { i._ready = true; readyCount++; };
+    i.onerror = () => { i._ready = false; readyCount++; }; // count even failures
+    i.src = d.img;
+    return i;
+  });
+
+  const dogs = Array.from({length: 18}, () => ({
+    x:   Math.random() * innerWidth,
+    y:   Math.random() * -innerHeight * 1.2,
+    spd: 0.5 + Math.random() * 1.4,
+    sz:  36 + Math.random() * 44,
+    rot: (Math.random() - 0.5) * 0.07,
+    ang: 0,
+    sw:  (Math.random() - 0.5) * 0.7,
+    swp: Math.random() * Math.PI * 2,
+    img: imgs[~~(Math.random() * imgs.length)]
   }));
-  (function draw(){
-    ctx.clearRect(0,0,cv.width,cv.height);
-    dogs.forEach(d=>{
-      d.y+=d.spd; d.ang+=d.rot; d.swp+=.018; d.x+=Math.sin(d.swp)*d.sw;
-      if(d.y>cv.height+60){d.y=-60;d.x=Math.random()*cv.width}
-      ctx.save(); ctx.globalAlpha=.22; ctx.translate(d.x,d.y); ctx.rotate(d.ang);
-      ctx.drawImage(d.img,-d.sz/2,-d.sz/2,d.sz,d.sz);
-      ctx.restore();
+
+  let frameId = null;
+  function draw() {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    dogs.forEach(d => {
+      d.y   += d.spd;
+      d.ang += d.rot;
+      d.swp += 0.018;
+      d.x   += Math.sin(d.swp) * d.sw;
+      if (d.y > cv.height + 80) {
+        d.y = -80;
+        d.x = Math.random() * cv.width;
+        // Pick a new random dog image on each respawn
+        d.img = imgs[~~(Math.random() * imgs.length)];
+      }
+      // Only draw if this image has loaded
+      if (!d.img._ready) return;
+      try {
+        ctx.save();
+        ctx.globalAlpha = 0.28;
+        ctx.translate(d.x, d.y);
+        ctx.rotate(d.ang);
+        ctx.drawImage(d.img, -d.sz / 2, -d.sz / 2, d.sz, d.sz);
+        ctx.restore();
+      } catch(e) { /* image draw failed — skip this frame */ }
     });
-    requestAnimationFrame(draw);
-  })();
+    frameId = requestAnimationFrame(draw);
+  }
+
+  // Start immediately — dogs with loaded images will show, others appear as they load
+  draw();
+}
+
+// Stop falling dogs (called when entering game screen)
+function stopFallingDogs() {
+  const cv = $("dogs-canvas");
+  if(cv) { cv._dogsRunning = false; cv.style.display = "none"; }
+}
+function resumeFallingDogs() {
+  const cv = $("dogs-canvas");
+  if(cv) { cv.style.display = ""; cv._dogsRunning = false; } // reset guard so re-call works
+  initFallingDogs();
 }
 
 // ─── Board pan/zoom ───────────────────────────────────────────────────────────
@@ -2379,6 +2433,7 @@ function launchGame(code,rawState){
   if(_gameActive) return;
   _gameActive=true;
   hideLobby();
+  stopFallingDogs();
   const state=normalise(rawState);
   showScreen("screen-game");
   wireRouteClicks(state);
@@ -2440,7 +2495,7 @@ function doReturnToMenu(){
   hideLobby();
   const wo=$("win-overlay"); if(wo) wo.classList.remove("active");
   showScreen("screen-room");
-  initFallingDogs();
+  resumeFallingDogs();
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
