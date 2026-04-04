@@ -847,6 +847,120 @@ body::before {
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
+
+/* ── Room screen wipe animation (matches v2 aesthetic) ── */
+.room-wipe {
+  position:absolute;inset:-10%;
+  transform:skewX(-18deg) translateX(-160%);
+  opacity:0;will-change:transform,opacity;
+}
+.room-wipe-a {
+  background:linear-gradient(90deg,rgba(0,0,0,0) 0%,rgba(200,50,26,.55) 45%,rgba(200,130,10,.65) 100%);
+  animation:roomWipeA 5.5s linear infinite;
+}
+.room-wipe-b {
+  background:linear-gradient(90deg,rgba(0,0,0,0) 0%,rgba(30,62,124,.45) 45%,rgba(200,50,26,.3) 100%);
+  animation:roomWipeB 7s linear infinite;
+}
+.room-wipe-c {
+  background:linear-gradient(90deg,rgba(0,0,0,0) 0%,rgba(30,122,56,.35) 45%,rgba(200,130,10,.25) 100%);
+  animation:roomWipeC 8.5s linear infinite;
+}
+.room-noise {
+  position:absolute;inset:0;
+  background:
+    radial-gradient(circle at 15% 30%,rgba(200,50,26,.06) 0%,transparent 28%),
+    radial-gradient(circle at 78% 70%,rgba(30,62,124,.06) 0%,transparent 28%);
+  animation:roomNoisePulse 4s ease-in-out infinite;
+}
+@keyframes roomWipeA {
+  0%  {transform:skewX(-18deg) translateX(-160%);opacity:0}
+  8%  {opacity:.85}
+  60% {opacity:.85}
+  100%{transform:skewX(-18deg) translateX(55%);opacity:0}
+}
+@keyframes roomWipeB {
+  0%  {transform:skewX(-18deg) translateX(-180%);opacity:0}
+  12% {opacity:.7}
+  65% {opacity:.7}
+  100%{transform:skewX(-18deg) translateX(70%);opacity:0}
+}
+@keyframes roomWipeC {
+  0%  {transform:skewX(-18deg) translateX(-200%);opacity:0}
+  15% {opacity:.6}
+  70% {opacity:.6}
+  100%{transform:skewX(-18deg) translateX(85%);opacity:0}
+}
+@keyframes roomNoisePulse{
+  0%,100%{opacity:.5} 50%{opacity:1}
+}
+/* Override room screen to be dark for wipe effect */
+#screen-room {
+  background:#0e0a04 !important;
+}
+.room-title {
+  color:#fff !important;
+  text-shadow:3px 3px 0 rgba(200,50,26,.6),6px 6px 0 rgba(26,18,8,.3) !important;
+}
+.room-sub { color:rgba(255,255,255,.55) !important; }
+.room-card {
+  background:rgba(244,240,228,.08) !important;
+  border-color:rgba(244,240,228,.15) !important;
+  backdrop-filter:blur(8px);
+}
+.room-btn-create {
+  background:linear-gradient(135deg,#c8321a,#a02010) !important;
+}
+.room-code-input {
+  background:rgba(255,255,255,.1) !important;
+  border-color:rgba(255,255,255,.2) !important;
+  color:#fff !important;
+}
+.room-code-input::placeholder{color:rgba(255,255,255,.3) !important}
+.room-code-input:focus{border-color:rgba(200,50,26,.8) !important}
+.room-btn-join {
+  background:rgba(255,255,255,.12) !important;
+  border-color:rgba(255,255,255,.2) !important;
+  color:#fff !important;
+}
+.room-divider{color:rgba(255,255,255,.3) !important}
+.room-divider::before,.room-divider::after{background:rgba(255,255,255,.15) !important}
+/* Also apply dark bg + wipes to lobby overlay */
+#lobby-overlay {
+  background:#0e0a04 !important;
+}
+.lobby-wrap { position:relative; z-index:2; }
+.lobby-title { color:#fff !important; }
+.lobby-eyebrow { color:rgba(255,255,255,.5) !important; }
+.lobby-section-label { color:rgba(255,255,255,.5) !important; }
+.lobby-inner { position:relative; z-index:2; }
+.lobby-dog-btn { background:rgba(255,255,255,.07) !important; border-color:rgba(255,255,255,.15) !important; }
+.lobby-dog-btn:hover:not(.taken):not(.sel){ border-color:var(--red) !important; }
+.lobby-dog-btn.sel { background:rgba(200,50,26,.18) !important; border-color:var(--red) !important; }
+.lobby-dog-btn .dog-name { color:rgba(255,255,255,.6) !important; }
+.lobby-colour-btn { opacity:.9; }
+.lobby-num-btn { background:rgba(255,255,255,.07) !important; border-color:rgba(255,255,255,.2) !important; color:#fff !important; }
+.lobby-num-btn:hover { background:rgba(255,255,255,.14) !important; }
+.lobby-num-btn.sel { background:var(--red) !important; border-color:var(--red2) !important; }
+.lobby-btn-back { background:rgba(255,255,255,.07) !important; border-color:rgba(255,255,255,.15) !important; color:rgba(255,255,255,.5) !important; }
+.lobby-game-info { color:rgba(255,255,255,.5) !important; }
+.lobby-info-pill { background:rgba(255,255,255,.08) !important; border-color:rgba(255,255,255,.15) !important; color:rgba(255,255,255,.8) !important; }
+.lobby-waiting-code { color:#f5d060 !important; text-shadow:2px 2px 0 rgba(200,130,10,.5) !important; }
+.lobby-waiting-sub { color:rgba(255,255,255,.5) !important; }
+.lobby-slot-empty { background:rgba(255,255,255,.05) !important; border-color:rgba(255,255,255,.15) !important; color:rgba(255,255,255,.4) !important; }
+/* Lobby wipe layers — appended dynamically as siblings inside lobby-overlay */
+.lobby-wipe-layer {
+  position:fixed;inset:-10%;pointer-events:none;z-index:1;
+  transform:skewX(-18deg) translateX(-160%);opacity:0;
+}
+.lobby-wipe-layer-a {
+  background:linear-gradient(90deg,rgba(0,0,0,0) 0%,rgba(200,50,26,.45) 45%,rgba(200,130,10,.5) 100%);
+  animation:roomWipeA 6s linear infinite;
+}
+.lobby-wipe-layer-b {
+  background:linear-gradient(90deg,rgba(0,0,0,0) 0%,rgba(30,62,124,.35) 45%,rgba(255,255,255,.1) 100%);
+  animation:roomWipeB 8s linear infinite;
+}
 </style>
 </head>
 <body>
@@ -854,11 +968,10 @@ body::before {
 <!-- ROOM SCREEN -->
 <div id="screen-room" class="screen active">
   <div class="room-bg">
-    <div class="room-bg-stripe"></div>
-    <div class="room-bg-stripe"></div>
-    <div class="room-bg-stripe"></div>
-    <div class="room-bg-stripe"></div>
-    <div class="room-bg-stripe"></div>
+    <div class="room-wipe room-wipe-a"></div>
+    <div class="room-wipe room-wipe-b"></div>
+    <div class="room-wipe room-wipe-c"></div>
+    <div class="room-noise"></div>
   </div>
   <div class="room-content">
     <div class="room-masthead">
@@ -906,7 +1019,7 @@ body::before {
         </button>
       </div>
       <div class="action-hint" id="action-hint">Waiting…</div>
-      <button class="btn btn-ghost btn-sm" type="button" onclick="doReturnToMenu()" style="margin-top:auto">← Menu</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="App.returnToMenu()" style="margin-top:auto">← Menu</button>
     </div>
   </aside>
 
@@ -1941,7 +2054,11 @@ function showToast(text){
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 let lobbyOv=null;
 function getLobby(){if(!lobbyOv){lobbyOv=mk("div");lobbyOv.id="lobby-overlay";lobbyOv.className="lobby-overlay";document.body.appendChild(lobbyOv);}return lobbyOv;}
-function showLobby(html){const o=getLobby();o.innerHTML=html;o.classList.add("open");}
+function showLobby(html){
+  const o=getLobby();
+  o.innerHTML=`<div class="lobby-wipe-layer lobby-wipe-layer-a"></div><div class="lobby-wipe-layer lobby-wipe-layer-b"></div>${html}`;
+  o.classList.add("open");
+}
 function hideLobby(){getLobby().classList.remove("open");}
 
 // Fix the number picker loop — rewrite cleanly
@@ -2380,7 +2497,16 @@ async function init(){
   console.log("[DoD] Init complete");
 }
 
-window.App = { draw: ()=>{ if(!G.roomCode){console.warn("No room");return;} fbGet(dbRef(`rooms/${G.roomCode}/state`)).then(s=>doDrawCards(normalise(s.val()))).catch(console.error); } };
+window.App = {
+  draw: ()=>{ if(!G.roomCode){console.warn("No room");return;} fbGet(dbRef(`rooms/${G.roomCode}/state`)).then(s=>doDrawCards(normalise(s.val()))).catch(console.error); },
+  returnToMenu: ()=>doReturnToMenu(),
+  confirmClaim: async ()=>{
+    if(!G.roomCode||!G.pendingClaim||!G.selPayment) return;
+    const snap=await fbGet(dbRef(`rooms/${G.roomCode}/state`));
+    await confirmClaim(normalise(snap.val()));
+  }
+};
+window.doReturnToMenu = doReturnToMenu;
 
 document.addEventListener("DOMContentLoaded",init);
 
