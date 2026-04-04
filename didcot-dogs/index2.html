@@ -54,8 +54,12 @@
   --border:  #b8a882;
   --shadow:  rgba(26,18,8,0.18);
 
-  --font-display: "professor-minty", sans-serif;
-  --font-body:    "professor-minty", sans-serif;
+  --font-hero: "gurkner-jump", sans-serif;      /* Big moments: title, headlines, events, win */
+  --font-ui:   "bree-serif", serif;             /* UI: buttons, labels, panels, cards, names */
+  --font-map:  "old-man-eloquent", sans-serif;  /* Board: node labels, route badges */
+  /* Legacy aliases kept so existing references still work */
+  --font-display: "gurkner-jump", sans-serif;
+  --font-body:    "bree-serif", serif;
 
   /* Route colours — vivid ink */
   --rc-red:    #c8321a;
@@ -93,7 +97,7 @@ html,body {
   height:100%;
   background: var(--cream);
   color: var(--ink);
-  font-family: var(--font-body);
+  font-family: var(--font-ui);
   overflow: hidden;
 }
 
@@ -152,7 +156,7 @@ body::before {
   text-align:center;margin-bottom:8px;
 }
 .room-title {
-  font-family:var(--font-display);
+  font-family:var(--font-hero);
   font-size:clamp(3.5rem,9vw,6.5rem);
   font-weight:700;
   color:var(--ink);
@@ -161,7 +165,7 @@ body::before {
   text-shadow: 3px 3px 0 var(--red2), 6px 6px 0 rgba(26,18,8,.1);
 }
 .room-sub {
-  font-family:var(--font-body);
+  font-family:var(--font-ui);
   font-size:.95rem;
   color:var(--muted);
   margin-top:6px;
@@ -190,7 +194,7 @@ body::before {
   border:2px solid var(--red2);
   border-radius:10px;
   color:#fff;
-  font-family:var(--font-display);
+  font-family:var(--font-hero);
   font-size:1.5rem;
   font-weight:700;
   cursor:pointer;
@@ -215,7 +219,7 @@ body::before {
   background:var(--cream);
   border:2px solid var(--border);border-radius:10px;
   color:var(--ink);
-  font-family:var(--font-display);
+  font-family:var(--font-hero);
   font-size:1.8rem;font-weight:700;
   text-align:center;letter-spacing:.3em;
   outline:none;
@@ -228,7 +232,7 @@ body::before {
   background:var(--ink);
   border:2px solid var(--ink2);border-radius:10px;
   color:var(--cream);
-  font-family:var(--font-display);
+  font-family:var(--font-hero);
   font-size:1.1rem;font-weight:700;
   cursor:pointer;
   box-shadow:2px 2px 0 var(--ink2);
@@ -268,7 +272,7 @@ body::before {
   color:var(--muted);margin-bottom:6px;
 }
 .lobby-title {
-  font-family:var(--font-display);
+  font-family:var(--font-hero);
   font-size:clamp(2.4rem,6vw,4rem);
   font-weight:700;color:var(--ink);
   line-height:.95;
@@ -302,7 +306,7 @@ body::before {
 .lobby-dog-btn.taken{opacity:.32;cursor:not-allowed}
 .lobby-dog-btn .taken-stamp{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-family:var(--font-display);font-size:1.4rem;color:var(--red);
+  font-family:var(--font-hero);font-size:1.4rem;color:var(--red);
   transform:rotate(-20deg);opacity:.8;
 }
 
@@ -314,7 +318,7 @@ body::before {
   height:48px;border-radius:8px;
   border:3px solid transparent;
   cursor:pointer;
-  font-family:var(--font-display);font-size:.75rem;font-weight:700;
+  font-family:var(--font-ui);font-size:.75rem;font-weight:700;
   letter-spacing:.04em;text-transform:uppercase;
   transition:transform .1s,border-color .1s;
 }
@@ -327,7 +331,7 @@ body::before {
 .lobby-num-btn {
   width:48px;height:48px;border-radius:8px;
   border:2px solid var(--border);background:var(--paper);
-  font-family:var(--font-display);font-size:1.3rem;font-weight:700;color:var(--ink);
+  font-family:var(--font-ui);font-size:1.3rem;font-weight:700;color:var(--ink);
   cursor:pointer;
   transition:background .1s,border-color .1s,transform .1s;
 }
@@ -340,14 +344,14 @@ body::before {
 .lobby-btn-back {
   min-height:50px;padding:0 20px;border-radius:10px;
   border:2px solid var(--border);background:var(--paper);
-  font-family:var(--font-display);font-size:1rem;color:var(--muted);cursor:pointer;
+  font-family:var(--font-ui);font-size:1rem;color:var(--muted);cursor:pointer;
   transition:background .12s;
 }
 .lobby-btn-back:hover{background:var(--cream2)}
 .lobby-btn-confirm {
   flex:1;min-height:50px;border-radius:10px;
   background:var(--red);border:2px solid var(--red2);
-  color:#fff;font-family:var(--font-display);font-size:1.1rem;font-weight:700;
+  color:#fff;font-family:var(--font-ui);font-size:1.1rem;font-weight:700;
   cursor:pointer;box-shadow:2px 2px 0 var(--red2);
   transition:transform .1s,box-shadow .1s,opacity .12s;
 }
@@ -366,7 +370,7 @@ body::before {
 
 /* Waiting lobby */
 .lobby-waiting-code {
-  font-family:var(--font-display);
+  font-family:var(--font-hero);
   font-size:clamp(3.5rem,12vw,6rem);
   font-weight:700;color:var(--red);
   letter-spacing:.2em;text-align:center;
@@ -404,7 +408,7 @@ body::before {
   width:100%;min-height:60px;
   background:var(--green);border:2px solid #1a5228;
   border-radius:12px;color:#fff;
-  font-family:var(--font-display);font-size:1.4rem;font-weight:700;
+  font-family:var(--font-hero);font-size:1.4rem;font-weight:700;
   cursor:pointer;box-shadow:3px 3px 0 #1a5228;
   transition:transform .1s,box-shadow .1s;
 }
@@ -417,7 +421,7 @@ body::before {
   position:fixed;top:12px;left:50%;
   transform:translateX(-50%) translateY(-80px);
   background:var(--ink);color:var(--cream);
-  font-family:var(--font-display);font-size:1.1rem;font-weight:700;
+  font-family:var(--font-hero);font-size:1.1rem;font-weight:700;
   padding:10px 28px;border-radius:99px;
   box-shadow:3px 3px 0 rgba(26,18,8,.25);
   z-index:500;letter-spacing:.04em;
@@ -457,7 +461,7 @@ body::before {
   stroke-width:4 !important;
 }
 #board-svg-host text{
-  font-family:var(--font-display) !important;
+  font-family:var(--font-hero) !important;
   fill:var(--ink) !important;
   pointer-events:none;
 }
@@ -513,7 +517,7 @@ body::before {
   background:var(--cream2);
 }
 .panel-header h2{
-  font-family:var(--font-display);
+  font-family:var(--font-hero);
   font-size:1.4rem;font-weight:700;
   color:var(--ink);letter-spacing:.02em;
 }
@@ -545,7 +549,7 @@ body::before {
 }
 .pc-portrait img{width:100%;height:100%;object-fit:contain}
 .pc-info{flex:1;min-width:0}
-.pc-name{font-family:var(--font-display);font-size:.9rem;font-weight:700;
+.pc-name{font-family:var(--font-hero);font-size:.9rem;font-weight:700;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pc-meta{font-size:.7rem;color:var(--muted)}
 .pc-turn-dot{
@@ -561,7 +565,7 @@ body::before {
 }
 .dest-box-label{font-size:.68rem;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--muted);margin-bottom:4px}
-.dest-box-title{font-family:var(--font-display);font-size:1rem;font-weight:700;color:var(--red)}
+.dest-box-title{font-family:var(--font-hero);font-size:1rem;font-weight:700;color:var(--red)}
 .dest-box-desc{font-size:.75rem;color:var(--muted);line-height:1.45;margin-top:4px}
 .dest-box-prog{font-size:.7rem;color:var(--muted);margin-top:5px}
 
@@ -570,7 +574,7 @@ body::before {
   width:100%;min-height:72px;border-radius:10px;
   background:var(--ink);border:2px solid var(--ink2);
   color:var(--cream);
-  font-family:var(--font-display);
+  font-family:var(--font-hero);
   cursor:pointer;box-shadow:2px 2px 0 var(--ink2);
   transition:transform .1s,box-shadow .1s,opacity .12s;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;
@@ -582,13 +586,13 @@ body::before {
 
 /* Draw-2-pick-1 */
 .draw-choice-wrap{display:flex;flex-direction:column;gap:10px}
-.draw-choice-lbl{font-family:var(--font-display);font-size:.9rem;color:var(--gold);text-align:center;font-weight:700}
+.draw-choice-lbl{font-family:var(--font-hero);font-size:.9rem;color:var(--gold);text-align:center;font-weight:700}
 .draw-choice-cards{display:flex;gap:8px}
 .draw-choice-card{
   flex:1;min-height:80px;border-radius:10px;
   border:2px solid rgba(0,0,0,.15);
   cursor:pointer;display:flex;align-items:center;justify-content:center;
-  font-family:var(--font-display);font-size:.9rem;font-weight:700;
+  font-family:var(--font-hero);font-size:.9rem;font-weight:700;
   color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3);
   transition:transform .1s,box-shadow .1s;
   box-shadow:2px 2px 0 rgba(0,0,0,.15);
@@ -660,7 +664,7 @@ body::before {
   flex-shrink:0;
   box-shadow:2px 3px 0 rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.35);
   display:flex;align-items:flex-end;padding:6px;
-  font-family:var(--font-display);font-size:.68rem;font-weight:700;
+  font-family:var(--font-hero);font-size:.68rem;font-weight:700;
   color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);
   text-transform:capitalize;
   cursor:default;
@@ -727,7 +731,7 @@ body::before {
   100%{transform:none;opacity:1}
 }
 .modal-title{
-  font-family:var(--font-display);font-size:1.6rem;font-weight:700;
+  font-family:var(--font-hero);font-size:1.6rem;font-weight:700;
   color:var(--ink);margin-bottom:6px;
 }
 .modal-body{
@@ -764,7 +768,7 @@ body::before {
 /* Destination complete modal */
 .dest-modal-content{text-align:center}
 .dest-modal-node{
-  font-family:var(--font-display);font-size:2rem;
+  font-family:var(--font-hero);font-size:2rem;
   color:var(--red);margin-bottom:8px;
 }
 .dest-modal-desc{font-size:.9rem;color:var(--muted);line-height:1.55;margin-bottom:12px}
@@ -792,7 +796,7 @@ body::before {
 }
 .win-portrait img{width:88%;height:88%;object-fit:contain}
 .win-headline{
-  font-family:var(--font-display);font-size:clamp(3rem,8vw,5.5rem);
+  font-family:var(--font-hero);font-size:clamp(3rem,8vw,5.5rem);
   font-weight:700;line-height:.9;color:var(--red);
   text-shadow:4px 4px 0 var(--red2),8px 8px 0 rgba(26,18,8,.1);
 }
@@ -804,7 +808,7 @@ body::before {
 .btn {
   display:inline-flex;align-items:center;justify-content:center;
   border:2px solid;border-radius:10px;
-  font-family:var(--font-display);font-weight:700;
+  font-family:var(--font-hero);font-weight:700;
   cursor:pointer;
   transition:transform .1s,box-shadow .1s,opacity .12s;
 }
@@ -961,6 +965,16 @@ body::before {
   background:linear-gradient(90deg,rgba(0,0,0,0) 0%,rgba(30,62,124,.35) 45%,rgba(255,255,255,.1) 100%);
   animation:roomWipeB 8s linear infinite;
 }
+
+/* ── Map font applied to SVG board text ── */
+#board-svg-host text {
+  font-family:var(--font-map) !important;
+  fill:var(--ink) !important;
+  pointer-events:none;
+}
+.route-cost-badge text, .cost-badge text {
+  font-family:var(--font-map) !important;
+}
 </style>
 </head>
 <body>
@@ -1098,7 +1112,7 @@ body::before {
 </div>
 
 <!-- Fullscreen button -->
-<button id="fs-btn" type="button" style="position:fixed;top:12px;right:12px;z-index:50;background:rgba(26,18,8,.1);border:1.5px solid var(--border);border-radius:8px;padding:6px 12px;font-family:var(--font-display);font-size:.82rem;color:var(--muted);cursor:pointer">⛶ Fullscreen</button>
+<button id="fs-btn" type="button" style="position:fixed;top:12px;right:12px;z-index:50;background:rgba(26,18,8,.1);border:1.5px solid var(--border);border-radius:8px;padding:6px 12px;font-family:var(--font-hero);font-size:.82rem;color:var(--muted);cursor:pointer">⛶ Fullscreen</button>
 
 <script type="module">
 // DOGS OF DIDCOT — app.js
@@ -1427,7 +1441,7 @@ function renderMysteryNodes(state) {
       const ring=mkSvg("circle",{r:"24",fill:"none",stroke:"#c8a008","stroke-width":"2.5",class:"mystery-ring"});
       ring.style.fill="none"; ring.style.stroke="#c8a008";
       const bg=mkSvg("circle",{r:"19"}); bg.style.fill="#f4f0e4"; bg.style.stroke="#c8a008"; bg.style.strokeWidth="2";
-      const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"18","font-weight":"800",style:"font-family:var(--font-display);fill:#c9820a;pointer-events:none"});
+      const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"18","font-weight":"800",style:"font-family:var(--font-hero);fill:#c9820a;pointer-events:none"});
       t.textContent="?";
       g.appendChild(ring);g.appendChild(bg);g.appendChild(t);
       layer.appendChild(g);
@@ -1578,9 +1592,9 @@ function renderRightPanel(state) {
       } else if(i===idx){
         card.className="dest-card-active";
         card.style.cssText="padding:10px 12px;border-radius:8px;border:2px solid var(--red);background:#fff8f4;font-size:.85rem;color:var(--ink)";
-        card.innerHTML=`<div style="font-family:var(--font-display);font-size:.95rem;font-weight:700;color:var(--red)">${d?.title||fmt(did)}</div><div style="font-size:.72rem;color:var(--muted);margin-top:3px">${d?.description||""}</div>`;
+        card.innerHTML=`<div style="font-family:var(--font-hero);font-size:.95rem;font-weight:700;color:var(--red)">${d?.title||fmt(did)}</div><div style="font-size:.72rem;color:var(--muted);margin-top:3px">${d?.description||""}</div>`;
       } else {
-        card.style.cssText="padding:8px 12px;border-radius:8px;border:1.5px dashed var(--border);background:var(--paper);font-family:var(--font-display);font-size:1.1rem;color:var(--border);text-align:center";
+        card.style.cssText="padding:8px 12px;border-radius:8px;border:1.5px dashed var(--border);background:var(--paper);font-family:var(--font-hero);font-size:1.1rem;color:var(--border);text-align:center";
         card.textContent="?";
       }
       wrap.appendChild(card);
@@ -1979,7 +1993,7 @@ function buildGimmeGimmeUI(extra,state,ok,done){
   opps.forEach(id=>{
     const dog=DOGS.find(d=>d.id===id);
     const colHex=pcHex(state.characterSelections?.[id]?.colour);
-    const btn=mk("button"); btn.style.cssText="display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:8px;border:2px solid var(--border);background:var(--paper);cursor:pointer;margin-bottom:8px;font-family:var(--font-display)";
+    const btn=mk("button"); btn.style.cssText="display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:8px;border:2px solid var(--border);background:var(--paper);cursor:pointer;margin-bottom:8px;font-family:var(--font-hero)";
     btn.innerHTML=`<img src="${dog?.img||""}" style="width:36px;height:36px;border-radius:50%;border:2px solid ${colHex};background:rgba(255,255,255,.8)"><span style="color:${colHex};font-weight:700">${dog?.name||id}</span><span style="margin-left:auto;color:var(--muted);font-size:.8rem">${toArr(state.hands?.[id]||[]).length} cards</span>`;
     btn.onclick=()=>{target=id;extra.querySelectorAll("button").forEach(b=>b.style.outline="");btn.style.outline=`3px solid ${colHex}`;ok.disabled=false;};
     extra.appendChild(btn);
@@ -2047,7 +2061,7 @@ function showWinScreen(winnerId){
 // ─── Toast ────────────────────────────────────────────────────────────────────
 let toastTimer=null;
 function showToast(text){
-  let t=$("toast"); if(!t){t=mk("div");t.id="toast";t.style.cssText="position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--cream);font-family:var(--font-display);font-size:.9rem;padding:10px 20px;border-radius:99px;z-index:900;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;box-shadow:2px 2px 0 rgba(26,18,8,.3)";document.body.appendChild(t);}
+  let t=$("toast"); if(!t){t=mk("div");t.id="toast";t.style.cssText="position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--cream);font-family:var(--font-hero);font-size:.9rem;padding:10px 20px;border-radius:99px;z-index:900;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;box-shadow:2px 2px 0 rgba(26,18,8,.3)";document.body.appendChild(t);}
   t.textContent=text;t.style.opacity="1";
   if(toastTimer) clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>{t.style.opacity="0";},2200);
@@ -2245,7 +2259,7 @@ function showWaitingLobby(code,state){
 function showCountdownLobby(code,n){
   showLobby(`<div class="lobby-wrap" style="align-items:center;justify-content:center;min-height:100vh"><div class="lobby-inner" style="text-align:center">
     <div class="lobby-eyebrow">Get ready!</div>
-    <div id="cdown-num" style="font-family:var(--font-display);font-size:12rem;line-height:1;color:var(--red);text-shadow:4px 4px 0 var(--red2)">${n}</div>
+    <div id="cdown-num" style="font-family:var(--font-hero);font-size:12rem;line-height:1;color:var(--red);text-shadow:4px 4px 0 var(--red2)">${n}</div>
   </div></div>`);
 }
 
