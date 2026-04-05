@@ -130,6 +130,7 @@ body::before {
   flex-direction:column;
   background: var(--cream);
   z-index:200;
+  overflow:visible;
 }
 
 .room-bg {
@@ -221,7 +222,7 @@ body::before {
   background:var(--cream);
   border:2px solid var(--border);border-radius:10px;
   color:var(--ink);
-  font-family:var(--font-hero);
+  font-family:var(--font-ui);
   font-size:1.8rem;font-weight:700;
   text-align:center;letter-spacing:.3em;
   outline:none;
@@ -380,7 +381,7 @@ body::before {
 
 /* Waiting lobby */
 .lobby-waiting-code {
-  font-family:var(--font-hero);
+  font-family:var(--font-ui);
   font-size:clamp(3.5rem,12vw,6rem);
   font-weight:700;color:var(--red);
   letter-spacing:.2em;text-align:center;
@@ -1021,17 +1022,44 @@ body::before {
 .falling-dog {
   position: absolute;
   pointer-events: none;
-  animation: dogFall linear infinite;
   opacity: 0;
-  z-index: 1;
-  transform-origin: center center;
+  z-index: 3;
+  transform-origin: center 60%;
+  will-change: transform, opacity;
 }
 @keyframes dogFall {
-  0%   { transform: translateY(-100px) rotate(var(--dog-r0)); opacity: 0; }
-  6%   { opacity: var(--dog-op); }
-  90%  { opacity: var(--dog-op); }
-  100% { transform: translateY(110vh) rotate(var(--dog-r1)); opacity: 0; }
+  0%   { transform: translateY(0) rotate(var(--dog-r0,0deg)); opacity: 0; }
+  6%   { opacity: var(--dog-op,0.2); }
+  90%  { opacity: var(--dog-op,0.2); }
+  100% { transform: translateY(110vh) rotate(var(--dog-r1,0deg)); opacity: 0; }
 }
+
+/* ── Token oscillation ── */
+@keyframes tokWobble1{
+  0%,100%{transform:rotate(0deg) scale(1)}
+  20%{transform:rotate(-14deg) scale(1.08)}
+  40%{transform:rotate(10deg) scale(1.05)}
+  60%{transform:rotate(-12deg) scale(1.1)}
+  80%{transform:rotate(8deg) scale(1.06)}
+}
+@keyframes tokWobble2{
+  0%,100%{transform:rotate(0deg) scale(1)}
+  15%{transform:rotate(13deg) scale(1.07)}
+  35%{transform:rotate(-11deg) scale(1.09)}
+  55%{transform:rotate(15deg) scale(1.06)}
+  75%{transform:rotate(-9deg) scale(1.08)}
+}
+@keyframes tokWobble3{
+  0%,100%{transform:rotate(0deg) scale(1)}
+  25%{transform:rotate(-15deg) scale(1.1)}
+  50%{transform:rotate(12deg) scale(1.07)}
+  70%{transform:rotate(-10deg) scale(1.08)}
+  85%{transform:rotate(14deg) scale(1.05)}
+}
+.tok-wobbling{animation-duration:.55s;animation-timing-function:steps(1,end);animation-fill-mode:forwards}
+.tok-wobble-1{animation-name:tokWobble1}
+.tok-wobble-2{animation-name:tokWobble2}
+.tok-wobble-3{animation-name:tokWobble3}
 </style>
 </head>
 <body>
@@ -1176,8 +1204,8 @@ body::before {
 // Version: v4.0 / Turn 7
 // Clean rewrite from spec. Firebase: dogs-of-didcot-27ae6
 
-console.log("[DoD] v8.6 loading");
-const APP_VERSION = "v8.6"; // turn 8
+console.log("[DoD] v9.0 loading");
+const APP_VERSION = "v9.0"; // turn 8
 
 // ─── Firebase ────────────────────────────────────────────────────────────────
 let db = null;
@@ -1302,43 +1330,60 @@ function buildDeck() {
 function initFallingDogs() {
   const screen = document.getElementById("screen-room");
   if(!screen) return;
-  // Remove any existing falling dogs
   screen.querySelectorAll(".falling-dog").forEach(e => e.remove());
 
-  const count = 20;
+  // Emoji fallbacks in case PNGs haven't loaded
+  const dogEmojis = ["🐕","🦮","🐩","🐕‍🦺","🐾","🦴","🎾","🐶"];
+  const count = 22;
+
   for(let i = 0; i < count; i++) {
-    const dog = DOGS[~~(Math.random() * DOGS.length)];
-    const img = document.createElement("img");
-    img.className = "falling-dog";
-    img.src = dog.img;
-    img.alt = "";
+    const dog = DOGS[i % DOGS.length];
+    const size   = 40 + Math.random() * 50;
+    const left   = 2 + Math.random() * 92;
+    const dur    = 4 + Math.random() * 5;
+    const delay  = -(Math.random() * dur);
+    const r0     = -30 + Math.random() * 60;
+    const r1     = r0 + (-50 + Math.random() * 100);
+    const op     = 0.22 + Math.random() * 0.25;
 
-    // Random position, size, speed, rotation, opacity
-    const size   = 38 + Math.random() * 48;
-    const left   = Math.random() * 96; // % across screen
-    const dur    = 3.5 + Math.random() * 5;
-    const delay  = -(Math.random() * dur); // negative delay = starts mid-fall
-    const r0     = -25 + Math.random() * 50;
-    const r1     = r0 + (-40 + Math.random() * 80);
-    const op     = 0.18 + Math.random() * 0.22;
+    // Try img first, fall back to emoji span
+    const el = document.createElement("img");
+    el.className = "falling-dog";
+    el.src = dog.img;
+    el.alt = dog.name;
+    // On error, replace with emoji span so something always shows
+    el.onerror = function() {
+      const span = document.createElement("div");
+      span.className = "falling-dog";
+      span.textContent = dogEmojis[i % dogEmojis.length];
+      span.style.cssText = el.style.cssText;
+      span.style.fontSize = size * 0.7 + "px";
+      span.style.lineHeight = "1";
+      span.style.display = "flex";
+      span.style.alignItems = "center";
+      span.style.justifyContent = "center";
+      if(el.parentNode) el.parentNode.replaceChild(span, el);
+    };
 
-    img.style.cssText = [
+    el.style.cssText = [
       `width:${size}px`,
       `height:${size}px`,
       `left:${left}%`,
-      `top:0`,
+      `top:-${size}px`,
       `object-fit:contain`,
+      `animation-name:dogFall`,
       `animation-duration:${dur}s`,
       `animation-delay:${delay}s`,
+      `animation-timing-function:linear`,
+      `animation-iteration-count:infinite`,
       `--dog-r0:${r0}deg`,
       `--dog-r1:${r1}deg`,
       `--dog-op:${op}`,
     ].join(";");
 
-    screen.appendChild(img);
+    screen.appendChild(el);
   }
 }
-
 
 // Stop falling dogs (called when entering game screen)
 function stopFallingDogs() {
@@ -1392,6 +1437,34 @@ function ensureLayer(id,top=false) {
 }
 
 // ─── Token rendering ──────────────────────────────────────────────────────────
+
+// ── Token oscillation — independent random timer per token ──────────────────
+const _tokTimers = {};
+function startTokenOscillation(id) {
+  if(_tokTimers[id]) return; // already running
+  function scheduleNext() {
+    const delay = 8000 + Math.random() * 4000; // 8-12s
+    _tokTimers[id] = setTimeout(() => {
+      const tok = G.svg?.querySelector(`#tok-${id} .tok-wobble-inner`);
+      if(!tok) { delete _tokTimers[id]; return; }
+      const variant = 1 + (~~(Math.random()*3)); // 1,2,3
+      tok.classList.remove("tok-wobbling","tok-wobble-1","tok-wobble-2","tok-wobble-3");
+      // Force reflow
+      void tok.offsetWidth;
+      tok.classList.add("tok-wobbling", `tok-wobble-${variant}`);
+      // Remove after animation completes
+      setTimeout(()=>{
+        tok.classList.remove("tok-wobbling","tok-wobble-1","tok-wobble-2","tok-wobble-3");
+      }, 600);
+      delete _tokTimers[id];
+      scheduleNext();
+    }, delay);
+  }
+  scheduleNext();
+}
+function stopTokenOscillation(id) {
+  if(_tokTimers[id]) { clearTimeout(_tokTimers[id]); delete _tokTimers[id]; }
+}
 function renderTokens(state) {
   const layer = ensureLayer("token-layer",true);
   const players = Object.keys(state.players||{});
@@ -1413,6 +1486,7 @@ function renderTokens(state) {
     let g=G.svg.querySelector(`#tok-${id}`);
     if(!g){
       g=mkSvg("g",{id:`tok-${id}`}); layer.appendChild(g);
+      const inner=mkSvg("g",{class:"tok-wobble-inner"}); g.appendChild(inner);
       const circ=mkSvg("circle",{r:"18",fill:"#fff","stroke-width":"4"});
       circ.style.stroke=playerColHex;
       const img=mkSvg("image",{x:"-14",y:"-14",width:"28",height:"28","clip-path":`url(#tok-clip-${id})`});
@@ -1420,7 +1494,8 @@ function renderTokens(state) {
       // Clip path
       let defs=G.svg.querySelector("defs"); if(!defs){defs=mkSvg("defs");G.svg.insertBefore(defs,G.svg.firstChild);}
       if(!defs.querySelector(`#tok-clip-${id}`)){const cp=mkSvg("clipPath",{id:`tok-clip-${id}`});cp.appendChild(mkSvg("circle",{cx:"0",cy:"0",r:"14"}));defs.appendChild(cp);}
-      g.appendChild(circ); g.appendChild(img);
+      inner.appendChild(circ); inner.appendChild(img);
+      startTokenOscillation(id);
     }
     g.setAttribute("transform",`translate(${x},${y})`);
   });
@@ -2183,12 +2258,14 @@ function renderNumPicker(containerId,options,selected,onSelect,dimAbove=99){
 }
 
 function showCreateLobby2(){
-  const pool=G.rulesData?.destinationPool||DEST_POOL;
+  const pool=(G.rulesData?.destinationPool?.length>0)?G.rulesData.destinationPool:DEST_POOL;
   const colNames=Object.keys(PLAYER_COLOURS);
   let sel={dog:null,colour:null,players:2,journeys:3,mystery:4};
 
   function r(){
-    const maxJ=Math.floor(pool.length/sel.players);
+    // Use DEST_POOL as floor so pool.length=0 never resets sel.journeys
+    const safePool = (pool&&pool.length>0) ? pool : DEST_POOL;
+    const maxJ=Math.floor(safePool.length/sel.players);
     if(sel.journeys>maxJ) sel.journeys=Math.min(sel.journeys,maxJ)||1;
     const ok=sel.dog&&sel.colour;
     showLobby(`<div class="lobby-wrap"><div class="lobby-inner">
@@ -2353,8 +2430,12 @@ function showWaitingLobby(code,state){
     <div class="lobby-waiting-slots" id="wslots"></div>
     <div class="lobby-waiting-sub" id="wsub">${joined}/${total} players joined</div>
     <div class="waiting-dots" style="justify-content:center"><div class="waiting-dot"></div><div class="waiting-dot"></div><div class="waiting-dot"></div></div>
-    ${isCreator&&joined>=total?`<button class="lobby-start-btn" id="start-btn" type="button">🚀 Start game!</button>`:""}
-    ${isCreator&&joined<total?`<div style="font-size:.82rem;color:var(--muted);text-align:center">Waiting for ${total-joined} more player${total-joined!==1?"s":""}…</div>`:`<div style="font-size:.82rem;color:var(--muted);text-align:center">Waiting for host to start…</div>`}
+    ${isCreator
+      ? (joined>=total
+          ? `<button class="lobby-start-btn" id="start-btn" type="button">🚀 Start game!</button>`
+          : `<div style="font-size:.82rem;color:var(--muted);text-align:center">Waiting for ${total-joined} more player${total-joined!==1?"s":""}…</div>`)
+      : `<div style="font-size:.82rem;color:rgba(255,255,255,.5);text-align:center">Waiting for host to start…</div>`
+    }
     <div style="text-align:center;margin-top:16px"><button class="lobby-btn-back" id="lb-back" type="button">← Menu</button></div>
   </div></div>`);
 
@@ -2389,7 +2470,7 @@ function showCountdownLobby(code,n){
 
 // ─── Room creation / joining ──────────────────────────────────────────────────
 async function createRoom(sel){
-  const pool=G.rulesData?.destinationPool||DEST_POOL;
+  const pool=(G.rulesData?.destinationPool?.length>0)?G.rulesData.destinationPool:DEST_POOL;
   const shuffled=shuf(pool);
   const N=sel.journeys;
   const allNodes=G.rulesData?.nodes||[];
@@ -2474,15 +2555,11 @@ function startRoomSubscriber(code){
     const state=normalise(raw);
     switch(state.phase){
       case "waiting": showWaitingLobby(code,state); break;
-      case "ready":   showWaitingLobby(code,state); if(state.createdBy===G.myId&&Object.keys(state.characterSelections||{}).length>=state.playerCount) fbSet(dbRef(`rooms/${code}/state/phase`),"countdown"); break;
+      case "ready":   showWaitingLobby(code,state); break;
       case "countdown": runCountdown(code,state); break;
       case "playing": launchGame(code,state); break;
     }
-    // Auto-advance from waiting to ready when full
-    if(state.phase==="waiting"&&state.createdBy===G.myId){
-      const joined=Object.keys(state.characterSelections||{}).length;
-      if(joined>=state.playerCount) fbSet(dbRef(`rooms/${code}/state/phase`),"ready");
-    }
+    // Host manually starts — no auto-advance
   });
 }
 
@@ -2611,7 +2688,25 @@ async function init(){
     svg.style.cssText="width:100%;height:100%;display:block;background:transparent";
     G.svg=svg;
     // Compute viewBox bounds
-    try{const vb=svg.viewBox.baseVal;G.boardView.base={x:vb.x,y:vb.y,w:vb.width,h:vb.height};}catch(e){}
+    // Tighten viewBox to actual content bounds — removes the huge padding
+    try{
+      const groups=["#Routes","#Labels","#Nodes"].map(s=>svg.querySelector(s)).filter(Boolean);
+      const boxes=groups.map(g=>{try{const b=g.getBBox();return isFinite(b.x)?b:null;}catch(e){return null;}}).filter(Boolean);
+      if(boxes.length){
+        const pad=60;
+        const x=Math.min(...boxes.map(b=>b.x))-pad;
+        const y=Math.min(...boxes.map(b=>b.y))-pad;
+        const x2=Math.max(...boxes.map(b=>b.x+b.width))+pad;
+        const y2=Math.max(...boxes.map(b=>b.y+b.height))+pad;
+        svg.setAttribute("viewBox",`${x} ${y} ${x2-x} ${y2-y}`);
+        G.boardView.base={x,y,w:x2-x,h:y2-y};
+      } else {
+        const vb=svg.viewBox.baseVal;
+        G.boardView.base={x:vb.x,y:vb.y,w:vb.width,h:vb.height};
+      }
+    }catch(e){
+      try{const vb=svg.viewBox.baseVal;G.boardView.base={x:vb.x,y:vb.y,w:vb.width,h:vb.height};}catch(e2){}
+    }
     // Wire route clicks (will be re-wired on game start)
     setupGestures();
     console.log("[DoD] SVG loaded");
