@@ -1204,8 +1204,8 @@ body::before {
 // Version: v4.0 / Turn 7
 // Clean rewrite from spec. Firebase: dogs-of-didcot-27ae6
 
-console.log("[DoD] v9.0 loading");
-const APP_VERSION = "v9.0"; // turn 8
+console.log("[DoD] v9.1 loading");
+const APP_VERSION = "v9.1"; // turn 8
 
 // ─── Firebase ────────────────────────────────────────────────────────────────
 let db = null;
@@ -1536,7 +1536,18 @@ function renderRoutes(state) {
     if(isMine&&myNode){
       const to=otherNode(rid,myNode);
       if(to&&to!==myPrev&&!rs.claimedBy){
-        el.classList.add("route-eligible");
+        // Only animate if player can actually afford it RIGHT NOW
+        const myP2=myPlayer(state);
+        const hand=toArr(state.hands?.[G.myId]||[]);
+        const hc=hand.reduce((a,c)=>{a[c]=(a[c]||0)+1;return a;},{});
+        const baseCost=G.rulesData.routes[rid].length;
+        const cost=baseCost+(myP2?.routeCostBonus||0);
+        const col=rs.colour;
+        const owned=(hc[col]||0)+(hc.rainbow||0);
+        const affordable=owned>=cost;
+        if(affordable){
+          el.classList.add("route-eligible");
+        }
         el.style.cursor="pointer";
         el.style.strokeOpacity="1";
       }
@@ -1558,8 +1569,8 @@ function renderCostBadges(state) {
     const cost=G.rulesData.routes[rid].length;
     const hex=ROUTE_COLOUR_HEX[rs.colour]||"#555";
     const g=mkSvg("g",{class:"cost-badge",transform:`translate(${mid.x},${mid.y})`,style:"cursor:pointer"});
-    g.appendChild(mkSvg("circle",{r:"11",fill:"#fff",stroke:hex,"stroke-width":"2"}));
-    const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"11","font-weight":"800",fill:hex});
+    g.appendChild(mkSvg("circle",{r:"16",fill:"#fff",stroke:hex,"stroke-width":"2.5"}));
+    const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"14","font-weight":"700",fill:hex,style:"font-family:'bree-serif',serif"});
     t.textContent=cost; g.appendChild(t);
     g.addEventListener("click",e=>{e.stopPropagation();handleRouteClick(rid,state);});
     layer.appendChild(g);
@@ -1863,7 +1874,7 @@ async function confirmClaim(state) {
   const newRoutes={...(state.routes||{})};
   newRoutes[rid]={...newRoutes[rid],claimedBy:G.myId};
   const newPlayers={...(state.players||{})};
-  newPlayers[G.myId]={...myP,currentNode:to,previousNode:from,journeyRoutes:[...(myP.journeyRoutes||[]),rid]};
+  newPlayers[G.myId]={...myP,currentNode:to,previousNode:from,journeyRoutes:[...toArr(myP.journeyRoutes||[]),rid]};
   const newHands={...(state.hands||{})};
   newHands[G.myId]=hand;
   const newDiscard=[...toArr(state.discardPile||[]),...spent];
@@ -1889,7 +1900,7 @@ async function confirmClaim(state) {
   const chain=toArr(myP.chain||[]);
   const idx=myP.chainIdx||0;
   const target=activeDest(myP);
-  let newChainIdx=idx, completedChain=myP.completedChain||false, journeyRoutes=[...(myP.journeyRoutes||[]),rid];
+  let newChainIdx=idx, completedChain=myP.completedChain||false, journeyRoutes=[...toArr(myP.journeyRoutes||[]),rid];
   let arrivedAtDest=to===target;
 
   if(arrivedAtDest){
@@ -1905,9 +1916,11 @@ async function confirmClaim(state) {
     // Release journey routes
     journeyRoutes.forEach(r=>{if(newRoutes[r]){newRoutes[r]={...newRoutes[r],claimedBy:null};rerollRouteColour(newRoutes,r);}});
     journeyRoutes=[];
-    newPlayers[G.myId]={...newPlayers[G.myId],chainIdx:newChainIdx,completedChain,previousNode:null,journeyRoutes:[]};
+    newPlayers[G.myId]={...newPlayers[G.myId],chainIdx:newChainIdx,completedChain,previousNode:null,journeyRoutes:{}};
   } else {
-    newPlayers[G.myId]={...newPlayers[G.myId],currentNode:to,previousNode:from,journeyRoutes};
+    // Store as numeric-keyed object so Firebase doesn't mangle it
+    newPlayers[G.myId]={...newPlayers[G.myId],currentNode:to,previousNode:from,
+      journeyRoutes:Object.fromEntries(journeyRoutes.map((v,i)=>[i,v]))};
   }
 
   // Mystery node rotation
@@ -2737,11 +2750,14 @@ async function init(){
   // Wire modals
   $("claim-cancel-btn").onclick=closeClaimModal;
   $("claim-confirm-btn").onclick=async()=>{
-    // Need current state — fetch from Firebase or use last known
-    if(!G.roomCode){console.warn("No room for confirm");return;}
-    const snap=await fbGet(dbRef(`rooms/${G.roomCode}/state`));
-    const s=normalise(snap.val());
-    await confirmClaim(s);
+    if(!G.pendingClaim||!G.selPayment){console.warn("[DoD] No pending claim");return;}
+    if(!G.roomCode){console.warn("[DoD] No roomCode");return;}
+    try{
+      const snap=await fbGet(dbRef(`rooms/${G.roomCode}/state`));
+      if(!snap.exists()){console.error("[DoD] State not found");G.actionLock=false;return;}
+      const s=normalise(snap.val());
+      await confirmClaim(s);
+    }catch(e){console.error("[DoD] confirmClaim error:",e);G.actionLock=false;}
   };
   $("dest-m-ok").onclick=()=>$("modal-dest").classList.remove("open");
   $("win-play-again").onclick=doReturnToMenu;
