@@ -1204,8 +1204,8 @@ body::before {
 // Version: v4.0 / Turn 7
 // Clean rewrite from spec. Firebase: dogs-of-didcot-27ae6
 
-console.log("[DoD] v9.1 loading");
-const APP_VERSION = "v9.1"; // turn 8
+console.log("[DoD] v9.2 loading");
+const APP_VERSION = "v9.2"; // turn 8
 
 // ─── Firebase ────────────────────────────────────────────────────────────────
 let db = null;
@@ -1569,8 +1569,8 @@ function renderCostBadges(state) {
     const cost=G.rulesData.routes[rid].length;
     const hex=ROUTE_COLOUR_HEX[rs.colour]||"#555";
     const g=mkSvg("g",{class:"cost-badge",transform:`translate(${mid.x},${mid.y})`,style:"cursor:pointer"});
-    g.appendChild(mkSvg("circle",{r:"16",fill:"#fff",stroke:hex,"stroke-width":"2.5"}));
-    const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"14","font-weight":"700",fill:hex,style:"font-family:'bree-serif',serif"});
+    g.appendChild(mkSvg("circle",{r:"26",fill:"#fff",stroke:hex,"stroke-width":"3"}));
+    const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"22","font-weight":"700",fill:hex,style:"font-family:'bree-serif',serif"});
     t.textContent=cost; g.appendChild(t);
     g.addEventListener("click",e=>{e.stopPropagation();handleRouteClick(rid,state);});
     layer.appendChild(g);
@@ -1936,7 +1936,10 @@ async function confirmClaim(state) {
   const nextPlayer=getNextPlayer(state);
   const updates={routes:newRoutes,players:newPlayers,hands:newHands,discardPile:newDiscard,mysteryNodes:mNodes,poopedNodes,currentPlayer:nextPlayer};
   await writeGameState(state,updates);
+  // Release lock then render immediately so we see correct state without FB round-trip
   G.actionLock=false;
+  _lastRenderedPlayer=updates.currentPlayer;
+  renderAll({...state,...updates,controlledHero:G.myId});
 
   if(poopTriggered) showToast("💩 You stepped in poop! 3 turns skipped.");
   if(isMystery) { const ev=pickEvent(); await showEventModal(ev,state,updates); }
@@ -2559,6 +2562,7 @@ async function joinRoom(code,sel,remoteState){
 let _roomUnsub=null;
 let _countdownActive=false;
 let _gameActive=false;
+let _lastRenderedPlayer=null;
 
 function startRoomSubscriber(code){
   if(_roomUnsub){_roomUnsub();_roomUnsub=null;}
@@ -2610,14 +2614,16 @@ function launchGame(code,rawState){
   if(_roomUnsub){_roomUnsub();_roomUnsub=null;}
   _roomUnsub=fbOnValue(dbRef(`rooms/${code}/state`),snap=>{
     if(!snap.exists()) return;
+    // Never interrupt our own action mid-flight — wait for actionLock to clear
+    if(G.actionLock) return;
     const s=normalise(snap.val());
-    const wasMyTurn=isMyTurn(s);
+    const prevTurn=_lastRenderedPlayer;
+    _lastRenderedPlayer=s.currentPlayer;
     renderAll(s);
     renderDrawBtn(s);
     if(!G.drawPending) restoreDrawBtn();
     if(s.status==="finished"){ showWinScreen(s.winner||G.myId); return; }
-    const prevPlayer=s._prevPlayer;
-    if(s.currentPlayer!==prevPlayer){
+    if(s.currentPlayer!==prevTurn){
       const mine2=s.currentPlayer===G.myId;
       const d=DOGS.find(d=>d.id===s.currentPlayer);
       showBanner(mine2?`🐾 Your turn, ${d?.name||s.currentPlayer}!`:`${d?.name||s.currentPlayer}'s turn`);
@@ -2665,7 +2671,7 @@ function doReturnToMenu(){
   if(_roomUnsub){_roomUnsub();_roomUnsub=null;}
   cleanup();
   G.roomCode=null; G.myId=null; G.actionLock=false; G.drawPending=false;
-  _countdownActive=false; _gameActive=false;
+  _countdownActive=false; _gameActive=false; _lastRenderedPlayer=null;
   sessionStorage.removeItem("dod_room"); sessionStorage.removeItem("dod_id");
   hideLobby();
   const wo=$("win-overlay"); if(wo) wo.classList.remove("active");
