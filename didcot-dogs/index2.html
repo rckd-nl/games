@@ -1204,8 +1204,8 @@ body::before {
 // Version: v4.0 / Turn 7
 // Clean rewrite from spec. Firebase: dogs-of-didcot-27ae6
 
-console.log("[DoD] v9.2 loading");
-const APP_VERSION = "v9.2"; // turn 8
+console.log("[DoD] v9.3 loading");
+const APP_VERSION = "v9.3"; // turn 8
 
 // ─── Firebase ────────────────────────────────────────────────────────────────
 let db = null;
@@ -1569,8 +1569,8 @@ function renderCostBadges(state) {
     const cost=G.rulesData.routes[rid].length;
     const hex=ROUTE_COLOUR_HEX[rs.colour]||"#555";
     const g=mkSvg("g",{class:"cost-badge",transform:`translate(${mid.x},${mid.y})`,style:"cursor:pointer"});
-    g.appendChild(mkSvg("circle",{r:"26",fill:"#fff",stroke:hex,"stroke-width":"3"}));
-    const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"22","font-weight":"700",fill:hex,style:"font-family:'bree-serif',serif"});
+    g.appendChild(mkSvg("circle",{r:"14",fill:"#fff",stroke:hex,"stroke-width":"2"}));
+    const t=mkSvg("text",{"text-anchor":"middle","dominant-baseline":"middle","font-size":"18","font-weight":"700","font-family":"bree-serif, serif",fill:hex});
     t.textContent=cost; g.appendChild(t);
     g.addEventListener("click",e=>{e.stopPropagation();handleRouteClick(rid,state);});
     layer.appendChild(g);
