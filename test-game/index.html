@@ -2,38 +2,112 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Swipe Decision Game</title>
-    <link rel="stylesheet" href="./style.css" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>10-Card Swipe Game</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; }
+      .app { width: min(92vw, 460px); display: grid; gap: 12px; }
+      .card { border: 1px solid #888; border-radius: 10px; padding: 14px; min-height: 160px; touch-action: pan-y; }
+      .row { display: flex; justify-content: space-between; gap: 8px; }
+      button { padding: 10px 12px; border-radius: 8px; border: 1px solid #666; background: transparent; cursor: pointer; }
+      #result { min-height: 1.2em; font-weight: 600; }
+    </style>
   </head>
   <body>
     <main class="app">
-      <header>
-        <h1>Village Choices</h1>
-        <p id="progress">Card 1 of 10</p>
-      </header>
+      <h1>Village Choices</h1>
+      <p id="progress">Card 1 of 10</p>
 
-      <section id="card" class="card" aria-live="polite">
-        <h2 id="card-title"></h2>
-        <p id="card-text"></p>
-        <p class="hint">Swipe left/right on touch, or use buttons/arrow keys.</p>
+      <section id="card" class="card">
+        <h2 id="title"></h2>
+        <p id="text"></p>
+        <small>Swipe left/right (or use buttons/arrow keys)</small>
       </section>
 
-      <section class="stats">
-        <p>Food: <span id="food">5</span></p>
-        <p>Gold: <span id="gold">5</span></p>
-        <p>Morale: <span id="morale">5</span></p>
-      </section>
+      <div class="row">
+        <span>Food: <b id="food">5</b></span>
+        <span>Gold: <b id="gold">5</b></span>
+        <span>Morale: <b id="morale">5</b></span>
+      </div>
 
-      <section class="controls">
-        <button id="left-btn" type="button">⬅ Left choice</button>
-        <button id="right-btn" type="button">Right choice ➡</button>
-      </section>
+      <div class="row">
+        <button id="left">⬅ Left</button>
+        <button id="right">Right ➡</button>
+      </div>
 
-      <p id="result" class="result"></p>
-      <button id="restart-btn" type="button" hidden>Play again</button>
+      <p id="result"></p>
+      <button id="restart" hidden>Play again</button>
     </main>
 
-    <script src="./script.js"></script>
+    <script>
+      const cards = [
+        ['Hungry Travelers','Share food with travelers?', {food:-2,morale:-1,msg:'Turned away travelers.'}, {food:-1,morale:+1,msg:'You shared food.'}],
+        ['Broken Bridge','Repair the bridge now?', {gold:-2,morale:+1,msg:'Bridge repaired.'}, {food:-1,morale:-1,msg:'Trade slowed.'}],
+        ['Tax Proposal','Raise taxes this season?', {gold:+2,morale:-2,msg:'Treasury filled, people upset.'}, {gold:-1,morale:+1,msg:'People relieved.'}],
+        ['Festival','Fund a festival?', {gold:-1,morale:+2,msg:'Spirits lifted.'}, {morale:-1,msg:'Mood stayed low.'}],
+        ['Wolf Problem','Hire hunters?', {gold:-1,food:+1,msg:'Roads safer.'}, {food:-1,morale:-1,msg:'Wolves raid farms.'}],
+        ['Irrigation','Build canals?', {gold:-2,food:+2,msg:'Harvest improves.'}, {food:-1,msg:'Fields stay dry.'}],
+        ['School','Sponsor a school?', {gold:-1,morale:+1,msg:'Learning spreads.'}, {morale:-1,msg:'No school this year.'}],
+        ['Mine Safety','Shut mine for safety?', {gold:-2,morale:+1,msg:'Workers trust you.'}, {gold:+1,morale:-2,msg:'Accidents anger town.'}],
+        ['Grain Deal','Buy expensive grain?', {gold:-2,food:+2,msg:'Stores refilled.'}, {food:-2,morale:-1,msg:'Shortage worsened.'}],
+        ['Newcomers','Open gates to newcomers?', {food:-1,morale:+2,msg:'Village grows.'}, {food:+1,morale:-2,msg:'Village isolates.'}],
+      ];
+
+      let i = 0, startX = 0, over = false;
+      let s = {food:5,gold:5,morale:5};
+      const el = (id) => document.getElementById(id);
+      const clamp = (v) => Math.max(0, Math.min(10, v));
+
+      function draw() {
+        el('food').textContent = s.food; el('gold').textContent = s.gold; el('morale').textContent = s.morale;
+        if (over) return;
+        const c = cards[i];
+        el('progress').textContent = `Card ${i+1} of ${cards.length}`;
+        el('title').textContent = c[0];
+        el('text').textContent = c[1];
+      }
+
+      function end(msg) {
+        over = true;
+        el('result').textContent = msg;
+        el('title').textContent = 'Run Complete';
+        el('text').textContent = 'Restart to try different choices.';
+        el('restart').hidden = false;
+        el('left').disabled = true; el('right').disabled = true;
+      }
+
+      function choose(side) {
+        if (over) return;
+        const change = cards[i][side === 'left' ? 2 : 3];
+        s.food = clamp(s.food + (change.food || 0));
+        s.gold = clamp(s.gold + (change.gold || 0));
+        s.morale = clamp(s.morale + (change.morale || 0));
+        el('result').textContent = change.msg;
+        if (!s.food || !s.gold || !s.morale) return end('A resource hit 0. Game over.');
+        i += 1;
+        if (i >= cards.length) return end('You survived all 10 cards!');
+        draw();
+      }
+
+      function reset() {
+        i = 0; over = false; s = {food:5,gold:5,morale:5};
+        el('result').textContent = ''; el('restart').hidden = true;
+        el('left').disabled = false; el('right').disabled = false;
+        draw();
+      }
+
+      el('left').onclick = () => choose('left');
+      el('right').onclick = () => choose('right');
+      el('restart').onclick = reset;
+      document.addEventListener('keydown', (e) => { if (e.key==='ArrowLeft') choose('left'); if (e.key==='ArrowRight') choose('right'); });
+      el('card').addEventListener('touchstart', (e) => startX = e.changedTouches[0].clientX);
+      el('card').addEventListener('touchend', (e) => {
+        const d = e.changedTouches[0].clientX - startX;
+        if (d < -30) choose('left');
+        if (d > 30) choose('right');
+      });
+
+      reset();
+    </script>
   </body>
 </html>

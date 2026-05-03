@@ -1,14 +1,15 @@
 # test-game
 
-Simple swipe-decision card game for workflow testing.
+Conflict-friendly version: **single-file game** in `index.html`.
 
-## How to play
+## Why this is easier in GitHub web editor
 
-- You get 10 cards.
-- Swipe left or right (or use arrow keys / buttons) to decide each card.
-- Each choice changes Food, Gold, and Morale.
-- If any resource reaches 0, the run ends.
+- Only one main file (`index.html`) to edit/merge.
+- No separate JS/CSS files needed for quick conflict resolution.
 
-## Run locally
+## Game rules
 
-Open `index.html` in a browser.
+- 10 cards total.
+- Left/right swipe (or arrow keys/buttons) chooses outcomes.
+- Choices affect Food, Gold, Morale.
+- Any stat hitting 0 ends the run.
