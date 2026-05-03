@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Swipe Decision Game</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Village Choices</h1>
+        <p id="progress">Card 1 of 10</p>
+      </header>
+
+      <section id="card" class="card" aria-live="polite">
+        <h2 id="card-title"></h2>
+        <p id="card-text"></p>
+        <p class="hint">Swipe left/right on touch, or use buttons/arrow keys.</p>
+      </section>
+
+      <section class="stats">
+        <p>Food: <span id="food">5</span></p>
+        <p>Gold: <span id="gold">5</span></p>
+        <p>Morale: <span id="morale">5</span></p>
+      </section>
+
+      <section class="controls">
+        <button id="left-btn" type="button">⬅ Left choice</button>
+        <button id="right-btn" type="button">Right choice ➡</button>
+      </section>
+
+      <p id="result" class="result"></p>
+      <button id="restart-btn" type="button" hidden>Play again</button>
+    </main>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
